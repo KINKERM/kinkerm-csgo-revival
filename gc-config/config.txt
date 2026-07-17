@@ -27,18 +27,21 @@
 // bundles a matching key with every granted case, so opening stays free.
 "destroy_used_items"	"1"
 
-// Case drop weights. These are Valve's actual weights (per rarity id):
-//   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted, 5 Classified,
-//   6 Covert, 99 Rare Special (knives/gloves).
+// Case drop weights (per rarity id):
+//   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted (purple),
+//   5 Classified (pink), 6 Covert (red), 99 Rare Special (gold - knives/gloves).
+// These DOUBLE the rare tiers (4/5/6/99) vs Valve's real odds, so purples,
+// pinks, reds and golds drop about twice as often. Tune to taste.
+//   Valve baseline was: 4=80000, 5=16000, 6=3200, 99=1280
 "rarity_weights"
 {
 	"1"		"10000000"
 	"2"		"2000000"
 	"3"		"400000"
-	"4"		"80000"
-	"5"		"16000"
-	"6"		"3200"
-	"99"	"1280"
+	"4"		"160000"
+	"5"		"32000"
+	"6"		"6400"
+	"99"	"2560"
 }
 
 // New standalone CS:GO app id. csgo/steam.inf is updated automatically.
