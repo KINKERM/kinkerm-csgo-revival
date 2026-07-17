@@ -47,21 +47,19 @@ class _Tokenizer:
             return c
 
         if c == '"':
+            # Valve KeyValues does NOT use backslash escaping: backslashes in
+            # paths (e.g. "models\weapons\...") are literal, and a quoted token
+            # always ends at the next double quote. Treating "\" as an escape
+            # would let a value ending in a backslash swallow its closing quote
+            # and desync the entire parse.
             self.i += 1
             start = self.i
-            buf = []
-            while self.i < self.n:
-                ch = self.text[self.i]
-                if ch == "\\" and self.i + 1 < self.n:
-                    buf.append(self.text[self.i + 1])
-                    self.i += 2
-                    continue
-                if ch == '"':
-                    self.i += 1
-                    break
-                buf.append(ch)
+            while self.i < self.n and self.text[self.i] != '"':
                 self.i += 1
-            return ("STR", "".join(buf))
+            value = self.text[start:self.i]
+            if self.i < self.n:
+                self.i += 1  # consume the closing quote
+            return ("STR", value)
 
         # bare token
         start = self.i
@@ -93,6 +91,10 @@ def _parse_block(tok: _Tokenizer) -> dict:
         key = t[1]
         val_tok = tok.next_token()
         if val_tok is None:
+            block[key] = ""
+            return block
+        if val_tok == "}":
+            # key with no value right before the block closes
             block[key] = ""
             return block
         if val_tok == "{":
@@ -135,6 +137,9 @@ def _parse_block_top(tok: _Tokenizer) -> dict:
         elif val_tok is None:
             root[key] = ""
             return root
+        elif val_tok == "}":
+            # stray / unbalanced close: treat key as valueless and continue
+            root[key] = ""
         else:
             root[key] = val_tok[1]
 
