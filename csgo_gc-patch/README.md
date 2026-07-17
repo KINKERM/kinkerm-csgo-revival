@@ -67,14 +67,21 @@ Either option works (there are no git submodules, so the ZIP is complete):
 Either way you end up with a folder containing a `csgo_gc` subfolder, `launcher`,
 `CMakeLists.txt`, etc.
 
-## Step 4 — Apply the pity patch
-Copy the two files from **this** repo's `csgo_gc-patch\` folder over the originals in
-the source you just downloaded, replacing them when asked:
+## Step 4 — Apply the patch
+Copy the patched files from **this** repo's `csgo_gc-patch\` folder over the originals
+in the source you just downloaded, replacing them when asked:
 
 ```
 csgo_gc-patch\case_opening.cpp  ->  <source>\csgo_gc\case_opening.cpp
 csgo_gc-patch\case_opening.h    ->  <source>\csgo_gc\case_opening.h
+csgo_gc-patch\gc_client.cpp     ->  <source>\csgo_gc\gc_client.cpp
+csgo_gc-patch\gc_client.h       ->  <source>\csgo_gc\gc_client.h
 ```
+
+- `case_opening.*` = the **pity system** (working).
+- `gc_client.*`    = **trade-up contracts** (in progress; see the trade-up section
+  at the bottom of this file). Stage 1 only logs the craft message — it does not
+  change your inventory yet.
 
 (You can do this in File Explorer with copy/paste, or in PowerShell with `copy`.)
 
@@ -182,10 +189,12 @@ running. The reliable fix is a **clean clone plus only the two patched files**:
    ```
    git clone https://github.com/mikkokko/csgo_gc.git csgo_gc_clean
    ```
-2. Copy ONLY these two files over the originals (make no other edits):
+2. Copy ONLY these patched files over the originals (make no other edits):
    ```
    csgo_gc-patch\case_opening.cpp  ->  csgo_gc_clean\csgo_gc\case_opening.cpp
    csgo_gc-patch\case_opening.h    ->  csgo_gc_clean\csgo_gc\case_opening.h
+   csgo_gc-patch\gc_client.cpp     ->  csgo_gc_clean\csgo_gc\gc_client.cpp
+   csgo_gc-patch\gc_client.h       ->  csgo_gc_clean\csgo_gc\gc_client.h
    ```
 3. Build with stable Visual Studio 2022 (v17), from its "x64 Native Tools Command
    Prompt for VS 2022":
@@ -217,3 +226,63 @@ Buying from the in-game store needs the Steam overlay enabled (Steam → Setting
 In Game, and the game's Properties → Enable Steam Overlay) and the game launched
 via Steam so the overlay is injected. Admin-granting cases works without any of
 that and is the simplest way to feed cases in.
+
+
+---
+
+# Trade-up contracts (in progress)
+
+CS:GO trade-up contracts let you turn **10 skins of the same rarity** into **1 skin
+of the next rarity up**, with the output's wear (float) derived from the inputs. The
+recent CS2 update also added a **5 Covert (red) -> 1 gold (knife/glove)** recipe.
+`csgo_gc` never implemented any of this — the game *sends* a craft request
+(`k_EMsgGCCraft`, id 1002) but upstream just logs it as "unhandled" and nothing
+happens. We're adding it.
+
+The float math we're targeting (same as real CS:GO), per skin:
+
+```
+normalized = (skinFloat - skinPaintMin) / (skinPaintMax - skinPaintMin)
+avg        = average(normalized over all inputs)
+outputFloat = avg * (outputPaintMax - outputPaintMin) + outputPaintMin
+```
+
+Output selection: pick one of the input skins' collections (weighted by how many
+inputs came from it), then a random skin of the next tier up from that collection;
+StatTrak in -> StatTrak out; gloves/knives are never StatTrak.
+
+## Why this is staged
+The craft message is a **non-protobuf "struct" message**, and its exact byte layout
+isn't documented anywhere for CS:GO. So we build it up in stages through the same
+recompile loop, instead of shipping one big untested change:
+
+- **Stage 1 (this build):** `gc_client.cpp` now handles `k_EMsgGCCraft` and prints a
+  full hex dump + best-guess decode of the message to the console. Nothing in your
+  inventory changes. This confirms the real wire format.
+- **Stage 2:** parse `item_sets` (collections) from `items_game.txt` so we know each
+  skin's collection and the next-tier pool.
+- **Stage 3:** do the float math, destroy the 10 inputs, create the output, and reply
+  with `k_EMsgGCCraftResponse`.
+
+## What to do for Stage 1 (capture the craft message)
+1. Rebuild and install the DLL exactly like the pity patch (Steps 5-7 / the
+   "Confirmed working build" section above). The trade-up code lives in the same
+   `csgo_gc.dll`.
+2. Make sure `csgo_gc\config.txt` has logging on so the prints show up:
+   ```
+   log_output 1
+   ```
+3. Get **10 skins of the same rarity** into your inventory (admin-grant them, or open
+   cases). They need to be eligible trade-up inputs (same rarity, not the top tier).
+4. In game, open the inventory, start a **Trade Up Contract**, fill all 10 slots, and
+   click to complete it.
+5. Open the console and copy **everything** between
+   `=== CRAFT (trade-up) message received ===` and `=== end CRAFT message ===`
+   (including all the `craft: 0000 ...` hex lines) and send it back. That tells us the
+   exact layout so Stage 3 can read the inputs correctly.
+
+> Note: in Stage 1 the contract will look like it "did nothing" (no output item, inputs
+> still there). That's expected — we're only reading the message this round.
+
+> Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
+> (c) Mikko Kokko. Changed files: `case_opening.*` (pity) and `gc_client.*` (trade-up).
