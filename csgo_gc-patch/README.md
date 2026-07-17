@@ -43,6 +43,11 @@ Crypto++, funchook) **using Git**. No Git = the build fails immediately.
    version number. If it says "not recognized", restart your PC so PATH updates.
 
 ## Step 2 — Install the compiler + CMake (Visual Studio 2022 Community, free)
+> ⚠️ **Use stable Visual Studio 2022 (version 17) — NOT a Preview/Insider build**
+> (e.g. one that installs under `...\Visual Studio\18\...`). Preview builds ship
+> bleeding-edge CMake/MSVC that stable CMake doesn't recognize, which cascades into
+> generator errors, missing `/std:c++17`, and protobuf include failures. If you're
+> hitting a chain of build errors, a preview VS is almost always why.
 1. Go to https://visualstudio.microsoft.com/downloads/ and download
    **Visual Studio 2022 Community** (free).
 2. Run the installer. When it shows **"Workloads"**, tick
@@ -137,6 +142,16 @@ folder for `csgo.exe`.
   Note: no `-A Win32` here — the x86 prompt supplies the 32-bit compiler. The cleanest
   alternative is installing **stable Visual Studio 2022 (v17, not preview)**, after
   which the normal `cmake -A Win32 -B build` works.
+- **Compile fails with `STL4038 ... available only with C++17` and/or `C1083: Cannot
+  open ... google/protobuf/port_def.inc`** → your compiler is a *preview* MSVC that
+  CMake can't drive correctly (it's not applying `/std:c++17` and protobuf's include
+  dirs aren't propagating). Fix: install **stable Visual Studio 2022 (v17)**, open its
+  *"x64 Native Tools Command Prompt for VS 2022"*, then:
+  ```
+  rmdir /s /q build
+  cmake -G "Visual Studio 17 2022" -A Win32 -B build
+  cmake --build build --config Release
+  ```
 - **`cmake` isn't recognized** → you didn't open the *"x64 Native Tools Command Prompt
   for VS 2022"*. Open that specific terminal (it puts CMake on PATH), or reinstall the
   C++ workload from Step 2.
