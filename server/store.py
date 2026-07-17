@@ -129,3 +129,17 @@ class PlayerStore:
             player["items"] = []
             player["default_equips"] = []
             self._save()
+
+    def replace_inventory(self, steamid: str, items: list, default_equips: list) -> int:
+        """Replace a player's entire inventory with an uploaded snapshot.
+
+        Used by two-way sync: after a session, the launcher uploads the player's
+        local inventory.txt (which csgo_gc rewrote with opened cases, new skins,
+        equips, etc.) so those changes persist on the server.
+        """
+        with self._lock:
+            player = self._player(steamid)
+            player["items"] = list(items or [])
+            player["default_equips"] = list(default_equips or [])
+            self._save()
+            return len(player["items"])

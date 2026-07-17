@@ -6,6 +6,9 @@ Public:
   GET  /catalog                     -> catalog.json
   GET  /inventory/<steamid64>       -> csgo_gc inventory.txt (text/plain)
 
+Sync (require header  X-Sync-Token: <token>, admin token also accepted):
+  POST /inventory/<steamid64>       <- upload local inventory.txt (persistence)
+
 Admin (require header  X-Admin-Token: <token>):
   GET  /admin/player/<steamid64>    -> player record (json)
   GET  /admin/players               -> list of steamids
@@ -36,18 +39,28 @@ CONFIG_PATH = os.path.join(DATA_DIR, "server_config.json")
 
 def load_config() -> dict:
     os.makedirs(DATA_DIR, exist_ok=True)
+    config: dict = {}
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    config = {
-        "admin_token": secrets.token_hex(24),
-        "players_file": os.path.join(DATA_DIR, "players.json"),
-        "catalog_file": os.path.join(DATA_DIR, "catalog.json"),
+            config = json.load(fh)
+
+    # fill in any missing keys (also upgrades older config files in place)
+    changed = False
+    defaults = {
+        "admin_token": lambda: secrets.token_hex(24),
+        "sync_token": lambda: secrets.token_hex(24),
+        "players_file": lambda: os.path.join(DATA_DIR, "players.json"),
+        "catalog_file": lambda: os.path.join(DATA_DIR, "catalog.json"),
     }
-    with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=2)
-    print(f"[revival] generated new admin token -> {config['admin_token']}")
-    print(f"[revival] (stored in {CONFIG_PATH})")
+    for key, factory in defaults.items():
+        if not config.get(key):
+            config[key] = factory()
+            changed = True
+
+    if changed:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+            json.dump(config, fh, indent=2)
+        print(f"[revival] wrote config -> {CONFIG_PATH}")
     return config
 
 
@@ -58,6 +71,7 @@ class Handler(BaseHTTPRequestHandler):
     store: PlayerStore
     catalog: Catalog
     admin_token: str
+    sync_token: str
 
     # ---- helpers -----------------------------------------------------------
     def _send(self, code: int, body: bytes, content_type: str) -> None:
@@ -78,6 +92,18 @@ class Handler(BaseHTTPRequestHandler):
         return secrets.compare_digest(
             self.headers.get("X-Admin-Token", ""), self.admin_token
         )
+
+    def _sync_authed(self) -> bool:
+        # accept the sync token OR the admin token (admin is a superset)
+        provided = self.headers.get("X-Sync-Token", "")
+        return (secrets.compare_digest(provided, self.sync_token)
+                or secrets.compare_digest(provided, self.admin_token))
+
+    def _read_raw_body(self) -> str:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return ""
+        return self.rfile.read(length).decode("utf-8", errors="replace")
 
     def _read_json_body(self) -> dict:
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -131,6 +157,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0].rstrip("/")
+
+        # Two-way sync: a client uploads its local inventory.txt so opened cases,
+        # new skins and equips persist. Requires the sync (or admin) token.
+        if path.startswith("/inventory/"):
+            steamid = path[len("/inventory/"):]
+            if not steamid.isdigit():
+                return self._send_text(400, "invalid steamid")
+            if not self._sync_authed():
+                return self._send_text(401, "unauthorized")
+            text = self._read_raw_body()
+            parsed = inventory_mod.parse_inventory_txt(text)
+            count = self.store.replace_inventory(
+                steamid, parsed["items"], parsed["default_equips"]
+            )
+            return self._send_json(200, {"ok": True, "items": count})
+
         if not path.startswith("/admin/"):
             return self._send_text(404, "not found")
         if not self._authed():
@@ -183,11 +225,12 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_text(404, "not found")
 
 
-def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str):
+def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str, sync_token: str):
     return type("BoundHandler", (Handler,), {
         "store": store,
         "catalog": catalog,
         "admin_token": admin_token,
+        "sync_token": sync_token,
     })
 
 
@@ -201,12 +244,13 @@ def main() -> None:
     catalog = Catalog.load(config["catalog_file"])
     store = PlayerStore(config["players_file"], catalog)
 
-    handler = make_handler(store, catalog, config["admin_token"])
+    handler = make_handler(store, catalog, config["admin_token"], config["sync_token"])
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
 
     print(f"[revival] serving on http://{args.host}:{args.port}")
     print(f"[revival] catalog: {len(catalog.cases)} cases, {len(catalog.items)} items")
     print(f"[revival] admin token: {config['admin_token']}")
+    print(f"[revival] sync token:  {config['sync_token']}  (put this in launcher.cfg for persistence)")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

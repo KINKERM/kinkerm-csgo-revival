@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import kvparser
 import kvwriter
 
 # Defaults chosen to match csgo_gc's ItemSchema constants.
@@ -77,3 +78,68 @@ def render_inventory_txt(player: dict[str, Any]) -> str:
     """
     tree = build_inventory_tree(player)
     return kvwriter.dumps_top(tree)
+
+
+# ---------------------------------------------------------------------------
+# Reverse direction: parse an inventory.txt (as written by csgo_gc after play)
+# back into our stored item format. Used for two-way sync / persistence, so
+# that opened cases, new skins, equips etc. survive across launches.
+# ---------------------------------------------------------------------------
+
+_INT_FIELDS = ("inventory", "level", "quality", "flags", "origin", "in_use", "rarity")
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_inventory_txt(text: str) -> dict[str, Any]:
+    """Parse a csgo_gc inventory.txt back into {items: [...], default_equips: [...]}.
+
+    Item ids (the highItemId keys) are not preserved - they get reassigned when
+    we regenerate the file. We keep every meaningful field (def_index, quality,
+    rarity, origin, attributes, equipped_state, ...) so the round-trip is
+    faithful and equips/opened items persist.
+    """
+    root = kvparser.parse(text)
+
+    items: list[dict[str, Any]] = []
+    items_block = root.get("items")
+    if isinstance(items_block, dict):
+        for _high_id, raw in items_block.items():
+            if not isinstance(raw, dict):
+                continue
+            def_index = _as_int(raw.get("def_index"), 0)
+            if not def_index:
+                continue
+            item: dict[str, Any] = {"def_index": def_index}
+            for field in _INT_FIELDS:
+                if field in raw:
+                    item[field] = _as_int(raw[field])
+            name = raw.get("custom_name")
+            if isinstance(name, str) and name:
+                item["custom_name"] = name
+            attrs = raw.get("attributes")
+            if isinstance(attrs, dict) and attrs:
+                item["attributes"] = {str(k): str(v) for k, v in attrs.items()}
+            equipped = raw.get("equipped_state")
+            if isinstance(equipped, dict) and equipped:
+                item["equipped_state"] = {str(k): str(v) for k, v in equipped.items()}
+            items.append(item)
+
+    default_equips: list[dict[str, Any]] = []
+    de_block = root.get("default_equips")
+    if isinstance(de_block, dict):
+        for item_def, raw in de_block.items():
+            if not isinstance(raw, dict):
+                continue
+            default_equips.append({
+                "item_definition": _as_int(item_def),
+                "class_id": _as_int(raw.get("class_id")),
+                "slot_id": _as_int(raw.get("slot_id")),
+            })
+
+    return {"items": items, "default_equips": default_equips}
