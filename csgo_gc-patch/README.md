@@ -167,3 +167,53 @@ folder for `csgo.exe`.
 
 **I could not compile or test this from here** — it's source you build yourself. If a
 step throws an error, copy the **exact** message and send it to me; I'll get you past it.
+
+
+---
+
+## Confirmed working build (the path that actually succeeded)
+
+If the build fails with dependencies never downloading — no "Fetching protobuf..."
+lines, no `build/_deps` folder, and configure finishing in ~10 seconds — your
+top-level `CMakeLists.txt` has been edited/damaged and `FetchContent` isn't
+running. The reliable fix is a **clean clone plus only the two patched files**:
+
+1. Fresh clone into a new folder:
+   ```
+   git clone https://github.com/mikkokko/csgo_gc.git csgo_gc_clean
+   ```
+2. Copy ONLY these two files over the originals (make no other edits):
+   ```
+   csgo_gc-patch\case_opening.cpp  ->  csgo_gc_clean\csgo_gc\case_opening.cpp
+   csgo_gc-patch\case_opening.h    ->  csgo_gc_clean\csgo_gc\case_opening.h
+   ```
+3. Build with stable Visual Studio 2022 (v17), from its "x64 Native Tools Command
+   Prompt for VS 2022":
+   ```
+   cd csgo_gc_clean
+   cmake -G "Visual Studio 17 2022" -A Win32 -B build
+   cmake --build build --config Release
+   ```
+   During configure you should see protobuf/cryptopp/funchook download (takes a few
+   minutes). The `'pwsh.exe' is not recognized` lines during the build are harmless.
+
+### Built files land here
+- `build\launcher\Release\csgo.exe`
+- `build\launcher\Release\srcds.exe`
+- `build\csgo_gc\Release\csgo_gc.dll`   <- the pity patch lives in this DLL
+
+### Install (back up the originals first)
+Replace these in your CS:GO install, keeping your existing `config.txt` /
+`inventory.txt`:
+- `<csgo>\csgo.exe`              <- built csgo.exe
+- `<csgo>\srcds.exe`             <- built srcds.exe
+- `<csgo>\csgo_gc\csgo_gc.dll`   <- built csgo_gc.dll
+
+On the first case you open, `csgo_gc\pity.txt` is created and counts up; it resets
+to 0 on a gold, and forces a gold at `PityMax` (default 350).
+
+### Store purchases (optional)
+Buying from the in-game store needs the Steam overlay enabled (Steam → Settings →
+In Game, and the game's Properties → Enable Steam Overlay) and the game launched
+via Steam so the overlay is injected. Admin-granting cases works without any of
+that and is the simplest way to feed cases in.
