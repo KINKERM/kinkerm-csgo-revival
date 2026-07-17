@@ -124,6 +124,19 @@ folder for `csgo.exe`.
   If it still fails, install **stable CMake 3.31** (cmake.org) or **stable Visual
   Studio 2022 v17** (not the preview) and use that instead. Always delete `build`
   between attempts — CMake caches the failed state.
+- **`NMake Makefiles does not support platform specification` / `CMAKE_C_COMPILER not
+  set`** → CMake picked the NMake generator (usually because you have a *preview*
+  Visual Studio that CMake doesn't recognize as a VS generator, so `-A Win32` can't be
+  used). Build via the compiler environment instead: open the **"x86 Native Tools
+  Command Prompt for VS"** (the x86 one = 32-bit), then:
+  ```
+  rmdir /s /q build
+  cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -B build
+  cmake --build build
+  ```
+  Note: no `-A Win32` here — the x86 prompt supplies the 32-bit compiler. The cleanest
+  alternative is installing **stable Visual Studio 2022 (v17, not preview)**, after
+  which the normal `cmake -A Win32 -B build` works.
 - **`cmake` isn't recognized** → you didn't open the *"x64 Native Tools Command Prompt
   for VS 2022"*. Open that specific terminal (it puts CMake on PATH), or reinstall the
   C++ workload from Step 2.
