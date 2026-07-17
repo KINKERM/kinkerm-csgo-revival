@@ -1,7 +1,6 @@
 # csgo_gc pity-system patch
 
-This folder contains modified versions of two `csgo_gc` source files that add a
-**pity system** to case opening:
+Modified `csgo_gc` source files that add a **pity system** to case opening:
 
 - the longer you go without a gold (knife/glove), the higher your gold odds climb,
 - a gold is **guaranteed** once an open would reach **350** (tunable), and
@@ -9,55 +8,121 @@ This folder contains modified versions of two `csgo_gc` source files that add a
 
 The counter is stored per player in `csgo_gc/pity.txt` (created automatically).
 
-> This is a derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), which is
-> licensed under the 2-Clause BSD License, (c) Mikko Kokko. Only `case_opening.cpp`
-> and `case_opening.h` are changed; everything else is upstream.
+> Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), licensed under the
+> 2-Clause BSD License, (c) Mikko Kokko. Only `case_opening.cpp` and `case_opening.h`
+> are changed; everything else is upstream.
 
 ## Why this needs compiling
 The case-opening RNG lives inside `csgo_gc` (C++), not in the config or the revival
-server. The config only holds static rarity weights — it has no memory. A pity
-system needs a persistent counter + logic, so `csgo_gc` itself must be rebuilt with
-these files.
+server. The config only holds static rarity weights — no memory. A pity system needs
+a persistent counter + logic, so `csgo_gc` itself has to be rebuilt with these files.
 
-## Tuning
-Edit the constants at the top of `case_opening.cpp`:
+## Tuning (top of `case_opening.cpp`)
 - `PityMax` (default `350`) — opens until a guaranteed gold.
-- `PityBoost` (default `40.0`) — how hard the odds ramp up on the way there. The
-  ramp is quadratic, so it stays near-normal early and spikes near `PityMax`.
+- `PityBoost` (default `40.0`) — how hard the odds ramp up on the way there.
 
-## Build steps (Windows, 32-bit)
-You need **Git**, **CMake 3.20+**, and a **C++17 compiler** (Visual Studio 2017 or
-newer). In the VS installer, pick the **"Desktop development with C++"** workload —
-that gives you MSVC + CMake.
+---
 
-```powershell
-# 1. Get the source
-git clone https://github.com/mikkokko/csgo_gc.git
-cd csgo_gc
+# Full build guide — Windows, from scratch
 
-# 2. Apply the patch: copy these two files over the originals
-#    (from this repo: csgo_gc-patch\case_opening.cpp and case_opening.h)
-copy /y "<path>\csgo_gc-patch\case_opening.cpp" "csgo_gc\case_opening.cpp"
-copy /y "<path>\csgo_gc-patch\case_opening.h"   "csgo_gc\case_opening.h"
+This assumes you have **nothing** installed yet. Budget ~30-60 minutes, a good
+internet connection, and ~10 GB of free disk (the protobuf dependency is large).
 
-# 3. Configure (32-bit is required for the Windows client) and build
-cmake -A Win32 -B build
-cmake --build build --config Release
+## What you're doing, in plain terms
+`csgo_gc` is a C++ program. To add the pity system you change two of its source
+files (already done for you here) and then **compile the whole thing into new
+`csgo.exe` / `srcds.exe` files**, which you swap into your CS:GO folder just like a
+normal `csgo_gc` install.
+
+## Step 1 — Install Git  (required, even if you download the ZIP)
+**Why:** when you build, CMake automatically downloads three libraries (protobuf,
+Crypto++, funchook) **using Git**. No Git = the build fails immediately.
+1. Go to https://git-scm.com/download/win — the download starts automatically.
+2. Run the installer and click **Next** through every screen (the defaults are fine).
+3. Verify: open a **new** PowerShell window and run `git --version`. You should see a
+   version number. If it says "not recognized", restart your PC so PATH updates.
+
+## Step 2 — Install the compiler + CMake (Visual Studio 2022 Community, free)
+1. Go to https://visualstudio.microsoft.com/downloads/ and download
+   **Visual Studio 2022 Community** (free).
+2. Run the installer. When it shows **"Workloads"**, tick
+   **"Desktop development with C++"** (top-left box). Leave the defaults checked on
+   the right — that bundles the MSVC compiler **and CMake**, so you don't install
+   CMake separately.
+3. Click **Install** and wait (it's a few GB).
+
+## Step 3 — Get the csgo_gc source code
+Either option works (there are no git submodules, so the ZIP is complete):
+
+- **Option A (Git):** open PowerShell and run
+  `git clone https://github.com/mikkokko/csgo_gc.git`
+- **Option B (no cloning):** open https://github.com/mikkokko/csgo_gc → green
+  **Code** button → **Download ZIP** → extract it somewhere simple like `C:\csgo_gc`.
+
+Either way you end up with a folder containing a `csgo_gc` subfolder, `launcher`,
+`CMakeLists.txt`, etc.
+
+## Step 4 — Apply the pity patch
+Copy the two files from **this** repo's `csgo_gc-patch\` folder over the originals in
+the source you just downloaded, replacing them when asked:
+
+```
+csgo_gc-patch\case_opening.cpp  ->  <source>\csgo_gc\case_opening.cpp
+csgo_gc-patch\case_opening.h    ->  <source>\csgo_gc\case_opening.h
 ```
 
-If CMake complains about missing dependencies, let it fetch them (csgo_gc pulls in
-Crypto++, funchook, diStorm3 and protobuf as part of its build). A first build can
-take a while.
+(You can do this in File Explorer with copy/paste, or in PowerShell with `copy`.)
 
-## Install your build
-The build produces the same launcher executables a normal `csgo_gc` release ships
-(`csgo.exe`, `srcds.exe`, etc.). Install exactly like the official release:
-1. Back up the current executables in your CS:GO folder.
-2. Copy your freshly built executables over them.
+## Step 5 — Build it (32-bit)
+1. From the Start menu open **"x64 Native Tools Command Prompt for VS 2022"**
+   (search for it). This is a terminal that already knows where the compiler is.
+2. Go to the source folder, e.g.:
+   ```
+   cd C:\csgo_gc
+   ```
+   (or `cd C:\csgo_gc\csgo_gc-master` if you used the ZIP — go to the folder that
+   contains `CMakeLists.txt`.)
+3. Configure the project as **32-bit** (required — the CS:GO client is 32-bit):
+   ```
+   cmake -A Win32 -B build
+   ```
+   **This first step is slow** — CMake downloads protobuf/Crypto++/funchook here. Let
+   it finish; it's not frozen.
+4. Compile:
+   ```
+   cmake --build build --config Release
+   ```
+   This also takes a while the first time.
+
+## Step 6 — Find your freshly built executables
+Look inside the `build` folder for the produced launcher files — the same set a normal
+`csgo_gc` release ships (`csgo.exe`, `srcds.exe`, etc.). They're typically under a
+`Release` subfolder (e.g. `build\launcher\Release\`). If unsure, search the `build`
+folder for `csgo.exe`.
+
+## Step 7 — Install your build into CS:GO
+1. In your CS:GO folder, **back up** the current `csgo.exe` (rename to `csgo.exe.bak`),
+   and any other launcher exes you're replacing.
+2. Copy your newly built exes over them.
 3. Keep your existing `csgo_gc\config.txt` (drop odds) and `inventory.txt`.
-4. Launch and open cases — `pity.txt` appears and starts counting.
+4. Launch and open cases. A `csgo_gc\pity.txt` file appears and starts counting; hit
+   350 without a gold and the next open is guaranteed gold.
 
-## Heads up
-This has **not** been compiled or tested here — it's source you build yourself.
-Setting up the 32-bit toolchain + dependencies is the hard part. If the build
-errors out, send me the exact CMake/compiler error and I'll help you through it.
+---
+
+## Troubleshooting
+- **`cmake` isn't recognized** → you didn't open the *"x64 Native Tools Command Prompt
+  for VS 2022"*. Open that specific terminal (it puts CMake on PATH), or reinstall the
+  C++ workload from Step 2.
+- **Build stops with a Git / FetchContent / "could not find git" error** → Git isn't
+  installed or isn't on PATH. Do Step 1 and open a fresh terminal.
+- **Download of protobuf/cryptopp fails** → it's your internet/firewall. Re-run
+  `cmake -A Win32 -B build`; it resumes.
+- **"Cannot open csgo.exe" when copying in** → the game or Steam is still running.
+  Fully close CS:GO and Steam first.
+- **It builds but cases still open with old odds** → you copied the exes but the game
+  is loading a different install; confirm you replaced the exe in the same folder
+  Steam launches (Browse Local Files).
+
+**I could not compile or test this from here** — it's source you build yourself. If a
+step throws an error, copy the **exact** message and send it to me; I'll get you past it.
