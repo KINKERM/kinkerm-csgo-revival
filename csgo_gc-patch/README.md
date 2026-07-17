@@ -76,12 +76,15 @@ csgo_gc-patch\case_opening.cpp  ->  <source>\csgo_gc\case_opening.cpp
 csgo_gc-patch\case_opening.h    ->  <source>\csgo_gc\case_opening.h
 csgo_gc-patch\gc_client.cpp     ->  <source>\csgo_gc\gc_client.cpp
 csgo_gc-patch\gc_client.h       ->  <source>\csgo_gc\gc_client.h
+csgo_gc-patch\item_schema.cpp   ->  <source>\csgo_gc\item_schema.cpp
 ```
 
 - `case_opening.*` = the **pity system** (working).
 - `gc_client.*`    = **trade-up contracts** (in progress; see the trade-up section
   at the bottom of this file). Stage 1 only logs the craft message — it does not
   change your inventory yet.
+- `item_schema.cpp` = **skin quality fix** so normal (non-StatTrak) skins are
+  eligible for trade-up contracts (see the trade-up section for details).
 
 (You can do this in File Explorer with copy/paste, or in PowerShell with `copy`.)
 
@@ -195,6 +198,7 @@ running. The reliable fix is a **clean clone plus only the two patched files**:
    csgo_gc-patch\case_opening.h    ->  csgo_gc_clean\csgo_gc\case_opening.h
    csgo_gc-patch\gc_client.cpp     ->  csgo_gc_clean\csgo_gc\gc_client.cpp
    csgo_gc-patch\gc_client.h       ->  csgo_gc_clean\csgo_gc\gc_client.h
+   csgo_gc-patch\item_schema.cpp   ->  csgo_gc_clean\csgo_gc\item_schema.cpp
    ```
 3. Build with stable Visual Studio 2022 (v17), from its "x64 Native Tools Command
    Prompt for VS 2022":
@@ -251,6 +255,25 @@ Output selection: pick one of the input skins' collections (weighted by how many
 inputs came from it), then a random skin of the next tier up from that collection;
 StatTrak in -> StatTrak out; gloves/knives are never StatTrak.
 
+## Fix: normal skins weren't eligible for trade-ups (`item_schema.cpp`)
+Symptom: in the Trade Up Contract screen, only **StatTrak** skins showed as
+eligible; every normal skin was missing.
+
+Cause: the client only accepts items of quality **Unique** (normal contract) or
+**Strange** (StatTrak contract) as trade-up inputs. csgo_gc created case-opened
+normal skins at quality **Normal (0)** (the item-schema default for weapon defs),
+while StatTrak skins were correctly set to **Strange (9)** — so only StatTrak
+appeared. Real CS:GO skins are quality **Unique (4)**.
+
+Fix (two parts):
+- `item_schema.cpp` — `CreateItemFromLootListItem` now promotes painted weapon
+  skins from Normal to Unique. All **newly** opened cases produce eligible skins.
+- Server `inventory.py` — when it renders `inventory.txt`, any painted skin
+  (has paint-kit attribute 6) still stored at quality Normal is bumped to Unique.
+  This makes your **existing** stash eligible without re-opening anything; just
+  relaunch so the launcher re-syncs the inventory. Knives/gloves (Unusual) and
+  StatTrak (Strange) are left untouched.
+
 ## Why this is staged
 The craft message is a **non-protobuf "struct" message**, and its exact byte layout
 isn't documented anywhere for CS:GO. So we build it up in stages through the same
@@ -285,4 +308,5 @@ recompile loop, instead of shipping one big untested change:
 > still there). That's expected — we're only reading the message this round.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
-> (c) Mikko Kokko. Changed files: `case_opening.*` (pity) and `gc_client.*` (trade-up).
+> (c) Mikko Kokko. Changed files: `case_opening.*` (pity), `gc_client.*` (trade-up),
+> and `item_schema.cpp` (skin quality fix).

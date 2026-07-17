@@ -27,13 +27,34 @@ DEFAULT_LEVEL = 1
 # inventory. 8 is what every working inventory.txt in the wild uses.
 DEFAULT_ORIGIN = 8
 
+# csgo_gc ItemSchema::AttributeTexturePrefab - the paint-kit attribute that marks
+# an item as a painted weapon skin. Used to detect skins for the trade-up quality
+# normalization below.
+PAINT_KIT_ATTRIBUTE = 6
+
 
 def _item_to_kv(item: dict[str, Any], position: int) -> dict[str, Any]:
+    # attributes: { "<attr_def_index>": "<value string>" }
+    attributes = item.get("attributes") or {}
+    attr_keys = {str(k) for k in attributes}
+
+    # Trade-up eligibility fix: a painted weapon skin (one carrying the paint-kit
+    # attribute, def index 6) at the "Normal" (0) quality is NOT recognised as a
+    # trade-up input by the client - only Unique (normal) or Strange (StatTrak)
+    # qualities are. Case-opened normal skins used to come through at quality
+    # Normal, so they never appeared in the Trade Up Contract while StatTrak ones
+    # (Strange) did. Promote such skins Normal->Unique here so existing stashes
+    # become eligible without re-grinding. StatTrak (9) and knives/gloves
+    # (Unusual, 3) already have a non-zero quality, so they are untouched.
+    quality = _as_int(item.get("quality", DEFAULT_QUALITY), DEFAULT_QUALITY)
+    if str(PAINT_KIT_ATTRIBUTE) in attr_keys and quality == 0:
+        quality = DEFAULT_QUALITY  # QualityUnique
+
     node: dict[str, Any] = {
         "inventory": item.get("inventory", position),
         "def_index": int(item["def_index"]),
         "level": item.get("level", DEFAULT_LEVEL),
-        "quality": item.get("quality", DEFAULT_QUALITY),
+        "quality": quality,
         "flags": item.get("flags", 0),
         "origin": item.get("origin", DEFAULT_ORIGIN),
         "custom_name": item.get("custom_name", ""),
@@ -41,8 +62,6 @@ def _item_to_kv(item: dict[str, Any], position: int) -> dict[str, Any]:
         "rarity": item.get("rarity", DEFAULT_RARITY),
     }
 
-    # attributes: { "<attr_def_index>": "<value string>" }
-    attributes = item.get("attributes") or {}
     node["attributes"] = {str(k): str(v) for k, v in attributes.items()}
 
     # equipped_state: { "<class_id>": "<slot_id>" }
