@@ -44,3 +44,18 @@ def dumps(root_key: str, tree: dict) -> str:
     out: list = []
     _write_node(out, root_key, tree, 0)
     return "\n".join(out) + "\n"
+
+
+def dumps_top(tree: dict) -> str:
+    """Serialize a dict's entries at the TOP level, with no enclosing wrapper.
+
+    This matches how csgo_gc actually writes/reads its files: KeyValue::WriteToFile
+    with indent 0 emits only the children (no outer named block), and
+    KeyValue::Parse reads a file's top-level keys directly as subkeys. So
+    inventory.txt and config.txt must NOT be wrapped in an "inventory"/"config"
+    block - the blocks like "items" and "default_equips" sit at the top level.
+    """
+    out: list = []
+    for key, value in tree.items():
+        _write_node(out, key, value, 0)
+    return "\n".join(out) + "\n"

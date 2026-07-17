@@ -67,6 +67,13 @@ def build_inventory_tree(player: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_inventory_txt(player: dict[str, Any]) -> str:
-    """Return the full text of a csgo_gc inventory.txt for one player."""
+    """Return the full text of a csgo_gc inventory.txt for one player.
+
+    IMPORTANT: csgo_gc expects the "items" and "default_equips" blocks at the TOP
+    level of the file, with NO outer "inventory" wrapper. csgo_gc reads the file
+    with `KeyValue inventory{"inventory"}; inventory.ParseFromFile(...)` which
+    loads the file's top-level keys directly as children - so wrapping them in an
+    extra "inventory" block hides them and no items load.
+    """
     tree = build_inventory_tree(player)
-    return kvwriter.dumps("inventory", tree)
+    return kvwriter.dumps_top(tree)
