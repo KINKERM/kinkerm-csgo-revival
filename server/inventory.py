@@ -20,7 +20,11 @@ import kvwriter
 DEFAULT_QUALITY = 4  # QualityUnique
 DEFAULT_RARITY = 1   # RarityCommon
 DEFAULT_LEVEL = 1
-DEFAULT_ORIGIN = 0   # neutral; only affects a cosmetic "how acquired" tag
+# ItemOriginCrate. IMPORTANT: origin 0 is NOT a valid ItemOrigin (valid values
+# are 2=Purchased, 8=Crate, 22=BaseItem), and the CS:GO client silently refuses
+# to render items that carry an unknown origin - so they never appear in the
+# inventory. 8 is what every working inventory.txt in the wild uses.
+DEFAULT_ORIGIN = 8
 
 
 def _item_to_kv(item: dict[str, Any], position: int) -> dict[str, Any]:
