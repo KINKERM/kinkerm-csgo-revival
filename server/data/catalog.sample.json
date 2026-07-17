@@ -1,0 +1,32 @@
+{
+  "_comment": "Minimal starter catalog. The authoritative catalog is generated from your own CS:GO install with build_catalog.py. The def_index/key values below are the earliest, most stable CS:GO crates. Copy this to catalog.json to try things out, then replace it with a generated one.",
+  "cases": {
+    "weapon_case_1": {
+      "display_name": "CS:GO Weapon Case",
+      "def_index": 4001,
+      "key_def_index": 5001,
+      "series": 1,
+      "rarity": 1
+    },
+    "esports_2013_case": {
+      "display_name": "eSports 2013 Case",
+      "def_index": 4002,
+      "key_def_index": 5002,
+      "series": 2,
+      "rarity": 1
+    },
+    "operation_bravo_case": {
+      "display_name": "Operation Bravo Case",
+      "def_index": 4003,
+      "key_def_index": 5003,
+      "series": 3,
+      "rarity": 1
+    }
+  },
+  "keys": {
+    "5001": { "display_name": "CS:GO Weapon Case Key", "def_index": 5001 },
+    "5002": { "display_name": "eSports Key", "def_index": 5002 },
+    "5003": { "display_name": "Operation Bravo Case Key", "def_index": 5003 }
+  },
+  "items": {}
+}

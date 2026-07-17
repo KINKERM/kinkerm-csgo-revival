@@ -1,0 +1,50 @@
+// CS:GO Revival - csgo_gc configuration
+// Place this at:  <csgo install>/csgo_gc/config.txt
+//
+// This is a normal csgo_gc config tuned for a free, admin-driven revival:
+//  - cases open with the standard CS:GO flow and animation
+//  - the matching key is granted alongside each case by the revival server,
+//    so opening is effectively free (no purchase, no store step)
+
+"config"
+{
+	// 1 = print csgo_gc log output to console (handy while setting up)
+	"log_output"		"1"
+
+	// Only show other csgo_gc servers in the browser (keeps your community together).
+	// Set to 0 if you also want to see regular servers.
+	"show_csgo_gc_servers_only"	"1"
+
+	// Consume the case AND the key when opened - i.e. behave exactly like real
+	// CS:GO. Because the revival server bundles a matching key with every case
+	// it grants, opening stays free.
+	//
+	// Set this to 0 if you'd rather cases/keys never be consumed (infinite
+	// re-opening from a single granted case). If you do that, grant cases with
+	// `--no-key` and hand out one permanent key instead.
+	"destroy_used_items"	"1"
+
+	// Relative drop weights per case rarity tier. These mirror CS:GO's real
+	// published odds so openings feel authentic. Rarity ids:
+	//   3 = Mil-Spec (blue), 4 = Restricted (purple), 5 = Classified (pink),
+	//   6 = Covert (red), 99 = Rare Special / knives & gloves (gold)
+	"rarity_weights"
+	{
+		"3"		"0.7992"
+		"4"		"0.1598"
+		"5"		"0.0320"
+		"6"		"0.0064"
+		"99"	"0.0026"
+	}
+
+	// Cosmetic profile settings shown in-game. Tune to taste.
+	"ranks"
+	{
+		"competitive_rank"	"18"
+		"competitive_wins"	"1000"
+		"wingman_rank"		"18"
+		"dangerzone_rank"	"15"
+	}
+
+	"player_level"		"40"
+}

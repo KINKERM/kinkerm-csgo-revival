@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""CS:GO Revival inventory + admin server (stdlib only).
+
+Public:
+  GET  /health                      -> "ok"
+  GET  /catalog                     -> catalog.json
+  GET  /inventory/<steamid64>       -> csgo_gc inventory.txt (text/plain)
+
+Admin (require header  X-Admin-Token: <token>):
+  GET  /admin/player/<steamid64>    -> player record (json)
+  GET  /admin/players               -> list of steamids
+  POST /admin/grant-case            {steamid, case, count?, include_key?}
+  POST /admin/grant-item            {steamid, def_index, quality?, rarity?, attributes?, count?}
+  POST /admin/revoke                {steamid, def_index, count?}
+  POST /admin/clear                 {steamid}
+
+Run:  python3 revival_server.py --host 0.0.0.0 --port 8787
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import secrets
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import inventory as inventory_mod
+from catalog import Catalog
+from store import PlayerStore
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(HERE, "data")
+CONFIG_PATH = os.path.join(DATA_DIR, "server_config.json")
+
+
+def load_config() -> dict:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    config = {
+        "admin_token": secrets.token_hex(24),
+        "players_file": os.path.join(DATA_DIR, "players.json"),
+        "catalog_file": os.path.join(DATA_DIR, "catalog.json"),
+    }
+    with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+        json.dump(config, fh, indent=2)
+    print(f"[revival] generated new admin token -> {config['admin_token']}")
+    print(f"[revival] (stored in {CONFIG_PATH})")
+    return config
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "CSGORevival/1.0"
+
+    # injected by make_handler
+    store: PlayerStore
+    catalog: Catalog
+    admin_token: str
+
+    # ---- helpers -----------------------------------------------------------
+    def _send(self, code: int, body: bytes, content_type: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _send_text(self, code: int, text: str) -> None:
+        self._send(code, text.encode("utf-8"), "text/plain; charset=utf-8")
+
+    def _send_json(self, code: int, obj) -> None:
+        self._send(code, json.dumps(obj).encode("utf-8"), "application/json")
+
+    def _authed(self) -> bool:
+        return secrets.compare_digest(
+            self.headers.get("X-Admin-Token", ""), self.admin_token
+        )
+
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
+    def log_message(self, fmt, *args):  # quieter logging
+        print(f"[revival] {self.address_string()} {fmt % args}")
+
+    # ---- routing -----------------------------------------------------------
+    def do_GET(self):
+        path = self.path.split("?", 1)[0].rstrip("/")
+
+        if path == "/health" or path == "":
+            return self._send_text(200, "ok")
+
+        if path == "/catalog":
+            return self._send_json(200, {
+                "cases": self.catalog.cases,
+                "keys": self.catalog.keys,
+                "items": self.catalog.items,
+            })
+
+        if path.startswith("/inventory/"):
+            steamid = path[len("/inventory/"):]
+            if not steamid.isdigit():
+                return self._send_text(400, "invalid steamid")
+            player = self.store.get_player(steamid)
+            return self._send_text(200, inventory_mod.render_inventory_txt(player))
+
+        if path == "/admin/players":
+            if not self._authed():
+                return self._send_text(401, "unauthorized")
+            return self._send_json(200, {"players": self.store.list_players()})
+
+        if path.startswith("/admin/player/"):
+            if not self._authed():
+                return self._send_text(401, "unauthorized")
+            steamid = path[len("/admin/player/"):]
+            return self._send_json(200, self.store.get_player(steamid))
+
+        return self._send_text(404, "not found")
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_POST(self):
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if not path.startswith("/admin/"):
+            return self._send_text(404, "not found")
+        if not self._authed():
+            return self._send_text(401, "unauthorized")
+
+        body = self._read_json_body()
+        steamid = str(body.get("steamid", "")).strip()
+        if not steamid.isdigit():
+            return self._send_json(400, {"error": "valid steamid (SteamID64) required"})
+
+        try:
+            if path == "/admin/grant-case":
+                added = self.store.grant_case(
+                    steamid,
+                    str(body["case"]),
+                    count=int(body.get("count", 1)),
+                    include_key=bool(body.get("include_key", True)),
+                )
+                return self._send_json(200, {"ok": True, "added": added})
+
+            if path == "/admin/grant-item":
+                n = self.store.grant_item(
+                    steamid,
+                    int(body["def_index"]),
+                    quality=body.get("quality"),
+                    rarity=body.get("rarity"),
+                    attributes=body.get("attributes"),
+                    count=int(body.get("count", 1)),
+                )
+                return self._send_json(200, {"ok": True, "added": n})
+
+            if path == "/admin/revoke":
+                count = body.get("count")
+                removed = self.store.revoke_def_index(
+                    steamid,
+                    int(body["def_index"]),
+                    count=None if count is None else int(count),
+                )
+                return self._send_json(200, {"ok": True, "removed": removed})
+
+            if path == "/admin/clear":
+                self.store.clear(steamid)
+                return self._send_json(200, {"ok": True})
+
+        except KeyError as exc:
+            return self._send_json(400, {"error": str(exc)})
+        except (ValueError, TypeError) as exc:
+            return self._send_json(400, {"error": f"bad request: {exc}"})
+
+        return self._send_text(404, "not found")
+
+
+def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str):
+    return type("BoundHandler", (Handler,), {
+        "store": store,
+        "catalog": catalog,
+        "admin_token": admin_token,
+    })
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="CS:GO Revival server")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8787)
+    args = parser.parse_args()
+
+    config = load_config()
+    catalog = Catalog.load(config["catalog_file"])
+    store = PlayerStore(config["players_file"], catalog)
+
+    handler = make_handler(store, catalog, config["admin_token"])
+    httpd = ThreadingHTTPServer((args.host, args.port), handler)
+
+    print(f"[revival] serving on http://{args.host}:{args.port}")
+    print(f"[revival] catalog: {len(catalog.cases)} cases, {len(catalog.items)} items")
+    print(f"[revival] admin token: {config['admin_token']}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[revival] shutting down")
+        httpd.shutdown()
+
+
+if __name__ == "__main__":
+    main()

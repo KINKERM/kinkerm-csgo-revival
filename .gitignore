@@ -1,0 +1,15 @@
+# runtime data (per-deployment; do not commit)
+server/data/players.json
+server/data/catalog.json
+server/data/server_config.json
+
+# build output
+launcher/build/
+build/
+
+# python
+__pycache__/
+*.pyc
+
+# editor / OS
+.DS_Store
