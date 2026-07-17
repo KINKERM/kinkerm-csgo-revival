@@ -111,6 +111,19 @@ folder for `csgo.exe`.
 ---
 
 ## Troubleshooting
+- **`CMP0000` / "No cmake_minimum_required command is present" / it suggests
+  `cmake_minimum_required(VERSION 4.x)`** → your CMake is too new (CMake 4.x, often
+  bundled with *preview* Visual Studio builds like "18"). CMake 4 dropped support for
+  the old minimums that csgo_gc's dependencies still use. Fix: delete the `build`
+  folder and re-configure with a compatibility flag:
+  ```
+  rmdir /s /q build
+  cmake -A Win32 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -B build
+  cmake --build build --config Release
+  ```
+  If it still fails, install **stable CMake 3.31** (cmake.org) or **stable Visual
+  Studio 2022 v17** (not the preview) and use that instead. Always delete `build`
+  between attempts — CMake caches the failed state.
 - **`cmake` isn't recognized** → you didn't open the *"x64 Native Tools Command Prompt
   for VS 2022"*. Open that specific terminal (it puts CMake on PATH), or reinstall the
   C++ workload from Step 2.
