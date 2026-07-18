@@ -155,3 +155,65 @@ browsers will group around your community. Add SourceMod/MetaMod for admin tools
 Items exist only on your servers. They are **not** real Steam inventory assets, can't be traded on the
 Steam Market, and have no monetary value. Keep it free and cosmetic — don't attach real money to case
 opening, which would turn it into online gambling with a completely different legal footprint.
+
+
+---
+
+## One-click setup for friends + playing together (Steam P2P)
+
+This is the easy path: your friends run **one script** and get an identical setup
+(patched `csgo_gc`, our `config.txt`, and our custom `items_game.txt` with Kinkerm's
+Case and everything we added), then you all play over **Steam P2P lobbies** — no port
+forwarding, no dedicated server.
+
+### Host (you) — do this once
+
+1. **Build the pack.** After you've compiled the patched `csgo_gc` (VS2022, Release),
+   point `build_pack.py` at your build output:
+   ```bash
+   cd launcher
+   python3 build_pack.py --csgo-gc-dir /path/to/your/built/csgo_gc
+   ```
+   This produces `csgo-revival-pack.zip` = your patched `csgo_gc` + this repo's
+   `gc-config/config.txt` + this repo's custom `items_game.txt`, laid out to drop over a
+   CS:GO install.
+2. **Publish it.** Upload `csgo-revival-pack.zip` as an asset on a
+   **GitHub Release** of this repo (Releases → Draft a new release → attach the zip).
+   The default URL `.../releases/latest/download/csgo-revival-pack.zip` then always
+   points at your newest pack.
+3. **Fill in `install.py`.** Edit the two constants at the top of `launcher/install.py`:
+   - `SERVER_URL` → your Oracle inventory server (e.g. `http://<PUBLIC_IP>:8787`)
+   - `PACK_URL`  → your release zip URL
+4. **Grant your friends their stuff** (see Step 4) using their SteamID64.
+5. **Share `install.py` and `launcher.py`** (send both files, or just have them clone the
+   repo). That's all they need.
+
+### Friend — do this once
+
+1. Enable **CS:GO Legacy** in Steam (right-click CS2 → Properties → Betas → `csgo_legacy`).
+2. Make sure **Python 3** is installed.
+3. Run:
+   ```bash
+   python3 install.py
+   ```
+   It auto-detects their CS:GO folder and SteamID64, downloads and installs the pack,
+   writes their `launcher.cfg`, syncs their granted inventory, and launches the game.
+   (If auto-detect fails, it just asks them to paste the folder / SteamID64.)
+
+From then on they launch with `python3 launcher.py` (syncs inventory + boots the game).
+
+### Playing together over Steam P2P
+
+Because everyone installed the **same pack** (same `csgo_gc` build + config + items),
+lobbies are compatible. To play:
+
+1. Everyone launches via the launcher so inventories are synced.
+2. **Host creates a lobby** in-game; friends **join through Steam** (friends list →
+   Join Game, or accept a lobby invite).
+3. Host starts the match — traffic rides Steam's relay network. No IPs, no ports.
+
+Cases/skins/trade-ups/Kinkerm's Case all work the same regardless of how you connect —
+case opening is handled locally by each player's `csgo_gc`.
+
+> Re-run `build_pack.py` and re-upload whenever you change `config.txt`, `items_game.txt`,
+> or rebuild `csgo_gc`; friends get the update next time they run `install.py`.
