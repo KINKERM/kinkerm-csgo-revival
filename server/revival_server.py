@@ -57,6 +57,13 @@ def load_config() -> dict:
             config[key] = factory()
             changed = True
 
+    # Optional: a case slug (from the catalog) that acts as the "Gold Trade-Up"
+    # crate. Every player is auto-given this crate + its key when their inventory
+    # is served, so anyone can do 5 Covert -> gold with NO admin grant. Empty = off.
+    if "gold_tradeup_case" not in config:
+        config["gold_tradeup_case"] = ""
+        changed = True
+
     if changed:
         with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(config, fh, indent=2)
@@ -72,6 +79,8 @@ class Handler(BaseHTTPRequestHandler):
     catalog: Catalog
     admin_token: str
     sync_token: str
+    gold_tradeup_crate_def: int = 0
+    gold_tradeup_key_def: int = 0
 
     # ---- helpers -----------------------------------------------------------
     def _send(self, code: int, body: bytes, content_type: str) -> None:
@@ -118,6 +127,21 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter logging
         print(f"[revival] {self.address_string()} {fmt % args}")
 
+    def _inject_gold_tradeup_crate(self, player: dict) -> None:
+        """Give every player the Gold Trade-Up crate (+ its key) so anyone can do
+        5 Covert -> gold without an admin grant. Injected into the *rendered*
+        inventory only (not stored), so it reappears each session if consumed."""
+        crate_def = self.gold_tradeup_crate_def
+        if not crate_def:
+            return
+        items = player.setdefault("items", [])
+        present = {int(it.get("def_index", 0) or 0) for it in items}
+        if crate_def not in present:
+            items.append({"def_index": crate_def, "quality": 4, "rarity": 1})
+        key_def = self.gold_tradeup_key_def
+        if key_def and key_def not in present:
+            items.append({"def_index": key_def, "quality": 4, "rarity": 1})
+
     # ---- routing -----------------------------------------------------------
     def do_GET(self):
         path = self.path.split("?", 1)[0].rstrip("/")
@@ -137,6 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             if not steamid.isdigit():
                 return self._send_text(400, "invalid steamid")
             player = self.store.get_player(steamid)
+            self._inject_gold_tradeup_crate(player)
             return self._send_text(200, inventory_mod.render_inventory_txt(player))
 
         if path == "/admin/players":
@@ -225,12 +250,15 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_text(404, "not found")
 
 
-def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str, sync_token: str):
+def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str, sync_token: str,
+                 gold_tradeup_crate_def: int = 0, gold_tradeup_key_def: int = 0):
     return type("BoundHandler", (Handler,), {
         "store": store,
         "catalog": catalog,
         "admin_token": admin_token,
         "sync_token": sync_token,
+        "gold_tradeup_crate_def": gold_tradeup_crate_def,
+        "gold_tradeup_key_def": gold_tradeup_key_def,
     })
 
 
@@ -244,7 +272,22 @@ def main() -> None:
     catalog = Catalog.load(config["catalog_file"])
     store = PlayerStore(config["players_file"], catalog)
 
-    handler = make_handler(store, catalog, config["admin_token"], config["sync_token"])
+    # resolve the Gold Trade-Up crate (auto-given to every player)
+    gold_crate_def = 0
+    gold_key_def = 0
+    gold_case_slug = config.get("gold_tradeup_case", "")
+    if gold_case_slug:
+        case = catalog.get_case(gold_case_slug)
+        if case:
+            gold_crate_def = int(case.get("def_index") or 0)
+            gold_key_def = int(case.get("key_def_index") or 0)
+            print(f"[revival] gold trade-up crate: '{gold_case_slug}' "
+                  f"(def {gold_crate_def}, key {gold_key_def}) auto-given to all players")
+        else:
+            print(f"[revival] WARNING: gold_tradeup_case '{gold_case_slug}' not found in catalog")
+
+    handler = make_handler(store, catalog, config["admin_token"], config["sync_token"],
+                           gold_crate_def, gold_key_def)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
 
     print(f"[revival] serving on http://{args.host}:{args.port}")

@@ -1047,26 +1047,11 @@ bool Inventory::UnlockCrateGoldTradeUp(uint64_t crateId,
     notification.add_item_id(goldId);
     notification.set_request(k_EGCItemCustomizationNotification_UnlockCrate);
 
-    // consume the crate (and the key if one was used). Re-find by id: TradeUp's
-    // CreateItem may have rehashed m_items and invalidated earlier iterators.
-    if (GetConfig().DestroyUsedItems())
-    {
-        auto crate = m_items.find(crateId);
-        if (crate != m_items.end())
-        {
-            CMsgSOSingleObject destroyCrate;
-            DestroyItem(crate, destroyCrate);
-            destroyed.push_back(std::move(destroyCrate));
-        }
-
-        auto key = m_items.find(keyId);
-        if (key != m_items.end())
-        {
-            CMsgSOSingleObject destroyKey;
-            DestroyItem(key, destroyKey);
-            destroyed.push_back(std::move(destroyKey));
-        }
-    }
+    // NOTE: the Gold Trade-Up crate and its key are intentionally NOT consumed -
+    // it's a permanent, reusable trade-up tool, so a player can keep doing
+    // 5 Covert -> gold without needing it re-granted. Only the 5 Coverts (consumed
+    // by TradeUp above) and the produced gold change hands here.
+    (void)keyId;
 
     return true;
 }

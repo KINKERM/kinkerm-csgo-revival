@@ -364,35 +364,46 @@ How the gold is chosen (all GC-side, already correct):
 - On startup the schema walks every case loot list; a case list contains its
   collection's skins plus exactly one **unusual** sublist (the knife/glove pool,
   loaded from `csgo_gc/unusual_loot_lists.txt`). Each skin is mapped to that pool.
-- The crate picks **5 Covert skins from one collection** (same StatTrak state) out of
-  your inventory, consumes them, and rolls a random knife/glove from that collection's
-  pool — StatTrak carried over where valid, output float via the normalized-average
-  formula.
+- The crate picks **5 Covert skins** out of your inventory (same StatTrak state,
+  **collections can be mixed**), consumes them, and rolls a knife/glove weighted by how
+  many inputs came from each collection — e.g. 3 from Weapon Case 1 + 2 from another →
+  3:2 odds. StatTrak carried over where valid; output float via the normalized-average.
+- The crate is a **reusable tool** — it is NOT consumed, so a player can keep doing
+  trade-ups (only the 5 Coverts are spent each time).
 
-### Setup
-1. Choose a crate to act as the trigger. Run `python3 admin.py catalog` and pick any
-   case's **DEF** number (that case becomes the Gold Trade-Up crate — opening it will
-   no longer give a normal roll, so pick one you don't mind repurposing).
-2. In `csgo_gc\config.txt` add (using that def index):
-   ```
-   gold_tradeup_crate  <crate_def_index>
-   ```
-3. Grant yourself the crate and 5 Coverts of one collection, e.g.:
-   ```
-   python3 admin.py grant-case  <steamid> <that_case_slug>
-   python3 admin.py grant-item  <steamid> --def-index 9 --paint-kit 51 --wear 0.03 --quality 4 --rarity 6 --count 5
-   ```
-4. Relaunch, open the Gold Trade-Up crate. Your 5 Coverts are consumed and a gold is
-   revealed. With `log_output 1` you'll see `tradeup: 5 Covert -> GOLD ...`.
+### Self-service: every player gets the crate automatically (no admin grant)
+Because `csgo_gc` runs locally per player, the crate would normally have to be granted.
+Instead the **revival server auto-gives it to everyone**: when it serves a player's
+`inventory.txt`, it injects the crate + its key if missing. So any player can do
+5 Covert → gold on their own.
 
-If you don't have 5 Coverts of a single collection, opening the crate logs
-`gold trade-up: need 5 Covert skins from the same collection ...` and consumes nothing.
+Setup (once, by the host):
+1. Pick a case to be the Gold Trade-Up crate. `python3 admin.py catalog` → note its
+   **slug** and **DEF** number. (Opening this case no longer gives a normal roll, so
+   pick one you're happy to repurpose.)
+2. In the server's `server/data/server_config.json`, set:
+   ```json
+   "gold_tradeup_case": "<that_case_slug>"
+   ```
+   Restart the server. It now auto-gives that crate (+ its key) to every player.
+3. In the **shipped** `csgo_gc\config.txt` (the one all players use), set the matching
+   def so the DLL knows that crate triggers the recipe:
+   ```
+   gold_tradeup_crate  <that_case_DEF>
+   ```
+
+Players then just: have 5 Coverts → open the auto-given crate → get a weighted gold.
+No grant needed. With `log_output 1` the console shows `tradeup: 5 Covert -> GOLD ...`.
+If they don't have 5 Coverts of the same StatTrak state, it logs
+`gold trade-up: need 5 Covert skins ...` and consumes nothing.
 
 ## Known limitations
 - Covert→gold is delivered via a crate, not the contract screen (legacy client can't do
-  the covert contract). Standard trade-ups still use the real contract screen.
+  the covert contract, and there's no right-click/menu hook — that's client UI we can't
+  author). Standard trade-ups still use the real contract screen.
 - The reveal shows the trigger crate's spinning items, then lands on your gold — cosmetic
-  only; the gold is what you keep.
+  only; the gold is what you keep. (A custom gold-only-reel crate named after the host is
+  a possible follow-up.)
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
 > (c) Mikko Kokko. Changed files: `case_opening.*` (pity), and `gc_client.*`,
