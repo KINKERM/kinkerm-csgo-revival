@@ -950,17 +950,14 @@ uint32_t Inventory::ItemDefIndex(uint64_t itemId) const
     return (it != m_items.end()) ? it->second.def_index() : 0;
 }
 
-// find 5 Covert skins from a single collection that share the same StatTrak state
+// find 5 Covert skins that share the same StatTrak state. Collections may be
+// MIXED - the gold pool is then weighted by how many inputs came from each
+// collection (e.g. 3 from Weapon Case 1 + 2 from another -> 3:2 odds). StatTrak
+// and non-StatTrak can't be combined (a contract is all one or the other).
 bool Inventory::SelectCovertsForTradeUp(std::vector<uint64_t> &out) const
 {
-    struct Group
-    {
-        const Collection *collection;
-        bool statTrak;
-        std::vector<uint64_t> ids;
-    };
-
-    std::vector<Group> groups;
+    std::vector<uint64_t> normal;
+    std::vector<uint64_t> statTrak;
 
     for (const auto &pair : m_items)
     {
@@ -968,7 +965,7 @@ bool Inventory::SelectCovertsForTradeUp(std::vector<uint64_t> &out) const
 
         uint32_t paintKit = 0;
         bool hasWear = false;
-        bool statTrak = false;
+        bool isStatTrak = false;
 
         for (const CSOEconItemAttribute &attribute : item.attribute())
         {
@@ -981,7 +978,7 @@ bool Inventory::SelectCovertsForTradeUp(std::vector<uint64_t> &out) const
                 hasWear = true;
                 break;
             case ItemSchema::AttributeKillEater:
-                statTrak = true;
+                isStatTrak = true;
                 break;
             }
         }
@@ -998,32 +995,20 @@ bool Inventory::SelectCovertsForTradeUp(std::vector<uint64_t> &out) const
             continue;
         }
 
-        // it's a Covert skin - bucket it by (collection, StatTrak)
-        Group *group = nullptr;
-        for (Group &existing : groups)
-        {
-            if (existing.collection == collection && existing.statTrak == statTrak)
-            {
-                group = &existing;
-                break;
-            }
-        }
-        if (!group)
-        {
-            groups.push_back({ collection, statTrak, {} });
-            group = &groups.back();
-        }
-
-        group->ids.push_back(item.id());
+        // it's a Covert skin - split only by StatTrak state, collection can vary
+        (isStatTrak ? statTrak : normal).push_back(item.id());
     }
 
-    for (const Group &group : groups)
+    // prefer a full non-StatTrak contract, then StatTrak
+    if (normal.size() >= 5)
     {
-        if (group.ids.size() >= 5)
-        {
-            out.assign(group.ids.begin(), group.ids.begin() + 5);
-            return true;
-        }
+        out.assign(normal.begin(), normal.begin() + 5);
+        return true;
+    }
+    if (statTrak.size() >= 5)
+    {
+        out.assign(statTrak.begin(), statTrak.begin() + 5);
+        return true;
     }
 
     return false;
