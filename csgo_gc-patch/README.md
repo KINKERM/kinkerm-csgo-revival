@@ -258,10 +258,9 @@ of the next rarity up**, with the output's wear (float) derived from the inputs.
 (`k_EMsgGCCraft`, id 1002) but upstream just logged it as "unhandled" and nothing
 happened. This build implements it.
 
-**Status: implemented for standard trade-ups** (Consumer → ... → Classified → Covert).
-The **5 Covert → 1 gold (knife/glove)** recipe from the recent CS2 update is **not in
-this build yet** — it needs the per-collection knife pool, which the collection data
-doesn't contain, so it's the next stage. Covert inputs are rejected cleanly for now.
+**Status: implemented**, including the CS2 **5 Covert → 1 gold (knife/glove)** recipe.
+Standard trade-ups go Consumer → ... → Classified → Covert; a Covert contract yields a
+random knife/glove from the case's gold pool.
 
 The float math we're targeting (same as real CS:GO), per skin:
 
@@ -347,9 +346,20 @@ screen ends up needing that response to close cleanly, that's the follow-up.
 If a contract is rejected, the console prints exactly why (e.g. `tradeup: mixed
 rarities`, `... not in any collection`, or the Covert→gold notice).
 
-## Known limitations / next stage
-- **5 Covert → gold (knife/glove)** is not implemented yet — needs mapping each
-  collection to its case's knife pool. Covert inputs are rejected for now.
+## 5 Covert → gold (knife/glove)
+Covert inputs run the CS2 gold recipe instead of a normal next-rarity trade-up:
+- On startup the schema walks every case loot list; a case list contains its
+  collection's skins plus exactly one **unusual** sublist (the knife/glove pool,
+  loaded from `csgo_gc/unusual_loot_lists.txt`). Each skin is mapped to that pool.
+- A Covert contract picks a gold pool from one of the input collections (weighted by
+  input count), then a random knife/glove from it. StatTrak carries over to knives
+  that support it (gloves and some newer knives can't be StatTrak); the output float
+  uses the same normalized-average formula.
+- Fill the contract with Covert skins (the contract uses 5 slots for this recipe).
+- If a Covert skin has no known gold pool, the contract is rejected with a log line
+  (`... has no known gold pool`) and nothing is consumed.
+
+## Known limitations
 - The trade-up "reveal" animation may differ from retail since we don't send a craft
   response; the resulting item still lands in your inventory via the SO cache.
 

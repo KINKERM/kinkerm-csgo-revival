@@ -158,6 +158,13 @@ public:
         uint32_t paintKitDefIndex,
         const CollectionItem **outItem) const;
 
+    // trade-up contracts (revival addition) --- 5 Covert -> gold recipe
+    // returns the unusual (knife/glove) loot list associated with the case that
+    // a given Covert skin belongs to, or nullptr if none is known. The returned
+    // LootList's items are the possible gold outputs.
+    const LootList *FindUnusualPoolForItem(uint32_t itemDefIndex,
+        uint32_t paintKitDefIndex) const;
+
 public:
     // these could be parsed from the item schema but reduce code complexity by hardcoding them
     enum Rarity
@@ -265,6 +272,7 @@ private:
 
     // trade-up contracts (revival addition)
     void ParseItemSets(const KeyValue *itemSetsKey);
+    void BuildUnusualPools();
 
     bool ParseLootListItem(LootListItem &item, std::string_view name);
 
@@ -288,4 +296,9 @@ private:
     // from (itemDefIndex << 32 | paintKitDefIndex) to the owning collection index
     std::vector<Collection> m_collections;
     std::unordered_map<uint64_t, size_t> m_collectionByItem;
+
+    // trade-up contracts (revival addition): maps a skin (itemDef << 32 |
+    // paintKitDef) to the unusual (knife/glove) loot list of its case, for the
+    // 5 Covert -> gold recipe. Built by walking the case loot lists.
+    std::unordered_map<uint64_t, const LootList *> m_unusualPoolByItem;
 };

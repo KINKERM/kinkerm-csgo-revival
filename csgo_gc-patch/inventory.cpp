@@ -538,8 +538,10 @@ bool Inventory::UnlockCrate(uint64_t crateId,
 
 // trade-up contracts (revival addition)
 // ---------------------------------------------------------------------------
-// Consumes the input skins and produces one skin of the next rarity up. Mirrors
-// CS:GO trade-up contracts:
+// Consumes the input skins and produces one skin of the next rarity up. For
+// Covert inputs it runs the CS2 "5 Covert -> 1 gold (knife/glove)" recipe,
+// pulling the output from the case's gold pool instead. Mirrors CS:GO trade-up
+// contracts:
 //   - all inputs must be painted weapon skins in a known collection (item_set)
 //   - all inputs must share the same rarity and the same StatTrak state
 //   - the output collection is chosen from the inputs' collections, weighted by
@@ -648,13 +650,141 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
         inputs.push_back({ item.def_index(), paintKit, wear, collection, collItem });
     }
 
-    // the top rarity trade-up (5 Covert -> gold knife/glove) needs the case knife
-    // pool, which item_sets don't contain - staged as a follow-up. Everything up
-    // to Classified -> Covert works here.
+    // ===== 5 Covert -> 1 gold (knife/glove), the CS2 recipe =====
+    // Covert is the top normal grade, so instead of "next rarity" the output is a
+    // random knife/glove from the case pool of one of the input collections.
     if (commonRarity >= ItemSchema::RarityAncient)
     {
-        Platform::Print("tradeup: Covert->gold (knife/glove) recipe is not supported in this build yet\n");
-        return false;
+        // gather each input's case gold pool, weighted by how many inputs used it
+        std::vector<std::pair<const LootList *, int>> pools;
+        for (const Input &in : inputs)
+        {
+            const LootList *pool = m_itemSchema.FindUnusualPoolForItem(in.defIndex, in.paintKit);
+            if (!pool)
+            {
+                Platform::Print("tradeup: Covert input def %u paintkit %u has no known gold pool, aborting\n",
+                    in.defIndex, in.paintKit);
+                return false;
+            }
+
+            bool merged = false;
+            for (auto &entry : pools)
+            {
+                if (entry.first == pool)
+                {
+                    entry.second++;
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged)
+            {
+                pools.push_back({ pool, 1 });
+            }
+        }
+
+        int totalWeight = 0;
+        for (const auto &entry : pools)
+        {
+            totalWeight += entry.second;
+        }
+
+        // pick the gold pool weighted by input count
+        int roll = m_random.Integer<int>(1, totalWeight);
+        const LootList *chosenPool = pools.front().first;
+        int accum = 0;
+        for (const auto &entry : pools)
+        {
+            accum += entry.second;
+            if (roll <= accum)
+            {
+                chosenPool = entry.first;
+                break;
+            }
+        }
+
+        // uniform-random gold from that pool
+        std::vector<const LootListItem *> golds;
+        for (const LootListItem &gold : chosenPool->items)
+        {
+            if (gold.type == LootListItemPaintable && gold.itemInfo && gold.paintKitInfo)
+            {
+                golds.push_back(&gold);
+            }
+        }
+
+        if (golds.empty())
+        {
+            Platform::Print("tradeup: chosen gold pool has no usable items, aborting\n");
+            return false;
+        }
+
+        const LootListItem *chosen = golds[m_random.Integer<size_t>(0, golds.size() - 1)];
+
+        // output float = normalized average of the inputs, mapped to the gold range
+        float sumNormalized = 0.0f;
+        for (const Input &in : inputs)
+        {
+            float lo = in.collItem->paintKitInfo->m_minFloat;
+            float hi = in.collItem->paintKitInfo->m_maxFloat;
+            float normalized = (hi > lo) ? (in.wear - lo) / (hi - lo) : 0.0f;
+            if (normalized < 0.0f) normalized = 0.0f;
+            if (normalized > 1.0f) normalized = 1.0f;
+            sumNormalized += normalized;
+        }
+        float avgNormalized = sumNormalized / static_cast<float>(inputs.size());
+        float outLo = chosen->paintKitInfo->m_minFloat;
+        float outHi = chosen->paintKitInfo->m_maxFloat;
+        float outputFloat = avgNormalized * (outHi - outLo) + outLo;
+
+        // StatTrak carries over only to items that can have it - gloves and some
+        // newer knives (unusual quality, def >= 1000) can't, matching the case
+        // opening logic in ShouldMakeStatTrak.
+        bool goldStatTrak = statTrak && (chosen->itemInfo->m_defIndex < 1000);
+
+        // build the gold with the same path case opening uses, then override the
+        // wear with our computed float (create BEFORE destroying inputs)
+        CSOEconItem temp;
+        if (!m_itemSchema.CreateItemFromLootListItem(m_random, *chosen, goldStatTrak,
+                ItemOriginCrate, UnacknowledgedCrafted, temp))
+        {
+            Platform::Print("tradeup: failed to create gold item, aborting\n");
+            return false;
+        }
+
+        for (int i = 0; i < temp.attribute_size(); i++)
+        {
+            CSOEconItemAttribute *attribute = temp.mutable_attribute(i);
+            if (attribute->def_index() == ItemSchema::AttributeTextureWear)
+            {
+                m_itemSchema.SetAttributeFloat(attribute, outputFloat);
+                break;
+            }
+        }
+
+        CSOEconItem &output = CreateItem(temp);
+
+        Platform::Print("tradeup: %zu Covert -> GOLD def %u paintkit %u float %.4f%s\n",
+            inputs.size(), chosen->itemInfo->m_defIndex, chosen->paintKitInfo->m_defIndex,
+            outputFloat, goldStatTrak ? " StatTrak" : "");
+
+        ToSingleObject(newItem, output);
+
+        destroyed.reserve(itemIds.size());
+        for (uint64_t id : itemIds)
+        {
+            auto it = m_items.find(id);
+            if (it == m_items.end())
+            {
+                continue;
+            }
+
+            CMsgSOSingleObject destroy;
+            DestroyItem(it, destroy);
+            destroyed.push_back(std::move(destroy));
+        }
+
+        return true;
     }
 
     uint32_t outputRarity = commonRarity + 1;

@@ -196,6 +196,11 @@ ItemSchema::ItemSchema()
     {
         ParseRevolvingLootLists(revolvingLootListsKey);
     }
+
+    // trade-up contracts (revival addition): map each skin to its case's knife/
+    // glove pool for the 5 Covert -> gold recipe. Runs last so every loot list
+    // (including the unusual sublists) is parsed and linked.
+    BuildUnusualPools();
 }
 
 float ItemSchema::AttributeFloat(const CSOEconItemAttribute *attribute) const
@@ -1071,6 +1076,100 @@ const Collection *ItemSchema::FindCollectionForItem(uint32_t itemDefIndex,
     }
 
     return &collection;
+}
+
+// trade-up contracts (revival addition) --- 5 Covert -> gold recipe
+// collect every unusual (knife/glove) leaf list reachable from a loot list
+static void CollectUnusualLists(const LootList *list, std::vector<const LootList *> &out)
+{
+    if (list->isUnusual)
+    {
+        // unusual lists are leaves (their items are the golds)
+        out.push_back(list);
+        return;
+    }
+
+    for (const LootList *sub : list->subLists)
+    {
+        CollectUnusualLists(sub, out);
+    }
+}
+
+// collect every painted-skin entry reachable from a loot list, ignoring unusual
+// (gold) sublists
+static void CollectNormalSkins(const LootList *list, std::vector<const LootListItem *> &out)
+{
+    if (list->isUnusual)
+    {
+        return;
+    }
+
+    for (const LootListItem &item : list->items)
+    {
+        if (item.type == LootListItemPaintable)
+        {
+            out.push_back(&item);
+        }
+    }
+
+    for (const LootList *sub : list->subLists)
+    {
+        CollectNormalSkins(sub, out);
+    }
+}
+
+// A case's loot list contains the collection's skins (in rarity-tier sublists)
+// plus exactly one unusual sublist (its knife/glove pool - this is how the pity
+// system finds golds). So for every loot list that reaches exactly one unusual
+// list, we map each of its skins to that pool. A Covert input can then be traded
+// up into a random gold from its case's pool.
+void ItemSchema::BuildUnusualPools()
+{
+    for (const auto &pair : m_lootLists)
+    {
+        const LootList &list = pair.second;
+
+        std::vector<const LootList *> unusuals;
+        CollectUnusualLists(&list, unusuals);
+        if (unusuals.size() != 1)
+        {
+            // no pool, or ambiguous (multiple) - skip
+            continue;
+        }
+
+        std::vector<const LootListItem *> skins;
+        CollectNormalSkins(&list, skins);
+
+        for (const LootListItem *skin : skins)
+        {
+            if (!skin->itemInfo || !skin->paintKitInfo)
+            {
+                continue;
+            }
+
+            uint64_t key = (static_cast<uint64_t>(skin->itemInfo->m_defIndex) << 32)
+                | skin->paintKitInfo->m_defIndex;
+
+            // first mapping wins; skins in one case share a single pool
+            m_unusualPoolByItem.try_emplace(key, unusuals.front());
+        }
+    }
+
+    Platform::Print("Mapped %zu skins to gold (knife/glove) pools for trade-ups\n",
+        m_unusualPoolByItem.size());
+}
+
+const LootList *ItemSchema::FindUnusualPoolForItem(uint32_t itemDefIndex,
+    uint32_t paintKitDefIndex) const
+{
+    uint64_t key = (static_cast<uint64_t>(itemDefIndex) << 32) | paintKitDefIndex;
+    auto search = m_unusualPoolByItem.find(key);
+    if (search == m_unusualPoolByItem.end())
+    {
+        return nullptr;
+    }
+
+    return search->second;
 }
 
 // mikkotodo rewrite this function
