@@ -419,20 +419,18 @@ Appended as a new block at the end of `items_game.txt` (the CS:GO client and csg
 - **key def `9601`** `crate_kinkerm_case_key` — prefab `weapon_case_key`, matching
   `tool restriction kinkerm_case`.
 - **`revolving_loot_lists` `7777` → `kinkerm_case_lootlist`**.
-- **`client_loot_lists` `kinkerm_case_lootlist`** — a single reference to
-  `community_case_6_unusual`. That `_unusual` list is **undefined in the client's
-  items_game.txt** (like every knife pool — those live server-side in
-  `unusual_loot_lists.txt`), so the client renders it as the generic **"★ Rare Special
-  Item"** gold placeholder (icon `default_rare_item`, from the `weapon_case_base` prefab).
-  The result: the reel spins **only the mystery gold tile** — you don't see which knife/
-  glove you're getting until the reveal. csgo_gc resolves the same name cleanly from
-  `unusual_loot_lists.txt`, so there's no parse warning.
+- **`client_loot_lists` `kinkerm_case_lootlist`** — **587 real `[paintkit]weapon` gold
+  entries** (every knife + every glove finish, sourced from the upstream
+  `unusual_loot_lists.txt`; every paintkit + weapon is verified present in the client
+  schema, so each tile renders). This makes the reel **spin actual gold icons**.
 
-> Earlier revisions listed 587 explicit `[paintkit]weapon` gold icons here (so the reel
-> showed the actual skins). Switched to the placeholder so openings are a surprise.
+> The reel MUST contain resolvable items or the client falls back to the old-style
+> "countdown" screen instead of a spinning strip. A pure "★ Rare Special Item" mystery
+> reel (a single unresolvable `_unusual` reference) was tried and triggered exactly that
+> countdown bug — so the reel is populated with explicit golds instead.
 
-The actual roll is done entirely by the DLL (`PickRandomGold` over **all** unusual pools),
-independent of this reel list, so you still win any gold from any collection.
+Because the reel list is built from the same unusual pool the DLL rolls from, the item you
+win is always something the reel could show.
 
 ### The DLL side (the actual roll)
 - `item_schema.cpp::PickRandomGold` walks **every unusual (knife/glove) loot list** in the
