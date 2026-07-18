@@ -32,8 +32,8 @@ import urllib.error
 # ==========================================================================
 # HOST CONFIG - edit these two once, then hand this file to your friends.
 # ==========================================================================
-# Your Oracle (or wherever) inventory server:
-SERVER_URL = "http://CHANGE_ME:8787"
+# Your inventory server (Tailscale Funnel public HTTPS URL -> local :8787):
+SERVER_URL = "https://cuckersfun.tail52305f.ts.net"
 # The published pack zip (a GitHub Release asset works great). It must extract
 # so that csgo_gc.dll / config.txt / items_game.txt land in the CS:GO install.
 # See launcher/build_pack.py to build & upload it.
