@@ -419,13 +419,20 @@ Appended as a new block at the end of `items_game.txt` (the CS:GO client and csg
 - **key def `9601`** `crate_kinkerm_case_key` — prefab `weapon_case_key`, matching
   `tool restriction kinkerm_case`.
 - **`revolving_loot_lists` `7777` → `kinkerm_case_lootlist`**.
-- **`client_loot_lists` `kinkerm_case_lootlist`** — **587 real `[paintkit]weapon` gold
-  entries** (every knife + every glove finish, sourced from the upstream
-  `unusual_loot_lists.txt`; every paintkit + weapon is verified present in the client
-  schema, so each tile renders). This is what makes the reel show *only* golds.
+- **`client_loot_lists` `kinkerm_case_lootlist`** — a single reference to
+  `community_case_6_unusual`. That `_unusual` list is **undefined in the client's
+  items_game.txt** (like every knife pool — those live server-side in
+  `unusual_loot_lists.txt`), so the client renders it as the generic **"★ Rare Special
+  Item"** gold placeholder (icon `default_rare_item`, from the `weapon_case_base` prefab).
+  The result: the reel spins **only the mystery gold tile** — you don't see which knife/
+  glove you're getting until the reveal. csgo_gc resolves the same name cleanly from
+  `unusual_loot_lists.txt`, so there's no parse warning.
 
-Because the reel list is built from the same unusual pool the DLL rolls from, the item you
-win is always something the reel could show.
+> Earlier revisions listed 587 explicit `[paintkit]weapon` gold icons here (so the reel
+> showed the actual skins). Switched to the placeholder so openings are a surprise.
+
+The actual roll is done entirely by the DLL (`PickRandomGold` over **all** unusual pools),
+independent of this reel list, so you still win any gold from any collection.
 
 ### The DLL side (the actual roll)
 - `item_schema.cpp::PickRandomGold` walks **every unusual (knife/glove) loot list** in the
