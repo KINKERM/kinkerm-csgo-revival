@@ -27,6 +27,14 @@
 // bundles a matching key with every granted case, so opening stays free.
 "destroy_used_items"	"1"
 
+// 5 Covert -> gold "Gold Trade-Up crate". Opening the crate with this def index
+// consumes 5 of your Covert skins (any collections, weighted) and reveals a gold,
+// instead of a normal roll. The crate itself is NOT consumed (reusable).
+// Must match the case set as "gold_tradeup_case" in the server config so the
+// server auto-gives players that crate. 0 = disabled.
+//   4061 = Chroma Case (crate_community_6)
+"gold_tradeup_crate"	"4061"
+
 // Case drop weights (per rarity id):
 //   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted (purple),
 //   5 Classified (pink), 6 Covert (red), 99 Rare Special (gold - knives/gloves).
