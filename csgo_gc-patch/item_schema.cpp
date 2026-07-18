@@ -155,6 +155,14 @@ ItemSchema::ItemSchema()
         ParsePaintKitRarities(paintKitsRarityKey);
     }
 
+    // trade-up contracts (revival addition): collections (item_sets). must run
+    // after paint kits + paint kit rarities so PaintedItemRarity is accurate.
+    const KeyValue *itemSetsKey = itemsGame->GetSubkey("item_sets");
+    if (itemSetsKey)
+    {
+        ParseItemSets(itemSetsKey);
+    }
+
     const KeyValue *musicDefinitionsKey = itemsGame->GetSubkey("music_definitions");
     if (musicDefinitionsKey)
     {
@@ -943,6 +951,126 @@ static uint32_t PaintedItemRarity(uint32_t itemRarity, uint32_t paintKitRarity)
     }
 
     return rarity;
+}
+
+// trade-up contracts (revival addition)
+// parse the item_sets block (collections). each entry looks like:
+//   "set_community_2"
+//   {
+//       "name" "#CSGO_set_community_2"
+//       "items"
+//       {
+//           "[cu_m4a1_hot_rod]weapon_m4a1"  "1"
+//           ...
+//       }
+//   }
+// the value after each item is ignored; a skin's grade comes from the paint kit
+// rarity (via PaintedItemRarity), exactly like ParseLootListItem computes it.
+void ItemSchema::ParseItemSets(const KeyValue *itemSetsKey)
+{
+    m_collections.reserve(itemSetsKey->SubkeyCount());
+
+    for (const KeyValue &setKey : *itemSetsKey)
+    {
+        const KeyValue *itemsKey = setKey.GetSubkey("items");
+        if (!itemsKey)
+        {
+            continue;
+        }
+
+        Collection collection;
+        collection.name = setKey.Name();
+
+        for (const KeyValue &entryKey : *itemsKey)
+        {
+            if (entryKey.Name().empty())
+            {
+                continue;
+            }
+
+            std::string_view attributeName, itemName;
+            ParseAttributeAndItemName(entryKey.Name(), attributeName, itemName);
+
+            // only painted weapon skins ("[paintkit]weapon_xxx") are trade-up
+            // inputs/outputs; skip anything without a paint kit attribute
+            if (attributeName.empty())
+            {
+                continue;
+            }
+
+            const ItemInfo *itemInfo = ItemInfoByName(itemName);
+            if (!itemInfo)
+            {
+                continue;
+            }
+
+            const PaintKitInfo *paintKitInfo = PaintKitInfoByName(attributeName);
+            if (!paintKitInfo)
+            {
+                continue;
+            }
+
+            CollectionItem item;
+            item.itemDefIndex = itemInfo->m_defIndex;
+            item.paintKitDefIndex = paintKitInfo->m_defIndex;
+            item.rarity = PaintedItemRarity(itemInfo->m_rarity, paintKitInfo->m_rarity);
+            item.itemInfo = itemInfo;
+            item.paintKitInfo = paintKitInfo;
+
+            collection.items.push_back(item);
+        }
+
+        if (collection.items.empty())
+        {
+            continue;
+        }
+
+        size_t collectionIndex = m_collections.size();
+        m_collections.push_back(std::move(collection));
+
+        // build the reverse lookup for every skin in this collection
+        const Collection &stored = m_collections[collectionIndex];
+        for (const CollectionItem &item : stored.items)
+        {
+            uint64_t key = (static_cast<uint64_t>(item.itemDefIndex) << 32) | item.paintKitDefIndex;
+            m_collectionByItem.try_emplace(key, collectionIndex);
+        }
+    }
+
+    Platform::Print("Parsed %zu collections for trade-up contracts\n", m_collections.size());
+}
+
+const Collection *ItemSchema::FindCollectionForItem(uint32_t itemDefIndex,
+    uint32_t paintKitDefIndex,
+    const CollectionItem **outItem) const
+{
+    if (outItem)
+    {
+        *outItem = nullptr;
+    }
+
+    uint64_t key = (static_cast<uint64_t>(itemDefIndex) << 32) | paintKitDefIndex;
+    auto search = m_collectionByItem.find(key);
+    if (search == m_collectionByItem.end())
+    {
+        return nullptr;
+    }
+
+    const Collection &collection = m_collections[search->second];
+
+    if (outItem)
+    {
+        for (const CollectionItem &item : collection.items)
+        {
+            if (item.itemDefIndex == itemDefIndex && item.paintKitDefIndex == paintKitDefIndex)
+            {
+                *outItem = &item;
+                break;
+            }
+        }
+    }
+
+    return &collection;
 }
 
 // mikkotodo rewrite this function

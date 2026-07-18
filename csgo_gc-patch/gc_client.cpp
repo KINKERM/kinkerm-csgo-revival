@@ -756,79 +756,71 @@ void ClientGC::RemoveItemName(GCMessageRead &messageRead)
 
 // trade-up contracts (revival addition)
 // ---------------------------------------------------------------------------
-// STAGE 1 (this build): the craft / trade-up message (k_EMsgGCCraft = 1002) is
-// a NON-protobuf "struct" message and csgo_gc has never handled it, so its exact
-// wire format is unknown. Rather than guess blindly, this handler DUMPS THE RAW
-// MESSAGE so we can read the real layout off the console, plus prints a
-// best-guess decode. It intentionally does NOT modify the inventory yet.
+// Handles the craft / trade-up message (k_EMsgGCCraft = 1002), a NON-protobuf
+// "struct" message. Confirmed wire format (after the 18-byte struct header that
+// GCMessageRead's constructor already consumed):
+//   uint16 recipe
+//   uint16 itemCount
+//   uint64 itemIds[itemCount]   (low 32 bits = account id, high 32 bits = item id)
 //
-// To see the output you must have `log_output 1` in csgo_gc/config.txt.
-//
-// The struct-message header consumed by GCMessageRead's constructor is 18 bytes:
-//   uint32 type, uint32 (pad), uint64 (steamid/target), uint16 (pad)
-// so messageRead's read cursor is already positioned at the payload below, while
-// rawData/rawSize still point at the WHOLE message (header included) for the dump.
+// We hand the input ids to Inventory::TradeUp, then push the result to the client
+// using the same SO-cache Create/Destroy path that case opening uses (the client
+// struct-message header in GCMessageWrite is known-broken, so we deliberately do
+// NOT send a k_EMsgGCCraftResponse). Set `log_output 1` in config.txt to see logs.
 void ClientGC::Craft(GCMessageRead &messageRead, const uint8_t *rawData, uint32_t rawSize)
 {
-    constexpr uint32_t StructHeaderSize = 18;
+    (void)rawData;
+    (void)rawSize;
 
-    Platform::Print("=== CRAFT (trade-up) message received ===\n");
-    Platform::Print("craft: total message size = %u bytes (header %u + payload %u)\n",
-        rawSize, StructHeaderSize,
-        rawSize >= StructHeaderSize ? rawSize - StructHeaderSize : 0);
-
-    // full hex dump of the entire message, 16 bytes per line, so the real format
-    // can be reconstructed exactly. paste this whole block back to compare.
-    std::string line;
-    line.reserve(80);
-    for (uint32_t i = 0; i < rawSize; i++)
-    {
-        char byteText[4];
-        snprintf(byteText, sizeof(byteText), "%02x ", rawData[i]);
-        line += byteText;
-
-        if ((i % 16) == 15 || i == rawSize - 1)
-        {
-            Platform::Print("craft: %04x  %s\n", i & ~15u, line.c_str());
-            line.clear();
-        }
-    }
-
-    // best-guess decode (TF2-derived layout): int16 recipe, int16 count, N*uint64
-    // ids. messageRead is already past the 18-byte header.
     uint16_t recipe = messageRead.ReadUint16();
     uint16_t count = messageRead.ReadUint16();
     if (!messageRead.IsValid())
     {
-        Platform::Print("craft: could not read recipe/count with the guessed layout\n");
-        Platform::Print("=== end CRAFT message ===\n");
+        Platform::Print("Craft: failed to read recipe/count, ignoring\n");
         return;
     }
 
-    Platform::Print("craft: guessed recipe=%u (0x%04x), item count=%u\n",
-        recipe, recipe, count);
+    Platform::Print("Craft: recipe=%u, %u input item(s)\n", recipe, count);
 
-    // sanity clamp so a wrong guess can't spin forever
-    uint32_t safeCount = count;
-    if (safeCount > 64)
+    // sanity clamp - a real contract is 10 (or 5 for the covert->gold recipe)
+    if (count == 0 || count > 64)
     {
-        Platform::Print("craft: item count %u looks wrong for this layout, stopping decode\n", count);
-        Platform::Print("=== end CRAFT message ===\n");
+        Platform::Print("Craft: implausible item count %u, ignoring\n", count);
         return;
     }
 
-    for (uint32_t i = 0; i < safeCount; i++)
+    std::vector<uint64_t> itemIds;
+    itemIds.reserve(count);
+
+    for (uint32_t i = 0; i < count; i++)
     {
         uint64_t itemId = messageRead.ReadUint64();
         if (!messageRead.IsValid())
         {
-            Platform::Print("craft: ran out of data reading item %u/%u (guessed layout is off)\n",
-                i, safeCount);
-            break;
+            Platform::Print("Craft: ran out of data at item %u/%u, ignoring\n", i, count);
+            return;
         }
 
-        Platform::Print("craft: input item[%u] id = %llu\n", i, itemId);
+        itemIds.push_back(itemId);
     }
 
-    Platform::Print("=== end CRAFT message === (stage 1: nothing consumed/created)\n");
+    std::vector<CMsgSOSingleObject> destroyed;
+    CMsgSOSingleObject newItem;
+
+    if (!m_inventory.TradeUp(itemIds, destroyed, newItem))
+    {
+        // TradeUp already logged the reason; nothing was consumed or created
+        Platform::Print("Craft: trade-up rejected, inventory unchanged\n");
+        return;
+    }
+
+    // consume the inputs, then deliver the crafted item (same order as UnlockCrate)
+    for (CMsgSOSingleObject &destroy : destroyed)
+    {
+        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+    }
+
+    SendMessageToGame(true, k_ESOMsg_Create, newItem);
+
+    Platform::Print("Craft: trade-up complete (%zu consumed, 1 created)\n", destroyed.size());
 }

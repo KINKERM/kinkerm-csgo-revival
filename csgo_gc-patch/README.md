@@ -1,16 +1,25 @@
 # csgo_gc pity-system patch
 
-Modified `csgo_gc` source files that add a **pity system** to case opening:
+Modified `csgo_gc` source files that add three revival features on top of upstream:
 
+**1. Pity system** (case opening) — `case_opening.cpp` / `case_opening.h`
 - the longer you go without a gold (knife/glove), the higher your gold odds climb,
 - a gold is **guaranteed** once an open would reach **350** (tunable), and
 - the counter **resets to 0** every time you hit a gold.
+- The counter is stored per player in `csgo_gc/pity.txt` (created automatically).
 
-The counter is stored per player in `csgo_gc/pity.txt` (created automatically).
+**2. Skin quality fix** — `item_schema.cpp`
+- normal (non-StatTrak) skins are created at the **Unique** quality so they're
+  eligible for trade-up contracts (see the trade-up section below).
+
+**3. Trade-up contracts** — `gc_client.cpp` / `gc_client.h`, `inventory.cpp` / `inventory.h`,
+`item_schema.cpp` / `item_schema.h`
+- exchange 10 same-rarity skins for one skin of the next rarity up, with the output
+  float derived from the inputs (the real CS:GO formula). See the trade-up section.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), licensed under the
-> 2-Clause BSD License, (c) Mikko Kokko. Only `case_opening.cpp` and `case_opening.h`
-> are changed; everything else is upstream.
+> 2-Clause BSD License, (c) Mikko Kokko. Changed files: `case_opening.*`,
+> `gc_client.*`, `inventory.*`, `item_schema.*`; everything else is upstream.
 
 ## Why this needs compiling
 The case-opening RNG lives inside `csgo_gc` (C++), not in the config or the revival
@@ -77,14 +86,18 @@ csgo_gc-patch\case_opening.h    ->  <source>\csgo_gc\case_opening.h
 csgo_gc-patch\gc_client.cpp     ->  <source>\csgo_gc\gc_client.cpp
 csgo_gc-patch\gc_client.h       ->  <source>\csgo_gc\gc_client.h
 csgo_gc-patch\item_schema.cpp   ->  <source>\csgo_gc\item_schema.cpp
+csgo_gc-patch\item_schema.h     ->  <source>\csgo_gc\item_schema.h
+csgo_gc-patch\inventory.cpp     ->  <source>\csgo_gc\inventory.cpp
+csgo_gc-patch\inventory.h       ->  <source>\csgo_gc\inventory.h
 ```
 
 - `case_opening.*` = the **pity system** (working).
-- `gc_client.*`    = **trade-up contracts** (in progress; see the trade-up section
-  at the bottom of this file). Stage 1 only logs the craft message — it does not
-  change your inventory yet.
-- `item_schema.cpp` = **skin quality fix** so normal (non-StatTrak) skins are
-  eligible for trade-up contracts (see the trade-up section for details).
+- `item_schema.*` + `inventory.*` + `gc_client.*` = **trade-up contracts** and the
+  **skin quality fix** that makes normal skins eligible (see the trade-up section
+  at the bottom of this file).
+
+No CMake changes are needed — all eight files already exist in the project, so just
+overwrite and rebuild.
 
 (You can do this in File Explorer with copy/paste, or in PowerShell with `copy`.)
 
@@ -199,6 +212,9 @@ running. The reliable fix is a **clean clone plus only the two patched files**:
    csgo_gc-patch\gc_client.cpp     ->  csgo_gc_clean\csgo_gc\gc_client.cpp
    csgo_gc-patch\gc_client.h       ->  csgo_gc_clean\csgo_gc\gc_client.h
    csgo_gc-patch\item_schema.cpp   ->  csgo_gc_clean\csgo_gc\item_schema.cpp
+   csgo_gc-patch\item_schema.h     ->  csgo_gc_clean\csgo_gc\item_schema.h
+   csgo_gc-patch\inventory.cpp     ->  csgo_gc_clean\csgo_gc\inventory.cpp
+   csgo_gc-patch\inventory.h       ->  csgo_gc_clean\csgo_gc\inventory.h
    ```
 3. Build with stable Visual Studio 2022 (v17), from its "x64 Native Tools Command
    Prompt for VS 2022":
@@ -234,14 +250,18 @@ that and is the simplest way to feed cases in.
 
 ---
 
-# Trade-up contracts (in progress)
+# Trade-up contracts
 
 CS:GO trade-up contracts let you turn **10 skins of the same rarity** into **1 skin
-of the next rarity up**, with the output's wear (float) derived from the inputs. The
-recent CS2 update also added a **5 Covert (red) -> 1 gold (knife/glove)** recipe.
-`csgo_gc` never implemented any of this — the game *sends* a craft request
-(`k_EMsgGCCraft`, id 1002) but upstream just logs it as "unhandled" and nothing
-happens. We're adding it.
+of the next rarity up**, with the output's wear (float) derived from the inputs.
+`csgo_gc` never implemented this — the game *sends* a craft request
+(`k_EMsgGCCraft`, id 1002) but upstream just logged it as "unhandled" and nothing
+happened. This build implements it.
+
+**Status: implemented for standard trade-ups** (Consumer → ... → Classified → Covert).
+The **5 Covert → 1 gold (knife/glove)** recipe from the recent CS2 update is **not in
+this build yet** — it needs the per-collection knife pool, which the collection data
+doesn't contain, so it's the next stage. Covert inputs are rejected cleanly for now.
 
 The float math we're targeting (same as real CS:GO), per skin:
 
@@ -274,39 +294,65 @@ Fix (two parts):
   relaunch so the launcher re-syncs the inventory. Knives/gloves (Unusual) and
   StatTrak (Strange) are left untouched.
 
-## Why this is staged
-The craft message is a **non-protobuf "struct" message**, and its exact byte layout
-isn't documented anywhere for CS:GO. So we build it up in stages through the same
-recompile loop, instead of shipping one big untested change:
+## How it works
+The craft message (`k_EMsgGCCraft`, 1002) is a non-protobuf "struct" message. Its
+wire format was confirmed by logging a real contract:
 
-- **Stage 1 (this build):** `gc_client.cpp` now handles `k_EMsgGCCraft` and prints a
-  full hex dump + best-guess decode of the message to the console. Nothing in your
-  inventory changes. This confirms the real wire format.
-- **Stage 2:** parse `item_sets` (collections) from `items_game.txt` so we know each
-  skin's collection and the next-tier pool.
-- **Stage 3:** do the float math, destroy the 10 inputs, create the output, and reply
-  with `k_EMsgGCCraftResponse`.
+```
+[18-byte struct header]
+uint16 recipe
+uint16 itemCount
+uint64 itemIds[itemCount]   // low 32 bits = account id, high 32 bits = item id
+```
 
-## What to do for Stage 1 (capture the craft message)
-1. Rebuild and install the DLL exactly like the pity patch (Steps 5-7 / the
-   "Confirmed working build" section above). The trade-up code lives in the same
+- **`gc_client.cpp`** reads the input item ids and hands them to `Inventory::TradeUp`.
+- **`item_schema.cpp` / `.h`** parse the `item_sets` (collections) block from
+  `items_game.txt`, computing each skin's grade the same way the game does
+  (`PaintedItemRarity`), and expose `FindCollectionForItem`.
+- **`inventory.cpp` / `.h`** (`Inventory::TradeUp`) validate the inputs, compute the
+  result, create the output skin, and destroy the inputs.
+
+Validation and selection (matches real CS:GO):
+- every input must be a painted skin that belongs to a known collection,
+- all inputs must share the **same rarity** and the **same StatTrak state**,
+- the output collection is chosen from the inputs' collections, **weighted by how
+  many inputs came from each**,
+- the output skin is a **uniform-random next-rarity** skin from that collection,
+- **StatTrak in → StatTrak out**,
+- output float uses the normalized average:
+  ```
+  normalized  = (skinFloat - skinPaintMin) / (skinPaintMax - skinPaintMin)
+  avg         = average(normalized over all inputs)
+  outputFloat = avg * (outputPaintMax - outputPaintMin) + outputPaintMin
+  ```
+
+The crafted item is delivered with the same SO-cache Create/Destroy path that case
+opening uses (proven to work). We deliberately do **not** send a
+`k_EMsgGCCraftResponse` — csgo_gc's outgoing struct-message header is known-broken
+(noted in `gc_message.cpp`), so a bad response could misbehave. If the contract
+screen ends up needing that response to close cleanly, that's the follow-up.
+
+## How to use it
+1. Copy all eight patched files (see the copy list above), rebuild, and swap the DLL
+   in — exactly like the pity patch. The trade-up code lives in the same
    `csgo_gc.dll`.
-2. Make sure `csgo_gc\config.txt` has logging on so the prints show up:
-   ```
-   log_output 1
-   ```
-3. Get **10 skins of the same rarity** into your inventory (admin-grant them, or open
-   cases). They need to be eligible trade-up inputs (same rarity, not the top tier).
-4. In game, open the inventory, start a **Trade Up Contract**, fill all 10 slots, and
-   click to complete it.
-5. Open the console and copy **everything** between
-   `=== CRAFT (trade-up) message received ===` and `=== end CRAFT message ===`
-   (including all the `craft: 0000 ...` hex lines) and send it back. That tells us the
-   exact layout so Stage 3 can read the inputs correctly.
+2. Optional but recommended: `log_output 1` in `csgo_gc\config.txt` so you can see the
+   `Craft:` / `tradeup:` log lines if anything is rejected.
+3. Make sure your normal skins are eligible (the quality fix above). If you built
+   your stash before that fix, relaunch once so the server re-syncs `inventory.txt`.
+4. In game: open the inventory, start a **Trade Up Contract**, fill all 10 slots with
+   same-rarity skins, and complete it. The 10 inputs are consumed and one next-tier
+   skin appears in your inventory.
 
-> Note: in Stage 1 the contract will look like it "did nothing" (no output item, inputs
-> still there). That's expected — we're only reading the message this round.
+If a contract is rejected, the console prints exactly why (e.g. `tradeup: mixed
+rarities`, `... not in any collection`, or the Covert→gold notice).
+
+## Known limitations / next stage
+- **5 Covert → gold (knife/glove)** is not implemented yet — needs mapping each
+  collection to its case's knife pool. Covert inputs are rejected for now.
+- The trade-up "reveal" animation may differ from retail since we don't send a craft
+  response; the resulting item still lands in your inventory via the SO cache.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
-> (c) Mikko Kokko. Changed files: `case_opening.*` (pity), `gc_client.*` (trade-up),
-> and `item_schema.cpp` (skin quality fix).
+> (c) Mikko Kokko. Changed files: `case_opening.*` (pity), and `gc_client.*`,
+> `inventory.*`, `item_schema.*` (trade-up contracts + skin quality fix).
