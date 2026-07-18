@@ -43,6 +43,9 @@ GCConfig::GCConfig()
     // trade-up contracts (revival addition): the crate that performs 5 Covert -> gold
     m_goldTradeUpCrate = config.GetNumber("gold_tradeup_crate", m_goldTradeUpCrate);
 
+    // "gold only" case (revival addition): the crate that always rolls a gold
+    m_goldOnlyCrate = config.GetNumber("gold_only_crate", m_goldOnlyCrate);
+
     const KeyValue *rarityWeights = config.GetSubkey("rarity_weights");
     if (rarityWeights)
     {

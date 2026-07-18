@@ -1056,6 +1056,80 @@ bool Inventory::UnlockCrateGoldTradeUp(uint64_t crateId,
     return true;
 }
 
+// "gold only" case (revival addition) --- "Kinkerm's Case"
+// ---------------------------------------------------------------------------
+// Opening the configured crate always yields a uniform-random gold (knife/glove)
+// from any collection. Unlike a normal case it consumes nothing but the crate
+// (and key) itself - no Coverts needed. Uses the same SO-cache unbox flow as
+// UnlockCrate so the client shows the standard reveal notification.
+bool Inventory::UnlockGoldOnlyCase(uint64_t crateId,
+    uint64_t keyId,
+    CMsgSOSingleObject &destroyCrate,
+    CMsgSOSingleObject &destroyKey,
+    CMsgSOSingleObject &newItem,
+    CMsgGCItemCustomizationNotification &notification)
+{
+    // make sure the crate exists (don't hold the iterator across CreateItem,
+    // which rehashes m_items)
+    if (m_items.find(crateId) == m_items.end())
+    {
+        assert(false);
+        return false;
+    }
+
+    // pick a random gold from any collection
+    const LootListItem *gold = m_itemSchema.PickRandomGold(m_random);
+    if (!gold)
+    {
+        Platform::Print("gold-only case: no gold items found in the schema\n");
+        return false;
+    }
+
+    // StatTrak: 1/10 chance, but only on items that can carry it (gloves and some
+    // newer knives are def >= 1000 and can't), matching case opening.
+    bool statTrak = (gold->itemInfo->m_defIndex < 1000)
+        && (m_random.Integer(1, 10) == 1);
+
+    CSOEconItem temp;
+    if (!m_itemSchema.CreateItemFromLootListItem(m_random, *gold, statTrak,
+            ItemOriginCrate, UnacknowledgedFoundInCrate, temp))
+    {
+        Platform::Print("gold-only case: failed to create gold item\n");
+        return false;
+    }
+
+    // CreateItem rehashes m_items - any iterators obtained before are invalidated
+    CSOEconItem &item = CreateItem(temp);
+
+    Platform::Print("gold-only case: rolled GOLD def %u paintkit %u%s\n",
+        gold->itemInfo->m_defIndex, gold->paintKitInfo->m_defIndex,
+        statTrak ? " StatTrak" : "");
+
+    ToSingleObject(newItem, item);
+
+    // reveal through the unbox animation
+    notification.add_item_id(item.id());
+    notification.set_request(k_EGCItemCustomizationNotification_UnlockCrate);
+
+    // consume the crate (and key, if one was used) - re-find AFTER CreateItem
+    if (GetConfig().DestroyUsedItems())
+    {
+        auto crate = m_items.find(crateId);
+        if (crate != m_items.end())
+        {
+            DestroyItem(crate, destroyCrate);
+        }
+
+        auto key = m_items.find(keyId);
+        if (key != m_items.end())
+        {
+            DestroyItem(key, destroyKey);
+        }
+    }
+
+    return true;
+}
+
 // mikkotodo constant enum
 static int ItemWearLevel(float wearFloat)
 {

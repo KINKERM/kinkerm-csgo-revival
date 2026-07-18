@@ -51,6 +51,17 @@ public:
         CMsgSOSingleObject &newItem,
         CMsgGCItemCustomizationNotification &notification);
 
+    // "gold only" case (revival addition) --- "Kinkerm's Case"
+    // opening the configured crate always rolls a uniform-random gold
+    // (knife/glove) from any collection. Nothing is consumed except the crate
+    // (and key) itself - no Coverts needed. Admin-grant it like any case.
+    bool UnlockGoldOnlyCase(uint64_t crateId,
+        uint64_t keyId,
+        CMsgSOSingleObject &destroyCrate,
+        CMsgSOSingleObject &destroyKey,
+        CMsgSOSingleObject &newItem,
+        CMsgGCItemCustomizationNotification &notification);
+
     // def index of an item id, or 0 if it doesn't exist (used to detect the crate)
     uint32_t ItemDefIndex(uint64_t itemId) const;
 

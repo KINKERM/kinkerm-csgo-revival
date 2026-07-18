@@ -35,6 +35,14 @@
 //   4061 = Chroma Case (crate_community_6)
 "gold_tradeup_crate"	"4061"
 
+// "Gold only" case (aka "Kinkerm's Case"). Opening a crate with this def index
+// ALWAYS rolls a uniform-random gold (knife/glove) from ANY collection - it
+// consumes nothing but the case (and key). No Coverts needed. Grant it to
+// yourself as admin (admin.py grant <steamid> <this_def>) and open it.
+// Use a DIFFERENT case def than gold_tradeup_crate above. 0 = disabled.
+//   4001 = CS:GO Weapon Case (crate_valve_1)
+"gold_only_crate"	"4001"
+
 // Case drop weights (per rarity id):
 //   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted (purple),
 //   5 Classified (pink), 6 Covert (red), 99 Rare Special (gold - knives/gloves).

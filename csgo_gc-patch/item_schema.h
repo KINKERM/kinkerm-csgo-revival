@@ -165,6 +165,13 @@ public:
     const LootList *FindUnusualPoolForItem(uint32_t itemDefIndex,
         uint32_t paintKitDefIndex) const;
 
+    // "gold only" case (revival addition)
+    // picks a uniform-random gold (knife/glove painted item) from EVERY unusual
+    // loot list in the schema - i.e. a random gold from any collection. Returns
+    // nullptr if no gold items exist. The returned LootListItem is owned by the
+    // schema (points into m_lootLists) and must not be freed by the caller.
+    const LootListItem *PickRandomGold(Random &random) const;
+
 public:
     // these could be parsed from the item schema but reduce code complexity by hardcoding them
     enum Rarity

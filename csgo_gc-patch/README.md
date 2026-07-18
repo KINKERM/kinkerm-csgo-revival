@@ -17,6 +17,8 @@ Modified `csgo_gc` source files that add three revival features on top of upstre
 - exchange 10 same-rarity skins for one skin of the next rarity up (real CS:GO formula),
   on the actual contract screen; plus a **5 Covert → gold** recipe delivered via a
   configurable "Gold Trade-Up" crate (`gold_tradeup_crate`). See the trade-up section.
+- also a **"gold only" case** (`gold_only_crate`): a crate that always rolls a random
+  gold from any collection, consuming nothing but the case. See the gold-only section.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), licensed under the
 > 2-Clause BSD License, (c) Mikko Kokko. Changed files: `case_opening.*`,
@@ -397,6 +399,35 @@ No grant needed. With `log_output 1` the console shows `tradeup: 5 Covert -> GOL
 If they don't have 5 Coverts of the same StatTrak state, it logs
 `gold trade-up: need 5 Covert skins ...` and consumes nothing.
 
+## "Gold only" case — "Kinkerm's Case"
+A pure-fun crate: opening it **always rolls a uniform-random gold (knife/glove) from
+any collection**, and consumes **nothing but the case** (and its key) — no Coverts, no
+trade-up needed. It's the confirmation-friendly alternative to the auto-trade-up: the
+player chooses to open it, and only then does a gold drop.
+
+How it works:
+- `item_schema.cpp::PickRandomGold` walks **every unusual (knife/glove) loot list** in
+  the schema and picks one gold entry uniformly at random — so any gold in the game can
+  drop, spanning all collections.
+- On open, `inventory.cpp::UnlockGoldOnlyCase` builds that gold (1/10 StatTrak roll where
+  the item can carry it, matching normal case odds) and reveals it through the standard
+  unbox notification. The case (and key) are consumed only if `destroy_used_items` is on.
+
+Setup:
+1. Pick a case def to designate (use a **different** one than `gold_tradeup_crate`).
+   `python3 admin.py catalog` → note its DEF number.
+2. In the shipped `csgo_gc\config.txt`, set:
+   ```
+   gold_only_crate  <that_case_DEF>
+   ```
+   (Example ships as `4001` = CS:GO Weapon Case.)
+3. Grant yourself that case as admin (`python3 admin.py grant <steamid> <that_case>`)
+   and open it. With `log_output 1` the console shows `gold-only case: rolled GOLD ...`.
+
+> Cosmetic note: the reveal spins the trigger crate's normal items before landing on
+> your gold. The gold is what you keep. A dedicated gold-only spin reel + a custom
+> "Kinkerm's Case" name are optional `items_game.txt` / `csgo_english.txt` follow-ups.
+
 ## Known limitations
 - Covert→gold is delivered via a crate, not the contract screen (legacy client can't do
   the covert contract, and there's no right-click/menu hook — that's client UI we can't
@@ -408,4 +439,4 @@ If they don't have 5 Coverts of the same StatTrak state, it logs
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
 > (c) Mikko Kokko. Changed files: `case_opening.*` (pity), and `gc_client.*`,
 > `inventory.*`, `item_schema.*`, `config.*` (trade-up contracts, skin quality fix,
-> Gold Trade-Up crate).
+> Gold Trade-Up crate, gold-only case).

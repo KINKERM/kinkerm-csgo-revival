@@ -1172,6 +1172,40 @@ const LootList *ItemSchema::FindUnusualPoolForItem(uint32_t itemDefIndex,
     return search->second;
 }
 
+// "gold only" case (revival addition)
+// Walks every unusual (knife/glove) loot list in the schema and collects each
+// painted gold entry, then returns a uniform-random one. This spans all
+// collections, so opening the gold-only case can yield any gold in the game.
+const LootListItem *ItemSchema::PickRandomGold(Random &random) const
+{
+    std::vector<const LootListItem *> golds;
+
+    for (const auto &pair : m_lootLists)
+    {
+        const LootList &list = pair.second;
+        if (!list.isUnusual)
+        {
+            continue;
+        }
+
+        // unusual lists are leaves - their items are the golds
+        for (const LootListItem &item : list.items)
+        {
+            if (item.type == LootListItemPaintable && item.itemInfo && item.paintKitInfo)
+            {
+                golds.push_back(&item);
+            }
+        }
+    }
+
+    if (golds.empty())
+    {
+        return nullptr;
+    }
+
+    return golds[random.Integer<size_t>(0, golds.size() - 1)];
+}
+
 // mikkotodo rewrite this function
 bool ItemSchema::ParseLootListItem(LootListItem &item, std::string_view name)
 {

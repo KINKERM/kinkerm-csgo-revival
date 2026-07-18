@@ -42,6 +42,11 @@ public:
     // the 5-Covert -> gold recipe instead of a normal case roll. 0 = disabled.
     uint32_t GoldTradeUpCrate() const { return m_goldTradeUpCrate; }
 
+    // "gold only" case (revival addition): opening this crate def always rolls a
+    // random gold (knife/glove) from any collection - no Coverts consumed, just
+    // the case. Admin-grant it like any case. 0 = disabled.
+    uint32_t GoldOnlyCrate() const { return m_goldOnlyCrate; }
+
     bool VacBanned() const { return m_vacBanned; }
     int CommendedFriendly() const { return m_commendedFriendly; }
     int CommendedTeaching() const { return m_commendedTeaching; }
@@ -70,6 +75,9 @@ private:
 
     // trade-up contracts (revival addition): crate def that triggers 5 Covert -> gold
     uint32_t m_goldTradeUpCrate{ 0 };
+
+    // "gold only" case (revival addition): crate def that always rolls a gold
+    uint32_t m_goldOnlyCrate{ 0 };
 
     bool m_vacBanned{ false };
     int m_commendedFriendly{ 0 };

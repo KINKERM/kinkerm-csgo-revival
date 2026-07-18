@@ -665,6 +665,37 @@ void ClientGC::UnlockCrate(GCMessageRead &messageRead)
         return;
     }
 
+    // "gold only" case (revival addition): if this is the configured gold-only
+    // crate ("Kinkerm's Case"), always roll a random gold - no Coverts consumed.
+    uint32_t goldOnlyCrate = GetConfig().GoldOnlyCrate();
+    if (goldOnlyCrate && m_inventory.ItemDefIndex(crateId) == goldOnlyCrate)
+    {
+        Platform::Print("GOLD-ONLY case %llu with %llu\n", crateId, keyId);
+
+        CMsgSOSingleObject destroyCrate, destroyKey, newItem;
+        CMsgGCItemCustomizationNotification notification;
+
+        if (m_inventory.UnlockGoldOnlyCase(crateId, keyId, destroyCrate, destroyKey, newItem, notification))
+        {
+            // only send destroys that were actually populated (crate/key are
+            // consumed only when destroy_used_items is enabled)
+            if (destroyCrate.has_type_id())
+            {
+                SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
+            }
+
+            if (destroyKey.has_type_id())
+            {
+                SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
+            }
+
+            SendMessageToGame(true, k_ESOMsg_Create, newItem);
+            SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+        }
+
+        return;
+    }
+
     Platform::Print("CASE OPENING %llu with %llu\n", crateId, keyId);
 
     CMsgSOSingleObject destroyCrate, destroyKey, newItem;
