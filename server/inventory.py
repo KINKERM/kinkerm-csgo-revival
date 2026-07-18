@@ -72,9 +72,28 @@ def _item_to_kv(item: dict[str, Any], position: int) -> dict[str, Any]:
 
 
 def build_inventory_tree(player: dict[str, Any]) -> dict[str, Any]:
+    items = player.get("items", [])
+
+    # The KV key of each item IS its in-game 64-bit item id (csgo_gc composes it
+    # from account id + this number). CS:GO caches each item's generated inventory
+    # icon on disk keyed by that item id, so the id MUST stay STABLE for a given
+    # item across syncs -- otherwise the client serves a stale/wrong cached icon
+    # (correct name, wrong picture). Items carry a persistent `high_id` (assigned
+    # by the store); use it as the key. Defensively fill in any missing/duplicate
+    # id with a fresh one above the current max so ids never collide.
+    max_id = 0
+    for item in items:
+        max_id = max(max_id, _as_int(item.get("high_id"), 0))
+
     items_node: dict[str, Any] = {}
-    for index, item in enumerate(player.get("items", []), start=1):
-        items_node[str(index)] = _item_to_kv(item, index)
+    used: set[int] = set()
+    for position, item in enumerate(items, start=1):
+        high_id = _as_int(item.get("high_id"), 0)
+        if high_id <= 0 or high_id in used:
+            max_id += 1
+            high_id = max_id
+        used.add(high_id)
+        items_node[str(high_id)] = _item_to_kv(item, position)
 
     default_equips_node: dict[str, Any] = {}
     for eq in player.get("default_equips", []):
@@ -135,6 +154,11 @@ def parse_inventory_txt(text: str) -> dict[str, Any]:
             if not def_index:
                 continue
             item: dict[str, Any] = {"def_index": def_index}
+            # preserve the item id (the KV key) so it stays stable across syncs;
+            # keeps the client's per-item icon cache from going stale
+            high_id = _as_int(_high_id, 0)
+            if high_id > 0:
+                item["high_id"] = high_id
             for field in _INT_FIELDS:
                 if field in raw:
                     item[field] = _as_int(raw[field])
