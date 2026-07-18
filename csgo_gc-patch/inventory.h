@@ -39,7 +39,20 @@ public:
     // returns false (changing nothing) if the inputs aren't a valid trade-up.
     bool TradeUp(const std::vector<uint64_t> &itemIds,
         std::vector<CMsgSOSingleObject> &destroyed,
-        CMsgSOSingleObject &newItem);
+        CMsgSOSingleObject &newItem,
+        uint64_t &newItemId);
+
+    // trade-up contracts (revival addition) --- "Gold Trade-Up crate"
+    // opening the configured crate runs 5 Covert -> gold on the player's own
+    // Coverts (picked automatically) and reveals the gold via the unbox flow.
+    bool UnlockCrateGoldTradeUp(uint64_t crateId,
+        uint64_t keyId,
+        std::vector<CMsgSOSingleObject> &destroyed,
+        CMsgSOSingleObject &newItem,
+        CMsgGCItemCustomizationNotification &notification);
+
+    // def index of an item id, or 0 if it doesn't exist (used to detect the crate)
+    uint32_t ItemDefIndex(uint64_t itemId) const;
 
     bool SetItemPositions(
         const CMsgSetItemPositions &message,
@@ -83,6 +96,10 @@ public:
 
 private:
     uint32_t AccountId() const;
+
+    // trade-up contracts (revival addition): finds 5 Covert skins from the same
+    // collection and same StatTrak state; returns their ids in `out`, or false
+    bool SelectCovertsForTradeUp(std::vector<uint64_t> &out) const;
 
     // allocates an empty item, sets id and account_id fields
     // pass zero as highItemId to generate a new one

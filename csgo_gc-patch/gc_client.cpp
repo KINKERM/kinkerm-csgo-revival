@@ -640,6 +640,31 @@ void ClientGC::UnlockCrate(GCMessageRead &messageRead)
         return;
     }
 
+    // trade-up contracts (revival addition): if this is the configured Gold
+    // Trade-Up crate, convert 5 Coverts to a gold instead of a normal roll.
+    uint32_t goldCrate = GetConfig().GoldTradeUpCrate();
+    if (goldCrate && m_inventory.ItemDefIndex(crateId) == goldCrate)
+    {
+        Platform::Print("GOLD TRADE-UP crate %llu\n", crateId);
+
+        std::vector<CMsgSOSingleObject> destroyed;
+        CMsgSOSingleObject newItem;
+        CMsgGCItemCustomizationNotification notification;
+
+        if (m_inventory.UnlockCrateGoldTradeUp(crateId, keyId, destroyed, newItem, notification))
+        {
+            for (CMsgSOSingleObject &destroy : destroyed)
+            {
+                SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+            }
+
+            SendMessageToGame(true, k_ESOMsg_Create, newItem);
+            SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+        }
+
+        return;
+    }
+
     Platform::Print("CASE OPENING %llu with %llu\n", crateId, keyId);
 
     CMsgSOSingleObject destroyCrate, destroyKey, newItem;
@@ -806,8 +831,9 @@ void ClientGC::Craft(GCMessageRead &messageRead, const uint8_t *rawData, uint32_
 
     std::vector<CMsgSOSingleObject> destroyed;
     CMsgSOSingleObject newItem;
+    uint64_t newItemId = 0;
 
-    if (!m_inventory.TradeUp(itemIds, destroyed, newItem))
+    if (!m_inventory.TradeUp(itemIds, destroyed, newItem, newItemId))
     {
         // TradeUp already logged the reason; nothing was consumed or created
         Platform::Print("Craft: trade-up rejected, inventory unchanged\n");

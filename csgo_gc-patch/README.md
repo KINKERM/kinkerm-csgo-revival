@@ -13,13 +13,14 @@ Modified `csgo_gc` source files that add three revival features on top of upstre
   eligible for trade-up contracts (see the trade-up section below).
 
 **3. Trade-up contracts** — `gc_client.cpp` / `gc_client.h`, `inventory.cpp` / `inventory.h`,
-`item_schema.cpp` / `item_schema.h`
-- exchange 10 same-rarity skins for one skin of the next rarity up, with the output
-  float derived from the inputs (the real CS:GO formula). See the trade-up section.
+`item_schema.cpp` / `item_schema.h`, `config.cpp` / `config.h`
+- exchange 10 same-rarity skins for one skin of the next rarity up (real CS:GO formula),
+  on the actual contract screen; plus a **5 Covert → gold** recipe delivered via a
+  configurable "Gold Trade-Up" crate (`gold_tradeup_crate`). See the trade-up section.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), licensed under the
 > 2-Clause BSD License, (c) Mikko Kokko. Changed files: `case_opening.*`,
-> `gc_client.*`, `inventory.*`, `item_schema.*`; everything else is upstream.
+> `gc_client.*`, `inventory.*`, `item_schema.*`, `config.*`; everything else is upstream.
 
 ## Why this needs compiling
 The case-opening RNG lives inside `csgo_gc` (C++), not in the config or the revival
@@ -89,6 +90,8 @@ csgo_gc-patch\item_schema.cpp   ->  <source>\csgo_gc\item_schema.cpp
 csgo_gc-patch\item_schema.h     ->  <source>\csgo_gc\item_schema.h
 csgo_gc-patch\inventory.cpp     ->  <source>\csgo_gc\inventory.cpp
 csgo_gc-patch\inventory.h       ->  <source>\csgo_gc\inventory.h
+csgo_gc-patch\config.cpp        ->  <source>\csgo_gc\config.cpp
+csgo_gc-patch\config.h          ->  <source>\csgo_gc\config.h
 ```
 
 - `case_opening.*` = the **pity system** (working).
@@ -215,6 +218,8 @@ running. The reliable fix is a **clean clone plus only the two patched files**:
    csgo_gc-patch\item_schema.h     ->  csgo_gc_clean\csgo_gc\item_schema.h
    csgo_gc-patch\inventory.cpp     ->  csgo_gc_clean\csgo_gc\inventory.cpp
    csgo_gc-patch\inventory.h       ->  csgo_gc_clean\csgo_gc\inventory.h
+   csgo_gc-patch\config.cpp        ->  csgo_gc_clean\csgo_gc\config.cpp
+   csgo_gc-patch\config.h          ->  csgo_gc_clean\csgo_gc\config.h
    ```
 3. Build with stable Visual Studio 2022 (v17), from its "x64 Native Tools Command
    Prompt for VS 2022":
@@ -258,9 +263,10 @@ of the next rarity up**, with the output's wear (float) derived from the inputs.
 (`k_EMsgGCCraft`, id 1002) but upstream just logged it as "unhandled" and nothing
 happened. This build implements it.
 
-**Status: implemented**, including the CS2 **5 Covert → 1 gold (knife/glove)** recipe.
-Standard trade-ups go Consumer → ... → Classified → Covert; a Covert contract yields a
-random knife/glove from the case's gold pool.
+**Status:** standard trade-ups (Consumer → ... → Classified → Covert) work on the real
+contract screen. The **5 Covert → 1 gold (knife/glove)** recipe also works, but it's
+triggered by a **"Gold Trade-Up" crate** instead of the contract screen — see below for
+why and how.
 
 The float math we're targeting (same as real CS:GO), per skin:
 
@@ -346,23 +352,49 @@ screen ends up needing that response to close cleanly, that's the follow-up.
 If a contract is rejected, the console prints exactly why (e.g. `tradeup: mixed
 rarities`, `... not in any collection`, or the Covert→gold notice).
 
-## 5 Covert → gold (knife/glove)
-Covert inputs run the CS2 gold recipe instead of a normal next-rarity trade-up:
+## 5 Covert → gold (knife/glove) — the "Gold Trade-Up crate"
+The legacy CS:GO client's **contract screen refuses to accept Covert skins as inputs**
+(the covert→gold recipe is a CS2-only client feature; the old client hard-excludes the
+top rarity, and no `items_game.txt` recipe or edit unlocks it — this was tested to
+death). Since `csgo_gc` *is* the Game Coordinator, we don't need the contract screen:
+opening a designated crate performs the recipe and reveals the gold through the normal
+unbox animation.
+
+How the gold is chosen (all GC-side, already correct):
 - On startup the schema walks every case loot list; a case list contains its
   collection's skins plus exactly one **unusual** sublist (the knife/glove pool,
   loaded from `csgo_gc/unusual_loot_lists.txt`). Each skin is mapped to that pool.
-- A Covert contract picks a gold pool from one of the input collections (weighted by
-  input count), then a random knife/glove from it. StatTrak carries over to knives
-  that support it (gloves and some newer knives can't be StatTrak); the output float
-  uses the same normalized-average formula.
-- Fill the contract with Covert skins (the contract uses 5 slots for this recipe).
-- If a Covert skin has no known gold pool, the contract is rejected with a log line
-  (`... has no known gold pool`) and nothing is consumed.
+- The crate picks **5 Covert skins from one collection** (same StatTrak state) out of
+  your inventory, consumes them, and rolls a random knife/glove from that collection's
+  pool — StatTrak carried over where valid, output float via the normalized-average
+  formula.
+
+### Setup
+1. Choose a crate to act as the trigger. Run `python3 admin.py catalog` and pick any
+   case's **DEF** number (that case becomes the Gold Trade-Up crate — opening it will
+   no longer give a normal roll, so pick one you don't mind repurposing).
+2. In `csgo_gc\config.txt` add (using that def index):
+   ```
+   gold_tradeup_crate  <crate_def_index>
+   ```
+3. Grant yourself the crate and 5 Coverts of one collection, e.g.:
+   ```
+   python3 admin.py grant-case  <steamid> <that_case_slug>
+   python3 admin.py grant-item  <steamid> --def-index 9 --paint-kit 51 --wear 0.03 --quality 4 --rarity 6 --count 5
+   ```
+4. Relaunch, open the Gold Trade-Up crate. Your 5 Coverts are consumed and a gold is
+   revealed. With `log_output 1` you'll see `tradeup: 5 Covert -> GOLD ...`.
+
+If you don't have 5 Coverts of a single collection, opening the crate logs
+`gold trade-up: need 5 Covert skins from the same collection ...` and consumes nothing.
 
 ## Known limitations
-- The trade-up "reveal" animation may differ from retail since we don't send a craft
-  response; the resulting item still lands in your inventory via the SO cache.
+- Covert→gold is delivered via a crate, not the contract screen (legacy client can't do
+  the covert contract). Standard trade-ups still use the real contract screen.
+- The reveal shows the trigger crate's spinning items, then lands on your gold — cosmetic
+  only; the gold is what you keep.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
 > (c) Mikko Kokko. Changed files: `case_opening.*` (pity), and `gc_client.*`,
-> `inventory.*`, `item_schema.*` (trade-up contracts + skin quality fix).
+> `inventory.*`, `item_schema.*`, `config.*` (trade-up contracts, skin quality fix,
+> Gold Trade-Up crate).

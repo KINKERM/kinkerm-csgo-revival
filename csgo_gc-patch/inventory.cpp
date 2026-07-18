@@ -554,8 +554,11 @@ bool Inventory::UnlockCrate(uint64_t crateId,
 // which is the proven way to make items appear/disappear in the client.
 bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
     std::vector<CMsgSOSingleObject> &destroyed,
-    CMsgSOSingleObject &newItem)
+    CMsgSOSingleObject &newItem,
+    uint64_t &newItemId)
 {
+    newItemId = 0;
+
     if (itemIds.size() < 2)
     {
         Platform::Print("tradeup: need at least 2 input items, got %zu\n", itemIds.size());
@@ -768,6 +771,7 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
             inputs.size(), chosen->itemInfo->m_defIndex, chosen->paintKitInfo->m_defIndex,
             outputFloat, goldStatTrak ? " StatTrak" : "");
 
+        newItemId = output.id();
         ToSingleObject(newItem, output);
 
         destroyed.reserve(itemIds.size());
@@ -918,6 +922,7 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
         chosenCollection->name.c_str(), chosen->itemDefIndex, chosen->paintKitDefIndex,
         outputRarity, outputFloat);
 
+    newItemId = output.id();
     ToSingleObject(newItem, output);
 
     // consume the inputs (re-find by id; iterators from the loop above may be stale)
@@ -933,6 +938,149 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
         CMsgSOSingleObject destroy;
         DestroyItem(it, destroy);
         destroyed.push_back(std::move(destroy));
+    }
+
+    return true;
+}
+
+// trade-up contracts (revival addition)
+uint32_t Inventory::ItemDefIndex(uint64_t itemId) const
+{
+    auto it = m_items.find(itemId);
+    return (it != m_items.end()) ? it->second.def_index() : 0;
+}
+
+// find 5 Covert skins from a single collection that share the same StatTrak state
+bool Inventory::SelectCovertsForTradeUp(std::vector<uint64_t> &out) const
+{
+    struct Group
+    {
+        const Collection *collection;
+        bool statTrak;
+        std::vector<uint64_t> ids;
+    };
+
+    std::vector<Group> groups;
+
+    for (const auto &pair : m_items)
+    {
+        const CSOEconItem &item = pair.second;
+
+        uint32_t paintKit = 0;
+        bool hasWear = false;
+        bool statTrak = false;
+
+        for (const CSOEconItemAttribute &attribute : item.attribute())
+        {
+            switch (attribute.def_index())
+            {
+            case ItemSchema::AttributeTexturePrefab:
+                paintKit = m_itemSchema.AttributeUint32(&attribute);
+                break;
+            case ItemSchema::AttributeTextureWear:
+                hasWear = true;
+                break;
+            case ItemSchema::AttributeKillEater:
+                statTrak = true;
+                break;
+            }
+        }
+
+        if (!paintKit || !hasWear)
+        {
+            continue;
+        }
+
+        const CollectionItem *collItem = nullptr;
+        const Collection *collection = m_itemSchema.FindCollectionForItem(item.def_index(), paintKit, &collItem);
+        if (!collection || !collItem || collItem->rarity != ItemSchema::RarityAncient)
+        {
+            continue;
+        }
+
+        // it's a Covert skin - bucket it by (collection, StatTrak)
+        Group *group = nullptr;
+        for (Group &existing : groups)
+        {
+            if (existing.collection == collection && existing.statTrak == statTrak)
+            {
+                group = &existing;
+                break;
+            }
+        }
+        if (!group)
+        {
+            groups.push_back({ collection, statTrak, {} });
+            group = &groups.back();
+        }
+
+        group->ids.push_back(item.id());
+    }
+
+    for (const Group &group : groups)
+    {
+        if (group.ids.size() >= 5)
+        {
+            out.assign(group.ids.begin(), group.ids.begin() + 5);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// "Gold Trade-Up crate": opening the configured crate converts 5 of the player's
+// Covert skins into a gold, revealed through the normal unbox flow.
+bool Inventory::UnlockCrateGoldTradeUp(uint64_t crateId,
+    uint64_t keyId,
+    std::vector<CMsgSOSingleObject> &destroyed,
+    CMsgSOSingleObject &newItem,
+    CMsgGCItemCustomizationNotification &notification)
+{
+    // make sure the crate exists (don't hold the iterator - TradeUp rehashes m_items)
+    if (m_items.find(crateId) == m_items.end())
+    {
+        assert(false);
+        return false;
+    }
+
+    std::vector<uint64_t> coverts;
+    if (!SelectCovertsForTradeUp(coverts))
+    {
+        Platform::Print("gold trade-up: need 5 Covert skins from the same collection (same StatTrak state) in your inventory\n");
+        return false;
+    }
+
+    uint64_t goldId = 0;
+    if (!TradeUp(coverts, destroyed, newItem, goldId))
+    {
+        Platform::Print("gold trade-up: conversion failed\n");
+        return false;
+    }
+
+    // reveal the gold through the unbox animation
+    notification.add_item_id(goldId);
+    notification.set_request(k_EGCItemCustomizationNotification_UnlockCrate);
+
+    // consume the crate (and the key if one was used). Re-find by id: TradeUp's
+    // CreateItem may have rehashed m_items and invalidated earlier iterators.
+    if (GetConfig().DestroyUsedItems())
+    {
+        auto crate = m_items.find(crateId);
+        if (crate != m_items.end())
+        {
+            CMsgSOSingleObject destroyCrate;
+            DestroyItem(crate, destroyCrate);
+            destroyed.push_back(std::move(destroyCrate));
+        }
+
+        auto key = m_items.find(keyId);
+        if (key != m_items.end())
+        {
+            CMsgSOSingleObject destroyKey;
+            DestroyItem(key, destroyKey);
+            destroyed.push_back(std::move(destroyKey));
+        }
     }
 
     return true;
