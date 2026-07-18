@@ -14,8 +14,3 @@ __pycache__/
 # editor / OS
 .DS_Store
 
-
-# Valve game files (huge, not ours - keep out of the repo)
-items_game.txt
-**/items_game.txt
-csgo_english.txt
