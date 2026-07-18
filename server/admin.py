@@ -5,6 +5,8 @@ Examples:
   python3 admin.py catalog
   python3 admin.py grant-case 76561198000000000 chroma_3_case --count 5
   python3 admin.py grant-item 76561198000000000 --def-index 7 --rarity 3
+  # a real skin (AWP | Lightning Strike, a Covert): def 9, paint kit 51, some wear
+  python3 admin.py grant-item 76561198000000000 --def-index 9 --paint-kit 51 --wear 0.03 --quality 4 --rarity 6 --count 5
   python3 admin.py show 76561198000000000
   python3 admin.py revoke 76561198000000000 --def-index 4001
   python3 admin.py clear 76561198000000000
@@ -86,6 +88,13 @@ def main() -> None:
     p_gi.add_argument("--quality", type=int, default=None)
     p_gi.add_argument("--rarity", type=int, default=None)
     p_gi.add_argument("--count", type=int, default=1)
+    # skin attributes: paint kit makes it a real skin (needed for trade-ups),
+    # wear is the float (0..1), seed is the pattern index
+    p_gi.add_argument("--paint-kit", type=int, default=None, help="paint kit index (attribute 6)")
+    p_gi.add_argument("--wear", type=float, default=None, help="wear/float 0..1 (attribute 8)")
+    p_gi.add_argument("--seed", type=int, default=None, help="pattern seed (attribute 7)")
+    p_gi.add_argument("--attr", action="append", default=[], metavar="DEFINDEX=VALUE",
+                      help="raw attribute, repeatable (e.g. --attr 6=51 --attr 8=0.03)")
 
     p_rv = sub.add_parser("revoke", help="remove items with a def_index")
     p_rv.add_argument("steamid")
@@ -133,6 +142,24 @@ def main() -> None:
             body["quality"] = args.quality
         if args.rarity is not None:
             body["rarity"] = args.rarity
+
+        # assemble skin attributes (paint kit / wear / seed + any raw --attr)
+        attributes: dict[str, str] = {}
+        if args.paint_kit is not None:
+            attributes["6"] = str(args.paint_kit)
+        if args.seed is not None:
+            attributes["7"] = str(args.seed)
+        if args.wear is not None:
+            attributes["8"] = str(args.wear)
+        for raw in args.attr:
+            if "=" not in raw:
+                print(f"bad --attr '{raw}', expected DEFINDEX=VALUE", file=sys.stderr)
+                sys.exit(1)
+            key, value = raw.split("=", 1)
+            attributes[key.strip()] = value.strip()
+        if attributes:
+            body["attributes"] = attributes
+
         result = request(args.server, "POST", "/admin/grant-item", token, body)
         print(json.dumps(result, indent=2))
         return
