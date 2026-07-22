@@ -28,28 +28,43 @@ var OperationUtil = ( function () {
 		if ( nSeasonAccess < 0 || nSeasonAccess === null || nSeasonAccess === undefined )
 			return false;
 
-		// revival addition: read the star balance straight from our coin
-		// item's upgrade_level attribute (def 4759, attribute 268) instead of
-		// MyPersonaAPI/MissionsAPI/the 'SeasonalOperations' SO-cache, none of
-		// which this server implements. Same lookup pattern the store script
-		// already uses for prices (GetFauxItemIDFromDefAndPaintIndex +
-		// GetItemAttributeValue).
-		var coinFauxId = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aCoinDefIndexes[ 0 ], 0 );
-		var stars = InventoryAPI.GetItemAttributeValue( coinFauxId, 'upgrade level' );
-		stars = ( stars === null || stars === undefined ) ? 0 : stars;
+		// revival addition: the Operation coin (granted by `admin.py grant-coin`) IS
+		// both the pass and the star wallet. We must read the OWNED coin instance's
+		// 'upgrade level' attribute (the star balance) - reading a faux/schema item
+		// id returns the schema default (0), not the granted value. So we walk the
+		// real inventory the same way _UpdateOldStars does.
+		var stars = 0;
+		var bOwnsCoin = false;
+		for ( var c = 0; c < m_aCoinDefIndexes.length; c++ )
+		{
+			var defName = InventoryAPI.GetItemDefinitionName(
+				InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aCoinDefIndexes[ c ], 0 ) );
+			if ( !defName )
+				continue;
+			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
+			var count = InventoryAPI.GetInventoryCount();
+			for ( var i = 0; i < count; i++ )
+			{
+				bOwnsCoin = true;
+				var ownedId = InventoryAPI.GetInventoryItemIDByIndex( i );
+				var s = InventoryAPI.GetItemAttributeValue( ownedId, 'upgrade level' );
+				if ( s !== null && s !== undefined && s > stars )
+					stars = s;
+			}
+		}
 
 		m_nCoinRank = stars;
 		m_numRedeemableBalance = stars;
 		m_nRedeemableGoodsCount = m_rewardSchema.length; // just needs to be > 0 to show the store
 
-		// no missions/tiers/premium-pass system on this server (store only)
+		// owning the coin = you have the pass (premium). No missions/tiers system.
 		m_bPrime = true;
 		m_nRewardsCount = 0;
 		m_nLoopingRewardsCount = 0;
 		m_numMissionsRewardThresholds = 0;
 		m_numMissionsCompleted = 0;
 		m_numTierUnlocked = 0;
-		m_bPremiumUser = false;
+		m_bPremiumUser = bOwnsCoin;
 		m_nActiveCardIndex = -1;
 
 		_AddLoopingRewardsToDisplay();

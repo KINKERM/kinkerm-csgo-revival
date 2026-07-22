@@ -506,13 +506,16 @@ var OperationStore = ( function()
 		var sUserOwnedOperationPassItemID = InventoryAPI.GetActiveSeasonPassItemId();
 
 		elUpSell.visible = !bPremiumUser;
-		elGetStars.visible = oi.bShopIsFreeForAll ? true : bPremiumUser;
-		elGetStars.SetPanelEvent( 'onactivate', OperationUtil.OpenUpSell.bind( undefined, 0, true ) );
+		// revival: stars are granted by an admin (admin.py grant-coin), there is no
+		// star-purchase flow, so hide the non-functional "GET MORE STARS" button.
+		elGetStars.visible = false;
 
-		                          
+		// revival: no missions system, so hide the missions-progress panel. It
+		// otherwise renders a raw "mission_stars" dialog variable on top of the
+		// GET THE PASS button (same colors -> unreadable overlap).
 		var elMissionsProgress = _m_cp.FindChildInLayoutFile( 'id-op-store-pass-missions-progress' );
-		elMissionsProgress.visible= bPremiumUser;
-		elMissionsProgress.SetDialogVariableInt( "mission_stars", bPremiumUser ? oi.nTierUnlocked : 0 );
+		elMissionsProgress.visible = false;
+		elMissionsProgress.SetDialogVariableInt( "mission_stars", 0 );
 		elMissionsProgress.SetDialogVariableInt( "max_stars", totalStarsAvailiable );
 
 		if( bPremiumUser )
