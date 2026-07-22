@@ -96,6 +96,19 @@ def main() -> None:
     p_gi.add_argument("--attr", action="append", default=[], metavar="DEFINDEX=VALUE",
                       help="raw attribute, repeatable (e.g. --attr 6=51 --attr 8=0.03)")
 
+    p_coin = sub.add_parser("grant-coin",
+                            help="give/refresh a player's Operation coin with N stars "
+                                 "(this is what makes the Operation Shop usable)")
+    p_coin.add_argument("steamid")
+    p_coin.add_argument("--stars", type=int, default=0,
+                        help="star balance to put on the coin (spendable in the shop)")
+    p_coin.add_argument("--coin-def", type=int, default=4759,
+                        help="operation coin def index (default 4759)")
+    p_coin.add_argument("--star-attr", type=int, default=268,
+                        help="the coin's 'upgrade level' attribute that holds stars (default 268)")
+
+    p_shop = sub.add_parser("shop", help="show how to edit the Operation Shop contents")
+
     p_rv = sub.add_parser("revoke", help="remove items with a def_index")
     p_rv.add_argument("steamid")
     p_rv.add_argument("--def-index", type=int, required=True)
@@ -162,6 +175,43 @@ def main() -> None:
 
         result = request(args.server, "POST", "/admin/grant-item", token, body)
         print(json.dumps(result, indent=2))
+        return
+
+    if args.cmd == "grant-coin":
+        # remove any existing coins first (defs 4759-4762) so stars don't stack,
+        # then grant a fresh coin carrying the requested star balance.
+        for cdef in (4759, 4760, 4761, 4762):
+            request(args.server, "POST", "/admin/revoke", token,
+                    {"steamid": args.steamid, "def_index": cdef})
+        body = {
+            "steamid": args.steamid,
+            "def_index": args.coin_def,
+            "count": 1,
+            "quality": 4,
+            "rarity": 1,
+            "attributes": {str(args.star_attr): str(args.stars)},
+        }
+        result = request(args.server, "POST", "/admin/grant-item", token, body)
+        print(json.dumps(result, indent=2))
+        print(f"[admin] granted Operation coin def {args.coin_def} with {args.stars} "
+              f"stars to {args.steamid}. They can now spend stars in the Operation Shop.")
+        return
+
+    if args.cmd == "shop":
+        print(
+            "The Operation Shop contents live in the client UI file:\n"
+            "  panorama/scripts/operation/operation_util.js  ->  var m_rewardSchema\n\n"
+            "Each row = one shop item. Format:\n"
+            '  { item_name: "<DEF NAME>", ui_image: "econ/weapon_cases/<img>",\n'
+            '    ui_image_inspect: "...", ui_image_thumbnail: "...", ui_order: N, points: <stars> },\n\n'
+            "Rules:\n"
+            "  * item_name MUST be the item DEFINITION name (the \"name\" field in\n"
+            "    items_game.txt, e.g. crate_kinkerm_case) - NOT the display name.\n"
+            "  * points = star cost.\n"
+            "  * See docs/item_ids.txt for every case/agent/collection def name + index.\n\n"
+            "After editing: re-run launcher/build_pack.py and re-publish the pack so\n"
+            "friends get the new shop next time they run install.py."
+        )
         return
 
     if args.cmd == "revoke":
