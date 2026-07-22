@@ -79,6 +79,8 @@ def main() -> None:
                          "source/build tree (build outputs are auto-harvested)")
     ap.add_argument("--items-game", default=os.path.join(REPO, "items_game.txt"))
     ap.add_argument("--config", default=os.path.join(REPO, "gc-config", "config.txt"))
+    ap.add_argument("--panorama", default=os.path.join(REPO, "panorama"),
+                    help="panorama UI folder to ship as csgo/panorama (operation UI etc.)")
     ap.add_argument("--out", default=os.path.join(HERE, "csgo-revival-pack.zip"))
     ap.add_argument("--force", action="store_true",
                     help="build even if no csgo_gc runtime files were found")
@@ -124,6 +126,18 @@ def main() -> None:
         print("[build_pack] added csgo_gc/config.txt")
         zf.write(args.items_game, "csgo/scripts/items/items_game.txt")
         print("[build_pack] added csgo/scripts/items/items_game.txt")
+        if os.path.isdir(args.panorama):
+            pn = 0
+            for base, dirs, files in os.walk(args.panorama):
+                dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+                for name in files:
+                    full = os.path.join(base, name)
+                    rel = os.path.relpath(full, args.panorama)
+                    zf.write(full, ("csgo/panorama/" + rel).replace(os.sep, "/"))
+                    pn += 1
+            print(f"[build_pack] added {pn} panorama file(s) under csgo/panorama/")
+        else:
+            print("[build_pack] (no panorama folder found - skipping UI)")
 
     size = os.path.getsize(args.out)
     print(f"[build_pack] wrote {args.out} ({size/1_048_576:.1f} MB)")
