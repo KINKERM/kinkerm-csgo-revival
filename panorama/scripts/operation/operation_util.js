@@ -212,13 +212,29 @@ var OperationUtil = ( function () {
 				var nameList = rType.names.split( ',' );
 				nameList.forEach( reward =>
 				{
+					reward = reward.trim();
 					if ( reward )
 					{
 						var itemidForReward;
 						if ( reward.startsWith( 'lootlist:' ) )
 						{                                               
 							itemidForReward = InventoryAPI.GetLootListItemIdByIndex( reward, 0 );
-						} else
+						}
+						else if ( reward.charAt( 0 ) === '[' )
+						{
+							// revival: collection skin, "[paintkit]weapon" (same syntax
+							// as items_game loot lists, e.g. [gs_ak47_...]weapon_ak47).
+							// Resolve the weapon def + paint-kit index into a faux id.
+							var close = reward.indexOf( ']' );
+							var paintName = reward.substring( 1, close );
+							var weaponName = reward.substring( close + 1 );
+							var weaponDef = InventoryAPI.GetItemDefinitionIndexFromDefinitionName( weaponName );
+							var paintIndex = 0;
+							if ( typeof InventoryAPI.GetPaintKitDefIndex === 'function' )
+								paintIndex = InventoryAPI.GetPaintKitDefIndex( paintName );
+							itemidForReward = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( weaponDef, paintIndex );
+						}
+						else
 						{	                                                  
 							var nDefinitionIndex = InventoryAPI.GetItemDefinitionIndexFromDefinitionName( reward );
 							itemidForReward = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( nDefinitionIndex, 0 );
@@ -256,6 +272,15 @@ var OperationUtil = ( function () {
 			else
 			{
 				_rewardData.lootlist = _GetLootListForReward( _rewardData.itempremium.ids[ 0 ] );
+				// revival: a direct multi-item reward (e.g. "Riptide Agents" listed as
+				// several agent def names, or several collection skins in item_name)
+				// has no container loot list - use the resolved ids themselves so the
+				// inspect shows every agent model / skin, like CS:GO's grouped tiles.
+				if ( ( !_rewardData.lootlist || _rewardData.lootlist.length === 0 )
+					&& _rewardData.itempremium.ids.length > 0 )
+				{
+					_rewardData.lootlist = _rewardData.itempremium.ids.slice();
+				}
 			}
 			_rewardData.containerType = _GetContainerTypeForReward( _rewardData );
 
