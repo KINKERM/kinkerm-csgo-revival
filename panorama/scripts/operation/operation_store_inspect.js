@@ -558,10 +558,27 @@ var OperationStoreInspect = ( function()
 
 	var OnActivateConfirmReward = function()
 	{
-		MissionsAPI.ActionRedeemOperationGoods( _m_nSeasonAccess, _m_rewardIndex );
+		// revival: MissionsAPI.ActionRedeemOperationGoods() is a Game-Coordinator
+		// operation-redeem call this server does not implement (it silently does
+		// nothing, then the reveal times out with "item not given"). Instead route
+		// the purchase through csgo_gc's STORE - the exact same path the pass uses in
+		// operation_util _OpenStoreForPass - which grants any item for free.
+		// _m_rewardId is the faux item id (def + paint 0) csgo_gc's store accepts.
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-confirm-btn_label' ).enabled = false;
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-confirm-btn_cancel' ).enabled = false;
-		_StartRevealAnim();
+
+		$.DispatchEvent( 'UIPopupButtonClicked', '' );   // close this confirm popup
+		UiToolkitAPI.ShowCustomLayoutPopupParameters(
+			'',
+			'file://{resources}/layout/popups/popup_inventory_inspect.xml',
+			'itemid=' + _m_rewardId +
+			'&' + 'inspectonly=false' +
+			'&' + 'asyncworkitemwarning=no' +
+			'&' + 'bluroperationpanel=true' +
+			'&' + 'storeitemid=' + _m_rewardId +
+			'&' + 'overridepurchasemultiple=0',
+			'none'
+		);
 	};
 
 	var _StartRevealAnim = function()

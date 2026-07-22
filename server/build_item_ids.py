@@ -68,7 +68,15 @@ def main() -> None:
         elif "key" in low and ("case_key" in prefab or "key" in name.lower()):
             keys.append(row)
         elif item_class == "customplayer" or "customplayer" in prefab:
-            agents.append(row)
+            # figure out the faction (agents are grouped T vs CT, like in-game)
+            ubc = resolve(prefab_map, it, "used_by_classes") or {}
+            if isinstance(ubc, dict) and "terrorists" in ubc:
+                faction = "T"
+            elif isinstance(ubc, dict) and "counter-terrorists" in ubc:
+                faction = "CT"
+            else:
+                faction = "?"
+            agents.append((int(defidx), name, faction))
         elif any(k in low for k in ("coin", "operation", "season", "pass", "_stars", "medal")):
             operation.append(row)
 
@@ -86,7 +94,16 @@ def main() -> None:
         dump(f, "OPERATION (coins / passes / stars / medals)", operation)
         dump(f, "CASES", cases)
         dump(f, "KEYS", keys)
-        dump(f, "AGENTS (playable characters)", agents)
+
+        # agents: grouped by faction (T / CT), the way CS:GO presents them
+        f.write(f"\n{'='*70}\nAGENTS (playable characters) ({len(agents)})\n{'='*70}\n")
+        for fac, title in (("T", "Terrorists"), ("CT", "Counter-Terrorists"), ("?", "Other")):
+            grp = sorted((d, n) for d, n, fx in agents if fx == fac)
+            if not grp:
+                continue
+            f.write(f"\n  --- {title} ({len(grp)}) ---\n")
+            for defidx, name in grp:
+                f.write(f"  {defidx:>7}  {name}\n")
 
         # collections / item sets (Riptide, Dust, etc.)
         f.write(f"\n{'='*70}\nCOLLECTIONS / ITEM SETS ({len(item_sets)})\n{'='*70}\n")
