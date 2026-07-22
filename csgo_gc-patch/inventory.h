@@ -105,6 +105,12 @@ public:
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
 
+    // operation shop (revival): spend `cost` stars from the player's Operation coin
+    // (config coin defs, star attribute). Returns false (changing nothing) if the
+    // player owns no coin or doesn't have enough stars. On success the coin is
+    // persisted and appended to `update` so the game live-refreshes the balance.
+    bool SpendStars(int cost, CMsgSOMultipleObjects &update);
+
 private:
     uint32_t AccountId() const;
 

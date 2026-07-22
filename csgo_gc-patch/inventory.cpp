@@ -1689,6 +1689,72 @@ uint64_t Inventory::PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObje
     return item.id();
 }
 
+// operation shop (revival): spend stars from the player's Operation coin
+bool Inventory::SpendStars(int cost, CMsgSOMultipleObjects &update)
+{
+    if (cost <= 0)
+    {
+        return true;
+    }
+
+    const std::vector<uint32_t> &coinDefs = GetConfig().OperationCoinDefs();
+    uint32_t starAttr = GetConfig().OperationStarAttribute();
+
+    for (auto &pair : m_items)
+    {
+        CSOEconItem &item = pair.second;
+
+        bool isCoin = false;
+        for (uint32_t coinDef : coinDefs)
+        {
+            if (coinDef == item.def_index())
+            {
+                isCoin = true;
+                break;
+            }
+        }
+        if (!isCoin)
+        {
+            continue;
+        }
+
+        // find the star ("upgrade level") attribute on the coin, if present
+        CSOEconItemAttribute *starAttribute = nullptr;
+        for (int i = 0; i < item.attribute_size(); i++)
+        {
+            if (item.mutable_attribute(i)->def_index() == starAttr)
+            {
+                starAttribute = item.mutable_attribute(i);
+                break;
+            }
+        }
+
+        uint32_t stars = starAttribute ? m_itemSchema.AttributeUint32(starAttribute) : 0;
+        if (stars < (uint32_t)cost)
+        {
+            // not enough stars on this coin
+            return false;
+        }
+
+        if (!starAttribute)
+        {
+            starAttribute = item.add_attribute();
+            starAttribute->set_def_index(starAttr);
+        }
+        m_itemSchema.SetAttributeUint32(starAttribute, stars - (uint32_t)cost);
+
+        WriteToFile();
+        AddToMultipleObjects(update, item);
+
+        Platform::Print("operation shop: spent %d stars (coin def %u now has %u)\n",
+            cost, item.def_index(), stars - (uint32_t)cost);
+        return true;
+    }
+
+    // player doesn't own an Operation coin
+    return false;
+}
+
 bool Inventory::UnequipItem(uint64_t itemId, CMsgSOMultipleObjects &update)
 {
     uint32_t defIndex, paintKitIndex;

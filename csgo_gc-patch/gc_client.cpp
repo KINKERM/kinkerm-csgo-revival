@@ -551,10 +551,30 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
     // inventory update response
     std::vector<CMsgSOSingleObject> inventoryUpdate;
 
+    // operation shop (revival): star deduction for the player's coin
+    CMsgSOMultipleObjects coinUpdate;
+    bool coinChanged = false;
+
     for (const auto &item : message.line_items())
     {
         for (uint32_t i = 0; i < item.quantity(); i++)
         {
+            // operation shop (revival): if this def is a star-priced reward, spend the
+            // stars from the player's Operation coin first. The client already greys
+            // out unaffordable rewards; this enforces it server-side AND does the
+            // actual deduction (the free store otherwise ignores stars).
+            int starCost = GetConfig().OperationShopCost(item.item_def_id());
+            if (starCost > 0)
+            {
+                if (!m_inventory.SpendStars(starCost, coinUpdate))
+                {
+                    Platform::Print("operation shop: refused def %u - not enough stars (need %d)\n",
+                        item.item_def_id(), starCost);
+                    continue;
+                }
+                coinChanged = true;
+            }
+
             uint64_t itemId = m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
             if (!itemId)
             {
@@ -565,6 +585,12 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
                 m_transactionItemIds.push_back(itemId);
             }
         }
+    }
+
+    // operation shop (revival): push the coin's new star balance to the game
+    if (coinChanged)
+    {
+        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, coinUpdate);
     }
 
     char url[128]; // url doesn't matter, but it needs to be set

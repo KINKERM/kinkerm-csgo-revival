@@ -9,6 +9,13 @@ struct RarityWeight
     float weight;
 };
 
+// operation shop (revival): star price of one shop reward item def
+struct ShopReward
+{
+    uint32_t defIndex;
+    int cost;
+};
+
 // for Platform::Print calls
 enum LogOutput
 {
@@ -47,6 +54,15 @@ public:
     // the case. Admin-grant it like any case. 0 = disabled.
     uint32_t GoldOnlyCrate() const { return m_goldOnlyCrate; }
 
+    // operation shop (revival): buying a reward in the Operation Shop spends stars
+    // from the player's Operation coin. OperationShopCost returns a reward item def's
+    // star price (0 if it isn't a shop reward). Stars live on one of OperationCoinDefs
+    // in the OperationStarAttribute ("upgrade level"). Keep the costs here in sync with
+    // operation_util.js m_rewardSchema points.
+    int OperationShopCost(uint32_t defIndex) const;
+    const std::vector<uint32_t> &OperationCoinDefs() const { return m_operationCoinDefs; }
+    uint32_t OperationStarAttribute() const { return m_operationStarAttribute; }
+
     bool VacBanned() const { return m_vacBanned; }
     int CommendedFriendly() const { return m_commendedFriendly; }
     int CommendedTeaching() const { return m_commendedTeaching; }
@@ -78,6 +94,12 @@ private:
 
     // "gold only" case (revival addition): crate def that always rolls a gold
     uint32_t m_goldOnlyCrate{ 0 };
+
+    // operation shop (revival): coin defs that hold stars, the star attribute, and
+    // the per-reward star costs (parsed from config's operation_shop block)
+    std::vector<uint32_t> m_operationCoinDefs{ 4759, 4760, 4761, 4762 };
+    uint32_t m_operationStarAttribute{ 268 };
+    std::vector<ShopReward> m_operationShopRewards;
 
     bool m_vacBanned{ false };
     int m_commendedFriendly{ 0 };

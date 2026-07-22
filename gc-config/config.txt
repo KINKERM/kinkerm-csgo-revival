@@ -44,6 +44,25 @@
 // 0 = disabled.
 "gold_only_crate"	"9600"
 
+// Operation Shop star pricing. When a player buys a reward in the Operation Shop,
+// these star costs are deducted from their Operation coin (granted via
+// `admin.py grant-coin <steamid> --stars N`). Keep each cost in sync with the
+// "points" value in panorama/scripts/operation/operation_util.js m_rewardSchema.
+// A purchase is refused server-side if the coin doesn't have enough stars.
+//   "rewards"        - "<item def index>"  "<star cost>"
+//   "coin_defs"      - optional; defaults to 4759 4760 4761 4762
+//   "star_attribute" - optional; defaults to 268 (the coin's "upgrade level")
+"operation_shop"
+{
+	"star_attribute"	"268"
+	"rewards"
+	{
+		"9600"	"20"	// Kinkerm's Case = 20 stars
+		"4061"	"15"	// Chroma Case = 15 stars
+		"4668"	"5"	// X-Ray P250 Package = 5 stars
+	}
+}
+
 // Case drop weights (per rarity id):
 //   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted (purple),
 //   5 Classified (pink), 6 Covert (red), 99 Rare Special (gold - knives/gloves).

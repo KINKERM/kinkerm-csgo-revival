@@ -61,6 +61,35 @@ GCConfig::GCConfig()
         }
     }
 
+    // operation shop (revival): star costs per reward + (optional) coin defs / attr
+    const KeyValue *opShop = config.GetSubkey("operation_shop");
+    if (opShop)
+    {
+        m_operationStarAttribute = opShop->GetNumber("star_attribute", m_operationStarAttribute);
+
+        const KeyValue *coinDefs = opShop->GetSubkey("coin_defs");
+        if (coinDefs)
+        {
+            m_operationCoinDefs.clear();
+            for (const KeyValue &subkey : *coinDefs)
+            {
+                m_operationCoinDefs.push_back(FromString<uint32_t>(subkey.Name()));
+            }
+        }
+
+        const KeyValue *rewards = opShop->GetSubkey("rewards");
+        if (rewards)
+        {
+            for (const KeyValue &subkey : *rewards)
+            {
+                ShopReward reward;
+                reward.defIndex = FromString<uint32_t>(subkey.Name());
+                reward.cost = FromString<int>(subkey.String());
+                m_operationShopRewards.push_back(reward);
+            }
+        }
+    }
+
     m_vacBanned = config.GetNumber("vac_banned", m_vacBanned);
     m_commendedFriendly = config.GetNumber("cmd_friendly", m_commendedFriendly);
     m_commendedTeaching = config.GetNumber("cmd_teaching", m_commendedTeaching);
@@ -76,6 +105,19 @@ float GCConfig::GetRarityWeight(uint32_t rarity) const
         if (weight.rarity == rarity)
         {
             return weight.weight;
+        }
+    }
+
+    return 0;
+}
+
+int GCConfig::OperationShopCost(uint32_t defIndex) const
+{
+    for (const ShopReward &reward : m_operationShopRewards)
+    {
+        if (reward.defIndex == defIndex)
+        {
+            return reward.cost;
         }
     }
 
