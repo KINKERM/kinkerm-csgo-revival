@@ -1,0 +1,16 @@
+[Unit]
+Description=CS:GO Revival dedicated gameserver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+# edit WorkingDirectory + ExecStart to your server root, and pick the mode script
+WorkingDirectory=/home/ubuntu/csgo-ds
+ExecStart=/home/ubuntu/csgo-ds/start-competitive.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
