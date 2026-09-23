@@ -160,6 +160,38 @@ bool CaseOpening::SelectItemFromCrate(const CSOEconItem &crate, CSOEconItem &ite
     return m_itemSchema.CreateItemFromLootListItem(m_random, *lootListItem, statTrak, ItemOriginCrate, UnacknowledgedFoundInCrate, item);
 }
 
+
+bool CaseOpening::SelectItemFromDirectLootList(const LootList &lootList, CSOEconItem &item)
+{
+    std::vector<const LootListItem *> lootListItems;
+    lootListItems.reserve(32);
+    GetLootListItems(lootList, lootListItems);
+
+    if (lootListItems.empty())
+    {
+        Platform::Print("operation shop: direct loot list is empty\n");
+        return false;
+    }
+
+    // Reuse the normal rarity-weighted picker, but without case pity and without
+    // StatTrak generation. This matches the operation-store style of drawing a
+    // random item from a collection/dossier/capsule reward definition.
+    std::sort(lootListItems.begin(), lootListItems.end(), CompareRarity);
+    const LootListItem *lootListItem = SelectLootListItem(lootListItems, 0, false);
+    if (!lootListItem)
+    {
+        return false;
+    }
+
+    return m_itemSchema.CreateItemFromLootListItem(
+        m_random,
+        *lootListItem,
+        false,
+        ItemOriginPurchased,
+        UnacknowledgedPurchased,
+        item);
+}
+
 // get a range of loot list items with a specific rarity from a vector sorted by rarity
 static std::pair<size_t, size_t> FindRarityRange(const std::vector<const LootListItem *> &items, uint32_t rarity)
 {
