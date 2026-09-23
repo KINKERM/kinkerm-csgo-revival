@@ -123,6 +123,28 @@ struct Collection
     std::vector<CollectionItem> items;
 };
 
+// Operation mission data parsed from items_game.txt. Thresholds are stored in
+// ascending order (e.g. "5,3,1" becomes {1,3,5}); crossing each threshold
+// grants operationalPoints stars, subject to the mission-card weekly cap.
+struct QuestDefinition
+{
+    uint32_t id{};
+    std::vector<uint32_t> thresholds;
+    uint32_t operationalPoints{};
+
+    uint32_t Goal() const
+    {
+        return thresholds.empty() ? 0 : thresholds.back();
+    }
+};
+
+struct OperationMissionCard
+{
+    uint32_t id{};
+    uint32_t maxStars{};
+    std::vector<uint32_t> questIds;
+};
+
 class ItemSchema
 {
 public:
@@ -143,6 +165,10 @@ public:
     // dossiers, collection rewards, sticker/patch packs) point directly at a
     // named loot_list_name rather than a revolving case series.
     const LootList *GetDirectLootList(uint32_t defIndex) const;
+
+    // Operation Riptide mission metadata.
+    const QuestDefinition *GetQuestDefinition(uint32_t questId) const;
+    const OperationMissionCard *GetOperationMissionCardForQuest(uint32_t questId) const;
 
     // for case opening FIXME: do we want to keep this here???
     bool CreateItemFromLootListItem(Random &random,
@@ -281,6 +307,8 @@ private:
     void ParseMusicDefinitions(const KeyValue *musicDefinitionsKey);
     void ParseLootLists(const KeyValue *lootListsKey, bool unusual);
     void ParseRevolvingLootLists(const KeyValue *revolvingLootListsKey);
+    void ParseQuests(const KeyValue *questsKey);
+    void ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, uint32_t season);
 
     // trade-up contracts (revival addition)
     void ParseItemSets(const KeyValue *itemSetsKey);
@@ -303,6 +331,10 @@ private:
     std::unordered_map<std::string, LootList> m_lootLists;
 
     std::unordered_map<uint32_t, const LootList &> m_revolvingLootLists;
+
+    std::unordered_map<uint32_t, QuestDefinition> m_questDefinitions;
+    std::vector<OperationMissionCard> m_operationMissionCards;
+    std::unordered_map<uint32_t, size_t> m_operationMissionCardByQuest;
 
     // trade-up contracts (revival addition): parsed collections, plus a lookup
     // from (itemDefIndex << 32 | paintKitDefIndex) to the owning collection index
