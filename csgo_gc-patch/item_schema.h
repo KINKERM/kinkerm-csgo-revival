@@ -139,6 +139,11 @@ public:
     // for case opening
     const LootList *GetCrateLootList(uint32_t crateDefIndex) const;
 
+    // Operation/self-opening rewards: many Valve shop definitions (agent
+    // dossiers, collection rewards, sticker/patch packs) point directly at a
+    // named loot_list_name rather than a revolving case series.
+    const LootList *GetDirectLootList(uint32_t defIndex) const;
+
     // for case opening FIXME: do we want to keep this here???
     bool CreateItemFromLootListItem(Random &random,
         const LootListItem &lootListItem,
