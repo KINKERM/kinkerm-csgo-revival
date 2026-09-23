@@ -70,6 +70,7 @@ public:
     uint32_t OperationStarPackValue(uint32_t defIndex) const;
     const std::vector<uint32_t> &OperationCoinDefs() const { return m_operationCoinDefs; }
     uint32_t OperationStarAttribute() const { return m_operationStarAttribute; }
+    uint32_t OperationSeason() const { return m_operationSeason; }
     uint32_t OperationPassDef() const { return m_operationPassDef; }
     uint32_t OperationActivationCoinDef() const { return m_operationActivationCoinDef; }
 
@@ -109,6 +110,7 @@ private:
     // the per-reward star costs (parsed from config's operation_shop block)
     std::vector<uint32_t> m_operationCoinDefs{ 4759, 4760, 4761, 4762 };
     uint32_t m_operationStarAttribute{ 268 };
+    uint32_t m_operationSeason{ 11 };
     uint32_t m_operationPassDef{ 4758 };
     uint32_t m_operationActivationCoinDef{ 4759 };
     std::vector<ShopReward> m_operationShopRewards;
