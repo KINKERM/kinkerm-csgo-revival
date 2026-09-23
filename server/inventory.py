@@ -102,7 +102,16 @@ def build_inventory_tree(player: dict[str, Any]) -> dict[str, Any]:
             "slot_id": eq.get("slot_id", 0),
         }
 
-    return {"items": items_node, "default_equips": default_equips_node}
+    tree: dict[str, Any] = {"items": items_node, "default_equips": default_equips_node}
+
+    # Preserve Operation Riptide account/quest state written by the patched GC.
+    # Without this block the central sync server would regenerate inventory.txt
+    # with only items/equips and wipe earned mission stars on the next launch.
+    operation = player.get("operation_riptide")
+    if isinstance(operation, dict):
+        tree["operation_riptide"] = _normalize_operation_state(operation)
+
+    return tree
 
 
 def render_inventory_txt(player: dict[str, Any]) -> str:
@@ -125,6 +134,34 @@ def render_inventory_txt(player: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 _INT_FIELDS = ("inventory", "level", "quality", "flags", "origin", "in_use", "rarity")
+_OPERATION_INT_FIELDS = (
+    "season", "earned_stars", "missions_completed", "mission_id", "season_pass_time"
+)
+
+
+def _normalize_operation_state(raw: Any) -> dict[str, Any]:
+    """Return a safe JSON/KV representation of the Operation Riptide state."""
+    if not isinstance(raw, dict):
+        return {}
+
+    out: dict[str, Any] = {}
+    for field in _OPERATION_INT_FIELDS:
+        if field in raw:
+            out[field] = _as_int(raw.get(field), 0)
+
+    quests_out: dict[str, Any] = {}
+    quests = raw.get("quests")
+    if isinstance(quests, dict):
+        for quest_id, quest_raw in quests.items():
+            qid = _as_int(quest_id, 0)
+            if qid <= 0 or not isinstance(quest_raw, dict):
+                continue
+            quests_out[str(qid)] = {
+                "progress": _as_int(quest_raw.get("progress"), 0),
+                "bonus_points": _as_int(quest_raw.get("bonus_points"), 0),
+            }
+    out["quests"] = quests_out
+    return out
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -185,4 +222,12 @@ def parse_inventory_txt(text: str) -> dict[str, Any]:
                 "slot_id": _as_int(raw.get("slot_id")),
             })
 
-    return {"items": items, "default_equips": default_equips}
+    operation_raw = root.get("operation_riptide")
+    operation = (_normalize_operation_state(operation_raw)
+                 if isinstance(operation_raw, dict) else None)
+
+    return {
+        "items": items,
+        "default_equips": default_equips,
+        "operation_riptide": operation,
+    }
