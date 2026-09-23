@@ -100,7 +100,7 @@ var OperationMain = ( function()
 		var elUpSell = $.GetContextPanel().FindChildInLayoutFile( 'op-main-upsell' );
 
 		var bPremiumUser = OperationUtil.GetOperationInfo().bPremiumUser;
-		var sUserOwnedOperationPassItemID = InventoryAPI.GetActiveSeasonPassItemId();
+		var sUserOwnedOperationPassItemID = OperationUtil.GetOwnedPassItemId();
 		var sFauxPassItemID = OperationUtil.GetPassFauxId();
 
 		elUpSell.FindChildInLayoutFile( 'op-main-upsell-label' ).text = $.Localize( bPremiumUser ?
