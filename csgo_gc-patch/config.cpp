@@ -66,6 +66,7 @@ GCConfig::GCConfig()
     if (opShop)
     {
         m_operationStarAttribute = opShop->GetNumber("star_attribute", m_operationStarAttribute);
+        m_operationSeason = opShop->GetNumber("season", m_operationSeason);
         m_operationPassDef = opShop->GetNumber("pass_def", m_operationPassDef);
         m_operationActivationCoinDef = opShop->GetNumber("activation_coin_def", m_operationActivationCoinDef);
 
