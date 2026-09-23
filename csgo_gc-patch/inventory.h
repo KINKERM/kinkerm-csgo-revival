@@ -130,6 +130,10 @@ public:
         int bonusPointsEarned,
         CMsgSOMultipleObjects &update);
 
+    bool SetOperationMissionCard(uint32_t season,
+        uint32_t missionCardId,
+        CMsgSOMultipleObjects &update);
+
 private:
     uint32_t AccountId() const;
 
