@@ -76,6 +76,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             ClientRequestJoinServerData(messageRead);
             break;
 
+        case k_EMsgGCCStrike15_v2_ClientRequestNewMission:
+            ClientRequestNewMission(messageRead);
+            break;
+
         case k_EMsgGCSetItemPositions:
             SetItemPositions(messageRead);
             break;
@@ -470,6 +474,32 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
 }
+
+void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
+{
+    CMsgGCCstrike15_v2_ClientRequestNewMission message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCstrike15_v2_ClientRequestNewMission failed, ignoring\n");
+        return;
+    }
+
+    if (!message.has_mission_id() || !message.has_campaign_id())
+    {
+        Platform::Print("operation: ClientRequestNewMission missing mission/campaign id\n");
+        return;
+    }
+
+    CMsgSOMultipleObjects update;
+    if (m_inventory.SetOperationMissionCard(
+        message.campaign_id(), message.mission_id(), update))
+    {
+        // Panorama waits for the SeasonalOperations SO update before it closes
+        // the activation spinner and configures matchmaking.
+        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
+    }
+}
+
 
 void ClientGC::SetItemPositions(GCMessageRead &messageRead)
 {
