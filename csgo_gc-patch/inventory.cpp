@@ -87,6 +87,70 @@ uint32_t Inventory::AccountId() const
     return m_steamId & 0xffffffff;
 }
 
+bool Inventory::IsOperationCoinDef(uint32_t defIndex) const
+{
+    for (uint32_t coinDef : GetConfig().OperationCoinDefs())
+    {
+        if (coinDef == defIndex)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+uint32_t Inventory::OperationStars(const CSOEconItem &item) const
+{
+    const uint32_t starAttr = GetConfig().OperationStarAttribute();
+    for (const CSOEconItemAttribute &attribute : item.attribute())
+    {
+        if (attribute.def_index() == starAttr)
+        {
+            return m_itemSchema.AttributeUint32(&attribute);
+        }
+    }
+
+    return 0;
+}
+
+const CSOEconItem *Inventory::FindOperationCoin(uint32_t minStars) const
+{
+    const CSOEconItem *best = nullptr;
+    uint32_t bestStars = 0;
+
+    for (const auto &pair : m_items)
+    {
+        const CSOEconItem &item = pair.second;
+        if (!IsOperationCoinDef(item.def_index()))
+        {
+            continue;
+        }
+
+        const uint32_t stars = OperationStars(item);
+        if (stars < minStars)
+        {
+            continue;
+        }
+
+        // Keep one canonical wallet even if a broken/old inventory contains
+        // multiple Operation coins: always use the coin with the most stars.
+        if (!best || stars > bestStars)
+        {
+            best = &item;
+            bestStars = stars;
+        }
+    }
+
+    return best;
+}
+
+CSOEconItem *Inventory::FindOperationCoin(uint32_t minStars)
+{
+    return const_cast<CSOEconItem *>(
+        static_cast<const Inventory *>(this)->FindOperationCoin(minStars));
+}
+
 CSOEconItem &Inventory::AllocateItem(uint32_t highItemId)
 {
     // Players fuck up their inventory files constantly and end up with item id collisions...
@@ -460,17 +524,123 @@ bool Inventory::UseItem(uint64_t itemId,
         return false;
     }
 
-    if (it->second.def_index() != ItemSchema::ItemSpray)
+    const uint32_t defIndex = it->second.def_index();
+
+    // Operation Riptide pass activation. The original Panorama flow uses
+    // InventoryAPI.UseTool(pass, ''), which lands here. The stock csgo_gc only
+    // supported sealed graffiti, so the pass could never become an Operation
+    // coin and users needed admin.py grant-coin. Make the real UI flow work:
+    // consume the pass and create the configured bronze Operation coin wallet.
+    if (defIndex == GetConfig().OperationPassDef())
+    {
+        if (FindOperationCoin(0))
+        {
+            Platform::Print("operation: pass %llu not consumed - player already owns a coin\n", itemId);
+            return false;
+        }
+
+        CSOEconItem &coin = AllocateItem(0);
+        const uint64_t coinId = coin.id();
+        if (!m_itemSchema.CreateItem(GetConfig().OperationActivationCoinDef(),
+            ItemOriginPurchased, UnacknowledgedPurchased, coin))
+        {
+            m_items.erase(coinId);
+            Platform::Print("operation: could not create activation coin def %u\n",
+                GetConfig().OperationActivationCoinDef());
+            return false;
+        }
+
+        CSOEconItemAttribute *starAttribute = coin.add_attribute();
+        starAttribute->set_def_index(GetConfig().OperationStarAttribute());
+        if (!m_itemSchema.SetAttributeUint32(starAttribute, 0))
+        {
+            m_items.erase(coinId);
+            Platform::Print("operation: could not initialize star attribute %u\n",
+                GetConfig().OperationStarAttribute());
+            return false;
+        }
+
+        // AllocateItem can rehash m_items, so re-find the pass before erasing it.
+        it = m_items.find(itemId);
+        if (it == m_items.end())
+        {
+            m_items.erase(coinId);
+            return false;
+        }
+
+        AddToMultipleObjects(updateMultiple, coin);
+        DestroyItem(it, destroy);
+        WriteToFile();
+
+        Platform::Print("operation: activated pass def %u -> coin def %u (0 stars)\n",
+            defIndex, GetConfig().OperationActivationCoinDef());
+        return true;
+    }
+
+    // Operation star packs (1 / 10 / 100 by default). The Panorama star-store
+    // already buys these inventory items and then calls InventoryAPI.UseTool on
+    // each one; applying them here completes that original client workflow.
+    const uint32_t starPackValue = GetConfig().OperationStarPackValue(defIndex);
+    if (starPackValue > 0)
+    {
+        CSOEconItem *coin = FindOperationCoin(0);
+        if (!coin)
+        {
+            Platform::Print("operation: cannot apply star pack def %u - no Operation coin\n", defIndex);
+            return false;
+        }
+
+        const uint32_t oldStars = OperationStars(*coin);
+        uint64_t sum = static_cast<uint64_t>(oldStars) + starPackValue;
+        const uint32_t newStars = sum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(sum);
+
+        CSOEconItemAttribute *starAttribute = nullptr;
+        for (int i = 0; i < coin->attribute_size(); i++)
+        {
+            if (coin->mutable_attribute(i)->def_index() == GetConfig().OperationStarAttribute())
+            {
+                starAttribute = coin->mutable_attribute(i);
+                break;
+            }
+        }
+        if (!starAttribute)
+        {
+            starAttribute = coin->add_attribute();
+            starAttribute->set_def_index(GetConfig().OperationStarAttribute());
+        }
+
+        if (!m_itemSchema.SetAttributeUint32(starAttribute, newStars))
+        {
+            return false;
+        }
+
+        AddToMultipleObjects(updateMultiple, *coin);
+        DestroyItem(it, destroy);
+        WriteToFile();
+
+        Platform::Print("operation: applied star pack def %u (+%u), balance %u -> %u\n",
+            defIndex, starPackValue, oldStars, newStars);
+        return true;
+    }
+
+    // Existing csgo_gc behaviour: unseal a graffiti item.
+    if (defIndex != ItemSchema::ItemSpray)
     {
         assert(false);
         return false;
     }
 
-    // create an unsealed spray based on the sealed one
-    CSOEconItem &unsealed = CreateItem(it->second);
+    // Copy before AllocateItem can rehash the item map.
+    const CSOEconItem sealed = it->second;
+    CSOEconItem &unsealed = CreateItem(sealed);
     unsealed.set_def_index(ItemSchema::ItemSprayPaint);
 
     // remove the sealed spray from our inventory
+    it = m_items.find(itemId);
+    if (it == m_items.end())
+    {
+        return false;
+    }
     DestroyItem(it, destroy);
 
     // equip the new spray, this will also unequip the old one if we had one
@@ -1681,12 +1851,33 @@ bool Inventory::RemoveItemName(uint64_t itemId,
 
 uint64_t Inventory::PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update)
 {
-    CSOEconItem &item = CreateItem(defIndex, ItemOriginPurchased, UnacknowledgedPurchased);
+    // Do not use CreateItem(defIndex) here: that helper allocates first and
+    // historically ignored ItemSchema::CreateItem's failure result, leaving an
+    // empty object with a valid id for invalid definitions.
+    CSOEconItem &item = AllocateItem(0);
+    const uint64_t itemId = item.id();
+
+    if (!m_itemSchema.CreateItem(defIndex, ItemOriginPurchased, UnacknowledgedPurchased, item))
+    {
+        m_items.erase(itemId);
+        Platform::Print("store: refused unknown/uncreatable item def %u\n", defIndex);
+        return 0;
+    }
 
     CMsgSOSingleObject &single = update.emplace_back();
     ToSingleObject(single, item);
 
     return item.id();
+}
+
+bool Inventory::CanSpendStars(int cost) const
+{
+    if (cost <= 0)
+    {
+        return true;
+    }
+
+    return FindOperationCoin(static_cast<uint32_t>(cost)) != nullptr;
 }
 
 // operation shop (revival): spend stars from the player's Operation coin
@@ -1697,62 +1888,41 @@ bool Inventory::SpendStars(int cost, CMsgSOMultipleObjects &update)
         return true;
     }
 
-    const std::vector<uint32_t> &coinDefs = GetConfig().OperationCoinDefs();
-    uint32_t starAttr = GetConfig().OperationStarAttribute();
-
-    for (auto &pair : m_items)
+    CSOEconItem *item = FindOperationCoin(static_cast<uint32_t>(cost));
+    if (!item)
     {
-        CSOEconItem &item = pair.second;
-
-        bool isCoin = false;
-        for (uint32_t coinDef : coinDefs)
-        {
-            if (coinDef == item.def_index())
-            {
-                isCoin = true;
-                break;
-            }
-        }
-        if (!isCoin)
-        {
-            continue;
-        }
-
-        // find the star ("upgrade level") attribute on the coin, if present
-        CSOEconItemAttribute *starAttribute = nullptr;
-        for (int i = 0; i < item.attribute_size(); i++)
-        {
-            if (item.mutable_attribute(i)->def_index() == starAttr)
-            {
-                starAttribute = item.mutable_attribute(i);
-                break;
-            }
-        }
-
-        uint32_t stars = starAttribute ? m_itemSchema.AttributeUint32(starAttribute) : 0;
-        if (stars < (uint32_t)cost)
-        {
-            // not enough stars on this coin
-            return false;
-        }
-
-        if (!starAttribute)
-        {
-            starAttribute = item.add_attribute();
-            starAttribute->set_def_index(starAttr);
-        }
-        m_itemSchema.SetAttributeUint32(starAttribute, stars - (uint32_t)cost);
-
-        WriteToFile();
-        AddToMultipleObjects(update, item);
-
-        Platform::Print("operation shop: spent %d stars (coin def %u now has %u)\n",
-            cost, item.def_index(), stars - (uint32_t)cost);
-        return true;
+        return false;
     }
 
-    // player doesn't own an Operation coin
-    return false;
+    const uint32_t oldStars = OperationStars(*item);
+    CSOEconItemAttribute *starAttribute = nullptr;
+    for (int i = 0; i < item->attribute_size(); i++)
+    {
+        if (item->mutable_attribute(i)->def_index() == GetConfig().OperationStarAttribute())
+        {
+            starAttribute = item->mutable_attribute(i);
+            break;
+        }
+    }
+
+    if (!starAttribute)
+    {
+        starAttribute = item->add_attribute();
+        starAttribute->set_def_index(GetConfig().OperationStarAttribute());
+    }
+
+    const uint32_t newStars = oldStars - static_cast<uint32_t>(cost);
+    if (!m_itemSchema.SetAttributeUint32(starAttribute, newStars))
+    {
+        return false;
+    }
+
+    WriteToFile();
+    AddToMultipleObjects(update, *item);
+
+    Platform::Print("operation shop: spent %d stars (coin def %u now has %u)\n",
+        cost, item->def_index(), newStars);
+    return true;
 }
 
 bool Inventory::UnequipItem(uint64_t itemId, CMsgSOMultipleObjects &update)
