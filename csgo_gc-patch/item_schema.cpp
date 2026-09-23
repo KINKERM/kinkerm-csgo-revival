@@ -419,6 +419,25 @@ const LootList *ItemSchema::GetCrateLootList(uint32_t crateDefIndex) const
     return &lootListSearch->second;
 }
 
+const LootList *ItemSchema::GetDirectLootList(uint32_t defIndex) const
+{
+    auto itemSearch = m_itemInfo.find(defIndex);
+    if (itemSearch == m_itemInfo.end() || itemSearch->second.m_lootListName.empty())
+    {
+        return nullptr;
+    }
+
+    auto lootListSearch = m_lootLists.find(itemSearch->second.m_lootListName);
+    if (lootListSearch == m_lootLists.end())
+    {
+        Platform::Print("No direct loot list '%s' for def %u\n",
+            itemSearch->second.m_lootListName.c_str(), defIndex);
+        return nullptr;
+    }
+
+    return &lootListSearch->second;
+}
+
 bool ItemSchema::CreateItemFromLootListItem(Random &random,
     const LootListItem &lootListItem,
     bool statTrak,
