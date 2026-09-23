@@ -255,6 +255,15 @@ void Inventory::ReadFromFile()
             defaultEquip.set_slot_id(defaultEquipKey.GetNumber<uint32_t>("slot_id"));
         }
     }
+
+    const KeyValue *operationKey = inventoryKey.GetSubkey("operation_riptide");
+    if (operationKey)
+    {
+        m_operationEarnedStars = operationKey->GetNumber<uint32_t>("earned_stars", 0);
+        m_operationMissionsCompleted = operationKey->GetNumber<uint32_t>("missions_completed", 0);
+        m_operationMissionId = operationKey->GetNumber<uint32_t>("mission_id", 0);
+        m_operationSeasonPassTime = operationKey->GetNumber<uint32_t>("season_pass_time", 0);
+    }
 }
 
 void Inventory::ReadItem(const KeyValue &itemKey, CSOEconItem &item) const
@@ -337,6 +346,15 @@ void Inventory::WriteToFile() const
         }
     }
 
+    {
+        KeyValue &operationKey = inventoryKey.AddSubkey("operation_riptide");
+        operationKey.AddNumber("season", GetConfig().OperationSeason());
+        operationKey.AddNumber("earned_stars", m_operationEarnedStars);
+        operationKey.AddNumber("missions_completed", m_operationMissionsCompleted);
+        operationKey.AddNumber("mission_id", m_operationMissionId);
+        operationKey.AddNumber("season_pass_time", m_operationSeasonPassTime);
+    }
+
     inventoryKey.WriteToFile(InventoryFilePath);
 }
 
@@ -416,6 +434,24 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
         CMsgSOCacheSubscribed_SubscribedType *object = message.add_objects();
         object->set_type_id(SOTypeGameAccountClient);
         object->add_object_data(accountClient.SerializeAsString());
+
+        // Operation Riptide shared object. Panorama's original mission/tier UI
+        // explicitly reads cache type "SeasonalOperations" (SO type 41).
+        CSOAccountSeasonalOperation operation;
+        operation.set_season_value(GetConfig().OperationSeason());
+        operation.set_tier_unlocked(m_operationEarnedStars);
+        operation.set_premium_tiers(FindOperationCoin(0) ? 1 : 0);
+        operation.set_mission_id(m_operationMissionId);
+        operation.set_missions_completed(m_operationMissionsCompleted);
+
+        const CSOEconItem *coin = FindOperationCoin(0);
+        operation.set_redeemable_balance(coin ? OperationStars(*coin) : 0);
+        operation.set_season_pass_time(
+            coin ? (m_operationSeasonPassTime ? m_operationSeasonPassTime : 1) : 0);
+
+        CMsgSOCacheSubscribed_SubscribedType *operationObject = message.add_objects();
+        operationObject->set_type_id(41); // CSOAccountSeasonalOperation
+        operationObject->add_object_data(operation.SerializeAsString());
     }
 
     {
@@ -570,6 +606,7 @@ bool Inventory::UseItem(uint64_t itemId,
 
         AddToMultipleObjects(updateMultiple, coin);
         DestroyItem(it, destroy);
+        m_operationSeasonPassTime = static_cast<uint32_t>(time(nullptr));
         WriteToFile();
 
         Platform::Print("operation: activated pass def %u -> coin def %u (0 stars)\n",
