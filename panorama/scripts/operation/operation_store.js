@@ -503,7 +503,7 @@ var OperationStore = ( function()
 
 		var oi = OperationUtil.GetOperationInfo();
 		var bPremiumUser = oi.bPremiumUser;
-		var sUserOwnedOperationPassItemID = InventoryAPI.GetActiveSeasonPassItemId();
+		var sUserOwnedOperationPassItemID = OperationUtil.GetOwnedPassItemId();
 
 		elUpSell.visible = !bPremiumUser;
 		elGetStars.visible = false;                                                     
