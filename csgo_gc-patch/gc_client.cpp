@@ -577,7 +577,9 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
             }
 
             const size_t updateCountBefore = inventoryUpdate.size();
-            uint64_t itemId = m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
+            uint64_t itemId = starCost > 0
+                ? m_inventory.PurchaseOperationReward(item.item_def_id(), inventoryUpdate)
+                : m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
             if (!itemId)
             {
                 Platform::Print("store: purchase failed for def %u\n", item.item_def_id());
