@@ -58,7 +58,8 @@ var OperationUtil = ( function () {
 		m_numRedeemableBalance = stars;
 		m_nRedeemableGoodsCount = m_rewardSchema.length; // just needs to be > 0 to show the store
 
-		// owning the coin = you have the pass (premium). No missions/tiers system.
+		// Owning the coin means the Riptide pass has been activated. Mission
+		// progress is handled separately; this function owns shop/pass state.
 		m_bPrime = true;
 		m_nRewardsCount = 0;
 		m_nLoopingRewardsCount = 0;
@@ -122,7 +123,7 @@ var OperationUtil = ( function () {
 		{ item_name: "character_operator_dossier_op11_legendary", ui_order: 1, points: 10 },
 		{ item_name: "character_operator_dossier_op11_mythical", ui_order: 1, points: 7 },
 		{ item_name: "character_operator_dossier_op11_rare", ui_order: 1, points: 5 },
-	]
+	];
 
 	var _GetObjValue= function( bHasStoreItems, rewardIndex, item )
 	{
