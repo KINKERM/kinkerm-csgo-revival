@@ -468,6 +468,19 @@ const OperationMissionCard *ItemSchema::GetOperationMissionCardForQuest(uint32_t
     return &m_operationMissionCards[it->second];
 }
 
+const OperationMissionCard *ItemSchema::GetOperationMissionCard(uint32_t cardId) const
+{
+    for (const OperationMissionCard &card : m_operationMissionCards)
+    {
+        if (card.id == cardId)
+        {
+            return &card;
+        }
+    }
+
+    return nullptr;
+}
+
 
 bool ItemSchema::CreateItemFromLootListItem(Random &random,
     const LootListItem &lootListItem,
