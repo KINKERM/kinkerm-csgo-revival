@@ -8,6 +8,12 @@ class KeyValue;
 
 using ItemMap = std::unordered_map<uint64_t, CSOEconItem>;
 
+struct OperationQuestProgressState
+{
+    uint32_t progress{};
+    uint32_t bonusPoints{};
+};
+
 class Inventory
 {
 public:
@@ -116,6 +122,14 @@ public:
     bool CanSpendStars(int cost) const;
     bool SpendStars(int cost, CMsgSOMultipleObjects &update);
 
+    // Apply match-end quest progress from the game server. Mission-earned stars
+    // increase both the spendable wallet and the non-spendable Operation tier
+    // progress, while respecting each Riptide mission card's weekly star cap.
+    bool ApplyOperationQuestProgress(uint32_t questId,
+        int normalPointsEarned,
+        int bonusPointsEarned,
+        CMsgSOMultipleObjects &update);
+
 private:
     uint32_t AccountId() const;
 
@@ -123,6 +137,10 @@ private:
     uint32_t OperationStars(const CSOEconItem &item) const;
     const CSOEconItem *FindOperationCoin(uint32_t minStars) const;
     CSOEconItem *FindOperationCoin(uint32_t minStars);
+    uint32_t OperationCoinDefForEarnedStars() const;
+    uint32_t OperationMissionCardRawStars(const OperationMissionCard &card) const;
+    void AddOperationSeasonalState(CMsgSOMultipleObjects &update) const;
+    void AddOperationQuestState(uint32_t questId, CMsgSOMultipleObjects &update) const;
 
     // trade-up contracts (revival addition): finds 5 Covert skins from the same
     // collection and same StatTrak state; returns their ids in `out`, or false
@@ -190,4 +208,5 @@ private:
     uint32_t m_operationMissionsCompleted{};
     uint32_t m_operationMissionId{};
     uint32_t m_operationSeasonPassTime{};
+    std::unordered_map<uint32_t, OperationQuestProgressState> m_operationQuestProgress;
 };
