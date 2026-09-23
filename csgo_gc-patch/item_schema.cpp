@@ -131,6 +131,18 @@ ItemSchema::ItemSchema()
         ParseItems(itemsKey, itemsGame->GetSubkey("prefabs"));
     }
 
+    const KeyValue *questsKey = itemsGame->GetSubkey("quests");
+    if (questsKey)
+    {
+        ParseQuests(questsKey);
+    }
+
+    const KeyValue *seasonalOperationsKey = itemsGame->GetSubkey("seasonaloperations");
+    if (seasonalOperationsKey)
+    {
+        ParseSeasonalOperation(seasonalOperationsKey, GetConfig().OperationSeason());
+    }
+
     const KeyValue *attributesKey = itemsGame->GetSubkey("attributes");
     if (attributesKey)
     {
@@ -437,6 +449,25 @@ const LootList *ItemSchema::GetDirectLootList(uint32_t defIndex) const
 
     return &lootListSearch->second;
 }
+
+
+const QuestDefinition *ItemSchema::GetQuestDefinition(uint32_t questId) const
+{
+    auto it = m_questDefinitions.find(questId);
+    return (it == m_questDefinitions.end()) ? nullptr : &it->second;
+}
+
+const OperationMissionCard *ItemSchema::GetOperationMissionCardForQuest(uint32_t questId) const
+{
+    auto it = m_operationMissionCardByQuest.find(questId);
+    if (it == m_operationMissionCardByQuest.end() || it->second >= m_operationMissionCards.size())
+    {
+        return nullptr;
+    }
+
+    return &m_operationMissionCards[it->second];
+}
+
 
 bool ItemSchema::CreateItemFromLootListItem(Random &random,
     const LootListItem &lootListItem,
@@ -770,6 +801,152 @@ void ItemSchema::ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, con
             info.m_supplyCrateSeries = supplyCrateSeries->GetNumber<uint32_t>("value");
         }
     }
+}
+
+
+static std::vector<uint32_t> ParsePositiveUintList(std::string_view input)
+{
+    std::vector<uint32_t> values;
+    size_t offset = 0;
+
+    while (offset < input.size())
+    {
+        size_t comma = input.find(',', offset);
+        std::string_view token = (comma == std::string_view::npos)
+            ? input.substr(offset)
+            : input.substr(offset, comma - offset);
+
+        uint32_t value = FromString<uint32_t>(token);
+        if (value > 0)
+        {
+            values.push_back(value);
+        }
+
+        if (comma == std::string_view::npos)
+        {
+            break;
+        }
+        offset = comma + 1;
+    }
+
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    return values;
+}
+
+static void AppendQuestRange(std::string_view token, std::vector<uint32_t> &out)
+{
+    size_t dash = token.find('-');
+    if (dash == std::string_view::npos)
+    {
+        uint32_t id = FromString<uint32_t>(token);
+        if (id)
+        {
+            out.push_back(id);
+        }
+        return;
+    }
+
+    uint32_t first = FromString<uint32_t>(token.substr(0, dash));
+    uint32_t last = FromString<uint32_t>(token.substr(dash + 1));
+    if (!first || !last || last < first)
+    {
+        return;
+    }
+
+    for (uint32_t id = first; id <= last; ++id)
+    {
+        out.push_back(id);
+        if (id == UINT32_MAX)
+        {
+            break;
+        }
+    }
+}
+
+void ItemSchema::ParseQuests(const KeyValue *questsKey)
+{
+    m_questDefinitions.reserve(questsKey->SubkeyCount());
+
+    for (const KeyValue &questKey : *questsKey)
+    {
+        uint32_t id = FromString<uint32_t>(questKey.Name());
+        if (!id)
+        {
+            continue;
+        }
+
+        QuestDefinition quest;
+        quest.id = id;
+        quest.operationalPoints = questKey.GetNumber<uint32_t>("operational_points", 0);
+        quest.thresholds = ParsePositiveUintList(questKey.GetString("points"));
+
+        // Tournament/challenge quests can live in the same table but are not
+        // Operation-star missions. Keep only definitions that have both a goal
+        // and an Operation star value.
+        if (!quest.thresholds.empty() && quest.operationalPoints > 0)
+        {
+            m_questDefinitions.emplace(id, std::move(quest));
+        }
+    }
+}
+
+void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, uint32_t season)
+{
+    const KeyValue *seasonKey = seasonalOperationsKey->GetSubkey(std::to_string(season));
+    if (!seasonKey)
+    {
+        Platform::Print("operation: no seasonaloperations block for season %u\n", season);
+        return;
+    }
+
+    for (const KeyValue &entry : *seasonKey)
+    {
+        if (entry.Name() != "quest_mission_card")
+        {
+            continue;
+        }
+
+        OperationMissionCard card;
+        card.id = entry.GetNumber<uint32_t>("id", 0);
+        card.maxStars = entry.GetNumber<uint32_t>("operational_points", 0);
+
+        std::string_view quests = entry.GetString("quests");
+        size_t offset = 0;
+        while (offset < quests.size())
+        {
+            size_t comma = quests.find(',', offset);
+            std::string_view token = (comma == std::string_view::npos)
+                ? quests.substr(offset)
+                : quests.substr(offset, comma - offset);
+            AppendQuestRange(token, card.questIds);
+
+            if (comma == std::string_view::npos)
+            {
+                break;
+            }
+            offset = comma + 1;
+        }
+
+        if (!card.id || !card.maxStars || card.questIds.empty())
+        {
+            continue;
+        }
+
+        size_t cardIndex = m_operationMissionCards.size();
+        m_operationMissionCards.push_back(std::move(card));
+
+        for (uint32_t questId : m_operationMissionCards.back().questIds)
+        {
+            if (m_questDefinitions.find(questId) != m_questDefinitions.end())
+            {
+                m_operationMissionCardByQuest[questId] = cardIndex;
+            }
+        }
+    }
+
+    Platform::Print("operation: parsed %zu mission cards and %zu Operation quests for season %u\n",
+        m_operationMissionCards.size(), m_operationMissionCardByQuest.size(), season);
 }
 
 void ItemSchema::ParseAttributes(const KeyValue *attributesKey)
