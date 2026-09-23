@@ -20,6 +20,7 @@ var OperationUtil = ( function () {
 	var m_aCoinDefIndexes = [4759, 4760, 4761, 4762];
 	var m_aStarDefIndexes = [4763, 4764, 4765]
 	var m_passStoreId = 4758;
+	var m_nOperationSeason = 11; // Operation Riptide / CommunitySeasonEleven2021
 
 	var _ValidateOperationInfo = function( nSeasonAccess )
 	{
@@ -96,16 +97,32 @@ var OperationUtil = ( function () {
 	// real def name or the tile falls back to the "Item Name" placeholder.
 	// points = star cost. Add a row for every def you want to sell.
 	var m_rewardSchema = [
-		{ item_name: "crate_kinkerm_case", ui_image: "econ/weapon_cases/crate_community_6",
-			ui_image_inspect: "econ/weapon_cases/crate_community_6",
-			ui_image_thumbnail: "econ/weapon_cases/crate_community_6", ui_order: 0, points: 20 },
-		{ item_name: "crate_community_6", ui_image: "econ/weapon_cases/crate_community_6",
-			ui_image_inspect: "econ/weapon_cases/crate_community_6",
-			ui_image_thumbnail: "econ/weapon_cases/crate_community_6", ui_order: 1, points: 15 },
-		{ item_name: "crate_xray_p250", ui_image: "econ/weapon_cases/crate_xray_p250",
-			ui_image_inspect: "econ/weapon_cases/crate_xray_p250",
-			ui_image_thumbnail: "econ/weapon_cases/crate_xray_p250", ui_order: 2, points: 5 },
-	];
+		// Operation Riptide case
+		{ item_name: "crate_community_29", ui_order: 2, points: 2 },
+
+		// 2021 map collections
+		{ item_name: "selfopeningitem_set_mirage_2021", ui_order: 2, points: 4 },
+		{ item_name: "selfopeningitem_set_dust_2_2021", ui_order: 2, points: 4 },
+		{ item_name: "selfopeningitem_set_vertigo_2021", ui_order: 2, points: 4 },
+
+		// 2021 Train fixed-rarity rewards
+		{ item_name: "selfopeningitem_set_train_2021_rare_standalone", ui_order: 2, points: 1 },
+		{ item_name: "selfopeningitem_set_train_2021_mythical_standalone", ui_order: 2, points: 4 },
+		{ item_name: "selfopeningitem_set_train_2021_legendary_standalone", ui_order: 2, points: 20 },
+		{ item_name: "selfopeningitem_set_train_2021_ancient_standalone", ui_order: 2, points: 100 },
+
+		// Stickers / patches
+		{ item_name: "crate_patch_pack03", ui_order: 3, points: 2 },
+		{ item_name: "crate_sticker_pack_op_riptide_capsule", ui_order: 3, points: 1 },
+		{ item_name: "crate_sticker_pack_riptide_surfshop", ui_order: 3, points: 1 },
+
+		// Operation Riptide agent dossiers
+		{ item_name: "character_operator_dossier_op11_ancient1", ui_order: 1, points: 25 },
+		{ item_name: "character_operator_dossier_op11_ancient2", ui_order: 1, points: 25 },
+		{ item_name: "character_operator_dossier_op11_legendary", ui_order: 1, points: 10 },
+		{ item_name: "character_operator_dossier_op11_mythical", ui_order: 1, points: 7 },
+		{ item_name: "character_operator_dossier_op11_rare", ui_order: 1, points: 5 },
+	]
 
 	var _GetObjValue= function( bHasStoreItems, rewardIndex, item )
 	{
@@ -321,33 +338,10 @@ var OperationUtil = ( function () {
 
 	var _GettotalPointsFromAvailableFromMissions = function()
 	{
-		var totalPoints = 0;
-		if ( !m_nSeasonAccess )
-		{
-			return  totalPoints;
-		}
-		
-		var cardCount = MissionsAPI.GetSeasonalOperationMissionCardsCount( m_nSeasonAccess );
-
-		for ( var i = 0; i < cardCount; i++ )
-		{
-			var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( m_nSeasonAccess, i );
-
-			if ( !jsoCardDetails )
-			{
-				return;
-			}
-
-			totalPoints += jsoCardDetails.operational_points;
-
-			                                                                                 
-			   	                                                  
-			   	                                                                                             
-			   		                                                   
-			    
-		}
-
-		return totalPoints;
+		// Operation Riptide awarded 100 mission-earned stars across its 16 weeks.
+		// The revival does not depend on Valve's live MissionsAPI service for the
+		// shop progress bar, so keep this static and deterministic.
+		return 100;
 	};
 
 	var _GetMissionDetails = function( missionId )
@@ -539,7 +533,7 @@ var OperationUtil = ( function () {
 
 	function _IfOperationEndedGetExtendedSeasonWithRedeemableBalance( bAlwaysShowOperationEndedMessageBox )
 	{
-		var nActiveSeason = 10;                                                                                                                   
+		var nActiveSeason = m_nOperationSeason;                                                                                                                   
 		
 		if ( bAlwaysShowOperationEndedMessageBox )
 		{
@@ -560,7 +554,7 @@ var OperationUtil = ( function () {
 
 	function _OpenPopupCustomLayoutOperationHub ( rewardIdxToSetWhenOpen )
 	{
-		var nActiveSeason = 1;
+		var nActiveSeason = m_nOperationSeason;
 		if ( nActiveSeason < 0 )
 			return;
 
@@ -582,7 +576,7 @@ var OperationUtil = ( function () {
 	{
 		$.DispatchEvent( 'ContextMenuEvent', '' );
 
-		var nActiveSeason = 1;
+		var nActiveSeason = m_nOperationSeason;
 		if ( nActiveSeason < 0 )
 			nActiveSeason = _IfOperationEndedGetExtendedSeasonWithRedeemableBalance();
 
@@ -668,7 +662,7 @@ var OperationUtil = ( function () {
 		$.DispatchEvent( 'PlaySoundEffect', 'tab_mainmenu_inventory', 'MOUSE' );
 
 		                                                
-		var nActiveSeason = 1;
+		var nActiveSeason = m_nOperationSeason;
 		if ( nActiveSeason < 0 )
 		{
 			_IfOperationEndedGetExtendedSeasonWithRedeemableBalance( true );
