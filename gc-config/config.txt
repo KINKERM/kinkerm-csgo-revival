@@ -58,7 +58,7 @@
 //   "star_attribute"      - optional; defaults to 268 ("upgrade level")
 "operation_shop"
 {
-	"season"			"11"	// Operation Riptide / CommunitySeasonEleven2021
+	"season"			"10"	// Operation Riptide season index (CommunitySeasonEleven2021 item defs)
 	"star_attribute"		"268"
 	"pass_def"			"4758"
 	"activation_coin_def"	"4759"
