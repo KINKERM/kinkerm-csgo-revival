@@ -71,11 +71,23 @@
 
 	"rewards"
 	{
-		"9600"	"20"	// Kinkerm's Case = 20 stars
-		"4061"	"15"	// Chroma Case = 15 stars
-		"4668"	"5"	// X-Ray P250 Package = 5 stars
-	}
-}
+		"4790"	"2"	// Operation Riptide Case
+		"4794"	"4"	// 2021 Mirage Collection
+		"4793"	"4"	// 2021 Dust II Collection
+		"4792"	"4"	// 2021 Vertigo Collection
+		"4785"	"1"	// 2021 Train: Mil-Spec
+		"4786"	"4"	// 2021 Train: Restricted
+		"4787"	"20"	// 2021 Train: Classified
+		"4788"	"100"	// 2021 Train: Covert
+		"4795"	"2"	// Operation Riptide Patch
+		"4783"	"1"	// Operation Riptide Sticker
+		"4779"	"1"	// Riptide Surf Shop Sticker
+		"4769"	"25"	// CT Master Agent dossier
+		"4770"	"25"	// T Master Agent dossier
+		"4768"	"10"	// Superior Agent dossier
+		"4767"	"7"	// Exceptional Agent dossier
+		"4766"	"5"	// Distinguished Agent dossier
+	}}
 
 // Case drop weights (per rarity id):
 //   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted (purple),
