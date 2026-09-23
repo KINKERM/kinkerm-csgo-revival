@@ -58,7 +58,7 @@ var OperationMainMenu = ( function()
 
 		if ( !_m_nSeasonIndex )
 		{
-			_m_nSeasonIndex = 11;
+			_m_nSeasonIndex = 10;
 			                                                                                              
 		}
 
