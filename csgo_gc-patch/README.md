@@ -23,7 +23,7 @@ Modified `csgo_gc` source files that add three revival features on top of upstre
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), licensed under the
 > 2-Clause BSD License, (c) Mikko Kokko. Changed files: `case_opening.*`,
-> `gc_client.*`, `inventory.*`, `item_schema.*`, `config.*`; everything else is upstream.
+> `gc_client.*`, `gc_server.*`, `inventory.*`, `item_schema.*`, `config.*`; everything else is upstream.
 
 ## Why this needs compiling
 The case-opening RNG lives inside `csgo_gc` (C++), not in the config or the revival
@@ -89,6 +89,8 @@ csgo_gc-patch\case_opening.cpp  ->  <source>\csgo_gc\case_opening.cpp
 csgo_gc-patch\case_opening.h    ->  <source>\csgo_gc\case_opening.h
 csgo_gc-patch\gc_client.cpp     ->  <source>\csgo_gc\gc_client.cpp
 csgo_gc-patch\gc_client.h       ->  <source>\csgo_gc\gc_client.h
+csgo_gc-patch\gc_server.cpp     ->  <source>\csgo_gc\gc_server.cpp
+csgo_gc-patch\gc_server.h       ->  <source>\csgo_gc\gc_server.h
 csgo_gc-patch\item_schema.cpp   ->  <source>\csgo_gc\item_schema.cpp
 csgo_gc-patch\item_schema.h     ->  <source>\csgo_gc\item_schema.h
 csgo_gc-patch\inventory.cpp     ->  <source>\csgo_gc\inventory.cpp
@@ -102,7 +104,7 @@ csgo_gc-patch\config.h          ->  <source>\csgo_gc\config.h
   **skin quality fix** that makes normal skins eligible (see the trade-up section
   at the bottom of this file).
 
-No CMake changes are needed — all eight files already exist in the project, so just
+No CMake changes are needed — all ten files already exist in the project, so just
 overwrite and rebuild.
 
 (You can do this in File Explorer with copy/paste, or in PowerShell with `copy`.)
@@ -217,6 +219,8 @@ running. The reliable fix is a **clean clone plus only the two patched files**:
    csgo_gc-patch\case_opening.h    ->  csgo_gc_clean\csgo_gc\case_opening.h
    csgo_gc-patch\gc_client.cpp     ->  csgo_gc_clean\csgo_gc\gc_client.cpp
    csgo_gc-patch\gc_client.h       ->  csgo_gc_clean\csgo_gc\gc_client.h
+    csgo_gc-patch\gc_server.cpp     ->  csgo_gc_clean\csgo_gc\gc_server.cpp
+    csgo_gc-patch\gc_server.h       ->  csgo_gc_clean\csgo_gc\gc_server.h
    csgo_gc-patch\item_schema.cpp   ->  csgo_gc_clean\csgo_gc\item_schema.cpp
    csgo_gc-patch\item_schema.h     ->  csgo_gc_clean\csgo_gc\item_schema.h
    csgo_gc-patch\inventory.cpp     ->  csgo_gc_clean\csgo_gc\inventory.cpp
@@ -341,7 +345,7 @@ opening uses (proven to work). We deliberately do **not** send a
 screen ends up needing that response to close cleanly, that's the follow-up.
 
 ## How to use it
-1. Copy all eight patched files (see the copy list above), rebuild, and swap the DLL
+1. Copy all ten patched files (see the copy list above), rebuild, and swap the DLL
    in — exactly like the pity patch. The trade-up code lives in the same
    `csgo_gc.dll`.
 2. Optional but recommended: `log_output 1` in `csgo_gc\config.txt` so you can see the
@@ -465,5 +469,5 @@ win is always something the reel could show.
 
 > Derivative of [`csgo_gc`](https://github.com/mikkokko/csgo_gc), 2-Clause BSD,
 > (c) Mikko Kokko. Changed files: `case_opening.*` (pity), and `gc_client.*`,
-> `inventory.*`, `item_schema.*`, `config.*` (trade-up contracts, skin quality fix,
+> `gc_server.*`, `inventory.*`, `item_schema.*`, `config.*` (trade-up contracts, skin quality fix,
 > Gold Trade-Up crate, gold-only case).
