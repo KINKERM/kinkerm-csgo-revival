@@ -44,17 +44,31 @@
 // 0 = disabled.
 "gold_only_crate"	"9600"
 
-// Operation Shop star pricing. When a player buys a reward in the Operation Shop,
-// these star costs are deducted from their Operation coin (granted via
-// `admin.py grant-coin <steamid> --stars N`). Keep each cost in sync with the
-// "points" value in panorama/scripts/operation/operation_util.js m_rewardSchema.
-// A purchase is refused server-side if the coin doesn't have enough stars.
-//   "rewards"        - "<item def index>"  "<star cost>"
-//   "coin_defs"      - optional; defaults to 4759 4760 4761 4762
-//   "star_attribute" - optional; defaults to 268 (the coin's "upgrade level")
+// Operation Riptide revival.
+// - Buying/activating pass 4758 consumes it and creates bronze coin 4759.
+// - 4763/4764/4765 are the original 1/10/100-star items; using them adds their
+//   value to the owned Operation coin.
+// - Shop reward purchases deduct the configured star cost server-side.
+// Keep reward costs in sync with operation_util.js m_rewardSchema "points".
+//   "pass_def"            - pass item activated through InventoryAPI.UseTool
+//   "activation_coin_def" - coin created when the pass is activated
+//   "star_packs"          - "<item def index>" "<stars added when used>"
+//   "rewards"             - "<item def index>" "<star cost>"
+//   "coin_defs"           - optional; defaults to 4759 4760 4761 4762
+//   "star_attribute"      - optional; defaults to 268 ("upgrade level")
 "operation_shop"
 {
-	"star_attribute"	"268"
+	"star_attribute"		"268"
+	"pass_def"			"4758"
+	"activation_coin_def"	"4759"
+
+	"star_packs"
+	{
+		"4763"	"1"
+		"4764"	"10"
+		"4765"	"100"
+	}
+
 	"rewards"
 	{
 		"9600"	"20"	// Kinkerm's Case = 20 stars
