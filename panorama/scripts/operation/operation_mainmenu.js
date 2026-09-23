@@ -58,7 +58,7 @@ var OperationMainMenu = ( function()
 
 		if ( !_m_nSeasonIndex )
 		{
-			_m_nSeasonIndex = 1;
+			_m_nSeasonIndex = 11;
 			                                                                                              
 		}
 
@@ -147,7 +147,7 @@ var OperationMainMenu = ( function()
 			OperationUtil.OpenUpSell.bind( undefined )
 		);
 
-		var sUserOwnedOperationPassItemID = InventoryAPI.GetActiveSeasonPassItemId();
+		var sUserOwnedOperationPassItemID = OperationUtil.GetOwnedPassItemId();
 		var sFauxPassItemID = OperationUtil.GetPassFauxId();
 		
 		btnPremium.text = sUserOwnedOperationPassItemID ? '#SFUI_ConfirmBtn_ActivatePassNow' : '#op_get_premium';
@@ -397,7 +397,7 @@ var OperationMainMenu = ( function()
 			_m_cp.FindChildInLayoutFile( 'id-op-mainmenu-stats-store-image' ).itemid = OperationUtil.GetPassFauxId();
 
 			elBtn.text = $.Localize(
-				InventoryAPI.GetActiveSeasonPassItemId() ? 
+				OperationUtil.GetOwnedPassItemId() ? 
 				'#SFUI_ConfirmBtn_ActivatePassNow' : 
 				'#op_get_premium'
 				).toUpperCase();
