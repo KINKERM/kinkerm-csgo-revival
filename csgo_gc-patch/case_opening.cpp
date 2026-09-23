@@ -71,6 +71,37 @@ void CaseOpening::SavePityCounter(int value) const
     }
 }
 
+bool CaseOpening::SelectItemFromDirectLootList(const LootList &lootList, CSOEconItem &item)
+{
+    std::vector<const LootListItem *> lootListItems;
+    lootListItems.reserve(32);
+
+    const bool containsUnusuals = GetLootListItems(lootList, lootListItems);
+    if (lootListItems.empty())
+    {
+        Platform::Print("operation reward: direct loot list was empty\n");
+        return false;
+    }
+
+    std::sort(lootListItems.begin(), lootListItems.end(), CompareRarity);
+
+    // Operation rewards use the normal rarity weighting but not the case pity
+    // system. They also never roll StatTrak just because a case could.
+    const LootListItem *lootListItem = SelectLootListItem(lootListItems, 0, containsUnusuals);
+    if (!lootListItem)
+    {
+        return false;
+    }
+
+    return m_itemSchema.CreateItemFromLootListItem(
+        m_random,
+        *lootListItem,
+        false,
+        ItemOriginPurchased,
+        UnacknowledgedPurchased,
+        item);
+}
+
 bool CaseOpening::SelectItemFromCrate(const CSOEconItem &crate, CSOEconItem &item)
 {
     const LootList *lootList = m_itemSchema.GetCrateLootList(crate.def_index());
