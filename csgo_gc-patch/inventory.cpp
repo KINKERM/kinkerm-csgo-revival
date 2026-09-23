@@ -151,6 +151,95 @@ CSOEconItem *Inventory::FindOperationCoin(uint32_t minStars)
         static_cast<const Inventory *>(this)->FindOperationCoin(minStars));
 }
 
+uint32_t Inventory::OperationCoinDefForEarnedStars() const
+{
+    const std::vector<uint32_t> &defs = GetConfig().OperationCoinDefs();
+    if (defs.empty())
+    {
+        return 0;
+    }
+
+    size_t index = 0;
+    if (m_operationEarnedStars >= 100)
+        index = 3;
+    else if (m_operationEarnedStars >= 66)
+        index = 2;
+    else if (m_operationEarnedStars >= 33)
+        index = 1;
+
+    if (index >= defs.size())
+    {
+        index = defs.size() - 1;
+    }
+    return defs[index];
+}
+
+uint32_t Inventory::OperationMissionCardRawStars(const OperationMissionCard &card) const
+{
+    uint64_t total = 0;
+
+    for (uint32_t questId : card.questIds)
+    {
+        const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
+        if (!quest)
+        {
+            continue;
+        }
+
+        auto stateIt = m_operationQuestProgress.find(questId);
+        uint32_t progress = (stateIt == m_operationQuestProgress.end()) ? 0 : stateIt->second.progress;
+
+        for (uint32_t threshold : quest->thresholds)
+        {
+            if (progress >= threshold)
+            {
+                total += quest->operationalPoints;
+            }
+        }
+    }
+
+    return total > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(total);
+}
+
+void Inventory::AddOperationSeasonalState(CMsgSOMultipleObjects &update)
+{
+    CSOAccountSeasonalOperation operation;
+    operation.set_season_value(GetConfig().OperationSeason());
+    operation.set_tier_unlocked(m_operationEarnedStars);
+    operation.set_premium_tiers(FindOperationCoin(0) ? 1 : 0);
+    operation.set_mission_id(m_operationMissionId);
+    operation.set_missions_completed(m_operationMissionsCompleted);
+
+    const CSOEconItem *coin = FindOperationCoin(0);
+    operation.set_redeemable_balance(coin ? OperationStars(*coin) : 0);
+    operation.set_season_pass_time(
+        coin ? (m_operationSeasonPassTime ? m_operationSeasonPassTime : 1) : 0);
+
+    AddToMultipleObjects(update, static_cast<SOTypeId>(41), operation);
+}
+
+void Inventory::AddOperationQuestState(uint32_t questId, CMsgSOMultipleObjects &update)
+{
+    const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
+    if (!quest)
+    {
+        return;
+    }
+
+    auto stateIt = m_operationQuestProgress.find(questId);
+    OperationQuestProgressState state;
+    if (stateIt != m_operationQuestProgress.end())
+    {
+        state = stateIt->second;
+    }
+
+    CSOQuestProgress progress;
+    progress.set_questid(questId);
+    progress.set_points_remaining(state.progress >= quest->Goal() ? 0 : quest->Goal() - state.progress);
+    progress.set_bonus_points(state.bonusPoints);
+    AddToMultipleObjects(update, static_cast<SOTypeId>(46), progress);
+}
+
 CSOEconItem &Inventory::AllocateItem(uint32_t highItemId)
 {
     // Players fuck up their inventory files constantly and end up with item id collisions...
@@ -263,6 +352,24 @@ void Inventory::ReadFromFile()
         m_operationMissionsCompleted = operationKey->GetNumber<uint32_t>("missions_completed", 0);
         m_operationMissionId = operationKey->GetNumber<uint32_t>("mission_id", 0);
         m_operationSeasonPassTime = operationKey->GetNumber<uint32_t>("season_pass_time", 0);
+
+        const KeyValue *questsKey = operationKey->GetSubkey("quests");
+        if (questsKey)
+        {
+            for (const KeyValue &questKey : *questsKey)
+            {
+                uint32_t questId = FromString<uint32_t>(questKey.Name());
+                if (!questId || !m_itemSchema.GetQuestDefinition(questId))
+                {
+                    continue;
+                }
+
+                OperationQuestProgressState state;
+                state.progress = questKey.GetNumber<uint32_t>("progress", 0);
+                state.bonusPoints = questKey.GetNumber<uint32_t>("bonus_points", 0);
+                m_operationQuestProgress[questId] = state;
+            }
+        }
     }
 }
 
@@ -353,6 +460,14 @@ void Inventory::WriteToFile() const
         operationKey.AddNumber("missions_completed", m_operationMissionsCompleted);
         operationKey.AddNumber("mission_id", m_operationMissionId);
         operationKey.AddNumber("season_pass_time", m_operationSeasonPassTime);
+
+        KeyValue &questsKey = operationKey.AddSubkey("quests");
+        for (const auto &pair : m_operationQuestProgress)
+        {
+            KeyValue &questKey = questsKey.AddSubkey(std::to_string(pair.first));
+            questKey.AddNumber("progress", pair.second.progress);
+            questKey.AddNumber("bonus_points", pair.second.bonusPoints);
+        }
     }
 
     inventoryKey.WriteToFile(InventoryFilePath);
@@ -452,6 +567,30 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
         CMsgSOCacheSubscribed_SubscribedType *operationObject = message.add_objects();
         operationObject->set_type_id(41); // CSOAccountSeasonalOperation
         operationObject->add_object_data(operation.SerializeAsString());
+
+        // Quest progress SOs are type 46. The client combines these values with
+        // the quest definitions already present in items_game.txt.
+        if (!m_operationQuestProgress.empty())
+        {
+            CMsgSOCacheSubscribed_SubscribedType *questObjects = message.add_objects();
+            questObjects->set_type_id(46); // CSOQuestProgress
+
+            for (const auto &pair : m_operationQuestProgress)
+            {
+                const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(pair.first);
+                if (!quest)
+                {
+                    continue;
+                }
+
+                CSOQuestProgress progress;
+                progress.set_questid(pair.first);
+                progress.set_points_remaining(
+                    pair.second.progress >= quest->Goal() ? 0 : quest->Goal() - pair.second.progress);
+                progress.set_bonus_points(pair.second.bonusPoints);
+                questObjects->add_object_data(progress.SerializeAsString());
+            }
+        }
     }
 
     {
@@ -1932,6 +2071,139 @@ uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgS
     Platform::Print("operation shop: resolved wrapper def %u -> reward def %u (item %llu)\n",
         defIndex, item.def_index(), item.id());
     return item.id();
+}
+
+bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
+    int normalPointsEarned,
+    int bonusPointsEarned,
+    CMsgSOMultipleObjects &update)
+{
+    CSOEconItem *coin = FindOperationCoin(0);
+    if (!coin)
+    {
+        return false;
+    }
+
+    const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
+    if (!quest || quest->Goal() == 0)
+    {
+        Platform::Print("operation: ignored unknown/non-Riptide quest %u\n", questId);
+        return false;
+    }
+
+    if (normalPointsEarned <= 0 && bonusPointsEarned <= 0)
+    {
+        return false;
+    }
+
+    OperationQuestProgressState &state = m_operationQuestProgress[questId];
+    const uint32_t oldProgress = state.progress;
+    const bool wasComplete = oldProgress >= quest->Goal();
+
+    uint64_t progressSum = static_cast<uint64_t>(oldProgress)
+        + static_cast<uint32_t>(std::max(normalPointsEarned, 0));
+    state.progress = static_cast<uint32_t>(
+        std::min<uint64_t>(progressSum, quest->Goal()));
+
+    if (bonusPointsEarned > 0)
+    {
+        uint64_t bonusSum = static_cast<uint64_t>(state.bonusPoints)
+            + static_cast<uint32_t>(bonusPointsEarned);
+        state.bonusPoints = bonusSum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(bonusSum);
+    }
+
+    const bool isComplete = state.progress >= quest->Goal();
+    if (!wasComplete && isComplete)
+    {
+        ++m_operationMissionsCompleted;
+    }
+
+    // Stars are awarded when a progress threshold is crossed. Then clamp the
+    // award to the mission card's weekly maximum (10 for week 1, 6 thereafter).
+    uint32_t starsEarnedNow = 0;
+    const OperationMissionCard *card = m_itemSchema.GetOperationMissionCardForQuest(questId);
+    if (card)
+    {
+        // Temporarily restore old progress to compute the card total before this update.
+        const uint32_t newProgress = state.progress;
+        state.progress = oldProgress;
+        const uint32_t oldRaw = OperationMissionCardRawStars(*card);
+        state.progress = newProgress;
+        const uint32_t newRaw = OperationMissionCardRawStars(*card);
+
+        const uint32_t oldCapped = std::min(oldRaw, card->maxStars);
+        const uint32_t newCapped = std::min(newRaw, card->maxStars);
+        if (newCapped > oldCapped)
+        {
+            starsEarnedNow = newCapped - oldCapped;
+        }
+    }
+    else
+    {
+        uint32_t oldSegments = 0;
+        uint32_t newSegments = 0;
+        for (uint32_t threshold : quest->thresholds)
+        {
+            if (oldProgress >= threshold) ++oldSegments;
+            if (state.progress >= threshold) ++newSegments;
+        }
+        if (newSegments > oldSegments)
+        {
+            starsEarnedNow = (newSegments - oldSegments) * quest->operationalPoints;
+        }
+    }
+
+    if (starsEarnedNow > 0)
+    {
+        const uint32_t oldWalletStars = OperationStars(*coin);
+        const uint64_t walletSum = static_cast<uint64_t>(oldWalletStars) + starsEarnedNow;
+        const uint32_t newWalletStars = walletSum > UINT32_MAX
+            ? UINT32_MAX : static_cast<uint32_t>(walletSum);
+
+        CSOEconItemAttribute *starAttribute = nullptr;
+        for (int i = 0; i < coin->attribute_size(); ++i)
+        {
+            if (coin->mutable_attribute(i)->def_index() == GetConfig().OperationStarAttribute())
+            {
+                starAttribute = coin->mutable_attribute(i);
+                break;
+            }
+        }
+        if (!starAttribute)
+        {
+            starAttribute = coin->add_attribute();
+            starAttribute->set_def_index(GetConfig().OperationStarAttribute());
+        }
+
+        if (!m_itemSchema.SetAttributeUint32(starAttribute, newWalletStars))
+        {
+            return false;
+        }
+
+        uint64_t earnedSum = static_cast<uint64_t>(m_operationEarnedStars) + starsEarnedNow;
+        m_operationEarnedStars = earnedSum > UINT32_MAX
+            ? UINT32_MAX : static_cast<uint32_t>(earnedSum);
+
+        const uint32_t targetCoinDef = OperationCoinDefForEarnedStars();
+        if (targetCoinDef && coin->def_index() != targetCoinDef)
+        {
+            Platform::Print("operation: coin upgraded def %u -> %u at %u earned stars\n",
+                coin->def_index(), targetCoinDef, m_operationEarnedStars);
+            coin->set_def_index(targetCoinDef);
+        }
+
+        AddToMultipleObjects(update, *coin);
+    }
+
+    AddOperationQuestState(questId, update);
+    AddOperationSeasonalState(update);
+    WriteToFile();
+
+    Platform::Print(
+        "operation: quest %u +%d normal +%d bonus, progress %u/%u, +%u stars (earned=%u)\n",
+        questId, normalPointsEarned, bonusPointsEarned, state.progress, quest->Goal(),
+        starsEarnedNow, m_operationEarnedStars);
+    return true;
 }
 
 bool Inventory::CanSpendStars(int cost) const
