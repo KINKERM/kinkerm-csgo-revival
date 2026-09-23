@@ -16,6 +16,13 @@ struct ShopReward
     int cost;
 };
 
+// Operation star-pack item def -> number of stars applied when the item is used.
+struct OperationStarPack
+{
+    uint32_t defIndex;
+    uint32_t stars;
+};
+
 // for Platform::Print calls
 enum LogOutput
 {
@@ -60,8 +67,11 @@ public:
     // in the OperationStarAttribute ("upgrade level"). Keep the costs here in sync with
     // operation_util.js m_rewardSchema points.
     int OperationShopCost(uint32_t defIndex) const;
+    uint32_t OperationStarPackValue(uint32_t defIndex) const;
     const std::vector<uint32_t> &OperationCoinDefs() const { return m_operationCoinDefs; }
     uint32_t OperationStarAttribute() const { return m_operationStarAttribute; }
+    uint32_t OperationPassDef() const { return m_operationPassDef; }
+    uint32_t OperationActivationCoinDef() const { return m_operationActivationCoinDef; }
 
     bool VacBanned() const { return m_vacBanned; }
     int CommendedFriendly() const { return m_commendedFriendly; }
@@ -99,7 +109,14 @@ private:
     // the per-reward star costs (parsed from config's operation_shop block)
     std::vector<uint32_t> m_operationCoinDefs{ 4759, 4760, 4761, 4762 };
     uint32_t m_operationStarAttribute{ 268 };
+    uint32_t m_operationPassDef{ 4758 };
+    uint32_t m_operationActivationCoinDef{ 4759 };
     std::vector<ShopReward> m_operationShopRewards;
+    std::vector<OperationStarPack> m_operationStarPacks{
+        { 4763, 1 },
+        { 4764, 10 },
+        { 4765, 100 },
+    };
 
     bool m_vacBanned{ false };
     int m_commendedFriendly{ 0 };
