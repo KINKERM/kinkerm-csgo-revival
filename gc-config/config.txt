@@ -87,7 +87,8 @@
 		"4768"	"10"	// Superior Agent dossier
 		"4767"	"7"	// Exceptional Agent dossier
 		"4766"	"5"	// Distinguished Agent dossier
-	}}
+	}
+}
 
 // Case drop weights (per rarity id):
 //   1 Consumer, 2 Industrial, 3 Mil-Spec, 4 Restricted (purple),
