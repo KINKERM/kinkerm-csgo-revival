@@ -169,6 +169,7 @@ public:
     // Operation Riptide mission metadata.
     const QuestDefinition *GetQuestDefinition(uint32_t questId) const;
     const OperationMissionCard *GetOperationMissionCardForQuest(uint32_t questId) const;
+    const OperationMissionCard *GetOperationMissionCard(uint32_t cardId) const;
 
     // for case opening FIXME: do we want to keep this here???
     bool CreateItemFromLootListItem(Random &random,
