@@ -110,7 +110,7 @@ private:
     // the per-reward star costs (parsed from config's operation_shop block)
     std::vector<uint32_t> m_operationCoinDefs{ 4759, 4760, 4761, 4762 };
     uint32_t m_operationStarAttribute{ 268 };
-    uint32_t m_operationSeason{ 11 };
+    uint32_t m_operationSeason{ 10 };
     uint32_t m_operationPassDef{ 4758 };
     uint32_t m_operationActivationCoinDef{ 4759 };
     std::vector<ShopReward> m_operationShopRewards;
