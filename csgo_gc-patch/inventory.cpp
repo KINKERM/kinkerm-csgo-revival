@@ -747,6 +747,7 @@ bool Inventory::UseItem(uint64_t itemId,
         AddToMultipleObjects(updateMultiple, coin);
         DestroyItem(it, destroy);
         m_operationSeasonPassTime = static_cast<uint32_t>(time(nullptr));
+        AddOperationSeasonalState(updateMultiple);
         WriteToFile();
 
         Platform::Print("operation: activated pass def %u -> coin def %u (0 stars)\n",
@@ -793,6 +794,7 @@ bool Inventory::UseItem(uint64_t itemId,
 
         AddToMultipleObjects(updateMultiple, *coin);
         DestroyItem(it, destroy);
+        AddOperationSeasonalState(updateMultiple);
         WriteToFile();
 
         Platform::Print("operation: applied star pack def %u (+%u), balance %u -> %u\n",
@@ -2132,8 +2134,6 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
 
     OperationQuestProgressState &state = m_operationQuestProgress[questId];
     const uint32_t oldProgress = state.progress;
-    const bool wasComplete = oldProgress >= quest->Goal();
-
     uint64_t progressSum = static_cast<uint64_t>(oldProgress)
         + static_cast<uint32_t>(std::max(normalPointsEarned, 0));
     state.progress = static_cast<uint32_t>(
@@ -2144,12 +2144,6 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         uint64_t bonusSum = static_cast<uint64_t>(state.bonusPoints)
             + static_cast<uint32_t>(bonusPointsEarned);
         state.bonusPoints = bonusSum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(bonusSum);
-    }
-
-    const bool isComplete = state.progress >= quest->Goal();
-    if (!wasComplete && isComplete)
-    {
-        ++m_operationMissionsCompleted;
     }
 
     // Stars are awarded when a progress threshold is crossed. Then clamp the
@@ -2217,6 +2211,12 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         uint64_t earnedSum = static_cast<uint64_t>(m_operationEarnedStars) + starsEarnedNow;
         m_operationEarnedStars = earnedSum > UINT32_MAX
             ? UINT32_MAX : static_cast<uint32_t>(earnedSum);
+
+        // Valve's Riptide UI compares SeasonalOperations.missions_completed
+        // against the coin's 33/66/100 "upgrade threshold". Those thresholds
+        // are mission-earned stars; purchased stars intentionally never touch
+        // this counter.
+        m_operationMissionsCompleted = m_operationEarnedStars;
 
         const uint32_t targetCoinDef = OperationCoinDefForEarnedStars();
         if (targetCoinDef && coin->def_index() != targetCoinDef)
@@ -2287,8 +2287,9 @@ bool Inventory::SpendStars(int cost, CMsgSOMultipleObjects &update)
         return false;
     }
 
-    WriteToFile();
     AddToMultipleObjects(update, *item);
+    AddOperationSeasonalState(update);
+    WriteToFile();
 
     Platform::Print("operation shop: spent %d stars (coin def %u now has %u)\n",
         cost, item->def_index(), newStars);
