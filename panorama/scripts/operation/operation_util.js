@@ -670,7 +670,7 @@ var OperationUtil = ( function () {
 			return;
 		}
 
-		var passId = InventoryAPI.GetActiveSeasonPassItemId();
+		var passId = _GetOwnedPassItemId();
 
 		if ( m_bPremiumUser || bForceOpenStarsPurchase )
 		{
@@ -684,7 +684,21 @@ var OperationUtil = ( function () {
 
 	var _GetPassFauxId = function()
 	{
-		return  InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_passStoreId, 0 );
+		return InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_passStoreId, 0 );
+	};
+
+	var _GetOwnedPassItemId = function()
+	{
+		// Do not use GetActiveSeasonPassItemId(): Valve no longer reports Riptide
+		// as the live season. Find the real owned pass (def 4758) directly.
+		var passFauxId = _GetPassFauxId();
+		var defName = InventoryAPI.GetItemDefinitionName( passFauxId );
+		if ( !defName )
+			return '';
+
+		InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
+		var count = InventoryAPI.GetInventoryCount();
+		return count > 0 ? InventoryAPI.GetInventoryItemIDByIndex( 0 ) : '';
 	};
 
 	var _GetCoinDefIdxArray = function()
@@ -883,6 +897,7 @@ var OperationUtil = ( function () {
 		GetQuestGameElements: _GetQuestGameElements,
 		UpdateOldStars: _UpdateOldStars,
 		GetPassFauxId: _GetPassFauxId,
+		GetOwnedPassItemId: _GetOwnedPassItemId,
 		GetCoinDefIdxArray : _GetCoinDefIdxArray,
 		GetOperationStarDefIdxArray: _GetOperationStarDefIdxArray,
 		GettotalPointsFromAvailableFromMissions: _GettotalPointsFromAvailableFromMissions,
