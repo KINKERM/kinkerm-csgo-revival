@@ -2073,6 +2073,39 @@ uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgS
     return item.id();
 }
 
+bool Inventory::SetOperationMissionCard(uint32_t season,
+    uint32_t missionCardId,
+    CMsgSOMultipleObjects &update)
+{
+    if (season != GetConfig().OperationSeason())
+    {
+        Platform::Print("operation: refused mission card %u for season %u (active %u)\n",
+            missionCardId, season, GetConfig().OperationSeason());
+        return false;
+    }
+
+    if (!FindOperationCoin(0))
+    {
+        Platform::Print("operation: refused mission card %u - pass not activated\n", missionCardId);
+        return false;
+    }
+
+    if (!m_itemSchema.GetOperationMissionCard(missionCardId))
+    {
+        Platform::Print("operation: refused unknown mission card %u\n", missionCardId);
+        return false;
+    }
+
+    m_operationMissionId = missionCardId;
+    AddOperationSeasonalState(update);
+    WriteToFile();
+
+    Platform::Print("operation: active mission card set to %u (season %u)\n",
+        missionCardId, season);
+    return true;
+}
+
+
 bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     int normalPointsEarned,
     int bonusPointsEarned,
