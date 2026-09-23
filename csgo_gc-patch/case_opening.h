@@ -13,6 +13,11 @@ public:
 
     bool SelectItemFromCrate(const CSOEconItem &crate, CSOEconItem &item);
 
+    // Pick one actual item from a direct loot list (Operation collection reward,
+    // agent dossier, sticker/patch pack). Unlike cases this has no pity counter
+    // and never creates StatTrak rewards.
+    bool SelectItemFromDirectLootList(const LootList &lootList, CSOEconItem &item);
+
 private:
     const LootListItem *SelectLootListItem(const std::vector<const LootListItem *> &items, int pity, bool containsUnusuals);
     uint32_t RandomRarityForItems(const std::vector<const LootListItem *> &items, int pity, bool containsUnusuals);
