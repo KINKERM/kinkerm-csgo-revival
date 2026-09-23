@@ -105,14 +105,19 @@ public:
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
 
-    // operation shop (revival): spend `cost` stars from the player's Operation coin
-    // (config coin defs, star attribute). Returns false (changing nothing) if the
-    // player owns no coin or doesn't have enough stars. On success the coin is
-    // persisted and appended to `update` so the game live-refreshes the balance.
+    // operation shop (revival): query/spend stars from the player's Operation coin.
+    // CanSpendStars never mutates inventory. SpendStars persists and emits the
+    // modified coin so Panorama live-refreshes the displayed balance.
+    bool CanSpendStars(int cost) const;
     bool SpendStars(int cost, CMsgSOMultipleObjects &update);
 
 private:
     uint32_t AccountId() const;
+
+    bool IsOperationCoinDef(uint32_t defIndex) const;
+    uint32_t OperationStars(const CSOEconItem &item) const;
+    const CSOEconItem *FindOperationCoin(uint32_t minStars) const;
+    CSOEconItem *FindOperationCoin(uint32_t minStars);
 
     // trade-up contracts (revival addition): finds 5 Covert skins from the same
     // collection and same StatTrak state; returns their ids in `out`, or false
