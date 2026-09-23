@@ -182,4 +182,12 @@ private:
     uint32_t m_lastHighItemId{};
     ItemMap m_items;
     std::vector<CSOEconDefaultEquippedDefinitionInstanceClient> m_defaultEquips;
+
+    // Persistent Operation Riptide progress. Spendable stars remain on the coin
+    // item attribute; earnedStars is deliberately separate because purchased
+    // star packs must not advance the operation coin/tier track.
+    uint32_t m_operationEarnedStars{};
+    uint32_t m_operationMissionsCompleted{};
+    uint32_t m_operationMissionId{};
+    uint32_t m_operationSeasonPassTime{};
 };
