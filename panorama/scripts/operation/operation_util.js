@@ -20,7 +20,7 @@ var OperationUtil = ( function () {
 	var m_aCoinDefIndexes = [4759, 4760, 4761, 4762];
 	var m_aStarDefIndexes = [4763, 4764, 4765]
 	var m_passStoreId = 4758;
-	var m_nOperationSeason = 11; // Operation Riptide / CommunitySeasonEleven2021
+	var m_nOperationSeason = 10; // Operation Riptide season_access (CommunitySeasonEleven2021 item defs)
 
 	var _ValidateOperationInfo = function( nSeasonAccess )
 	{
@@ -29,24 +29,25 @@ var OperationUtil = ( function () {
 		if ( nSeasonAccess < 0 || nSeasonAccess === null || nSeasonAccess === undefined )
 			return false;
 
-		// revival addition: the Operation coin (granted by `admin.py grant-coin`) IS
-		// both the pass and the star wallet. We must read the OWNED coin instance's
-		// 'upgrade level' attribute (the star balance) - reading a faux/schema item
-		// id returns the schema default (0), not the granted value. So we walk the
-		// real inventory the same way _UpdateOldStars does.
+		// The owned Operation coin is the authoritative spendable-star wallet.
+		// Walk all four Riptide coin ranks because mission progression upgrades the
+		// coin definition while preserving the same wallet attribute.
 		var stars = 0;
 		var bOwnsCoin = false;
+		var coinRank = 0;
 		for ( var c = 0; c < m_aCoinDefIndexes.length; c++ )
 		{
 			var defName = InventoryAPI.GetItemDefinitionName(
 				InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aCoinDefIndexes[ c ], 0 ) );
 			if ( !defName )
 				continue;
+
 			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
 			var count = InventoryAPI.GetInventoryCount();
 			for ( var i = 0; i < count; i++ )
 			{
 				bOwnsCoin = true;
+				coinRank = Math.max( coinRank, c + 1 );
 				var ownedId = InventoryAPI.GetInventoryItemIDByIndex( i );
 				var s = InventoryAPI.GetItemAttributeValue( ownedId, 'upgrade level' );
 				if ( s !== null && s !== undefined && s > stars )
@@ -54,23 +55,44 @@ var OperationUtil = ( function () {
 			}
 		}
 
-		m_nCoinRank = stars;
+		m_nCoinRank = coinRank;
 		m_numRedeemableBalance = stars;
-		m_nRedeemableGoodsCount = m_rewardSchema.length; // just needs to be > 0 to show the store
-
-		// Owning the coin means the Riptide pass has been activated. Mission
-		// progress is handled separately; this function owns shop/pass state.
+		m_nRedeemableGoodsCount = m_rewardSchema.length;
 		m_bPrime = true;
-		m_nRewardsCount = 0;
-		m_nLoopingRewardsCount = 0;
-		m_numMissionsRewardThresholds = 0;
-		m_numMissionsCompleted = 0;
-		m_numTierUnlocked = 0;
 		m_bPremiumUser = bOwnsCoin;
+
+		// The revival GC now publishes the real SeasonalOperations SO (type 41).
+		// Keep the coin scan as a fallback for old inventories, but use the SO for
+		// non-spendable mission progress and active-card state.
+		m_numTierUnlocked = 0;
+		m_numMissionsCompleted = 0;
 		m_nActiveCardIndex = -1;
 
-		_AddLoopingRewardsToDisplay();
+		var idxOperation = InventoryAPI.GetCacheTypeElementIndexByKey( 'SeasonalOperations', nSeasonAccess );
+		if ( idxOperation !== undefined && idxOperation !== null &&
+			InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_value' ) == nSeasonAccess )
+		{
+			var tierUnlocked = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'tier_unlocked' );
+			var missionsCompleted = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'missions_completed' );
+			var redeemableBalance = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'redeemable_balance' );
+			var seasonPassTime = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_pass_time' );
+			var premiumTiers = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'premium_tiers' );
 
+			m_numTierUnlocked = tierUnlocked === null || tierUnlocked === undefined ? 0 : Number( tierUnlocked );
+			m_numMissionsCompleted = missionsCompleted === null || missionsCompleted === undefined ? 0 : Number( missionsCompleted );
+			if ( redeemableBalance !== null && redeemableBalance !== undefined )
+				m_numRedeemableBalance = Number( redeemableBalance );
+			m_bPremiumUser = m_bPremiumUser || Number( seasonPassTime ) > 0 || Number( premiumTiers ) > 0;
+		}
+
+		// Mission definitions/reward schemas are already bundled in items_game.txt.
+		// These APIs now become useful again because the matching SO exists.
+		m_nRewardsCount = MissionsAPI.GetSeasonalOperationTrackRewardsCount( nSeasonAccess );
+		m_nLoopingRewardsCount = MissionsAPI.GetSeasonalOperationLoopingRewardsCount( nSeasonAccess );
+		m_numMissionsRewardThresholds = 0;
+		m_nActiveCardIndex = MissionsAPI.GetSeasonalOperationMissionCardActiveIdx( nSeasonAccess );
+
+		_AddLoopingRewardsToDisplay();
 		return true;
 	};
 
