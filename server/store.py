@@ -192,7 +192,8 @@ class PlayerStore:
             player["default_equips"] = []
             self._save()
 
-    def replace_inventory(self, steamid: str, items: list, default_equips: list) -> int:
+    def replace_inventory(self, steamid: str, items: list, default_equips: list,
+                          operation_riptide: Optional[dict] = None) -> int:
         """Replace a player's entire inventory with an uploaded snapshot.
 
         Used by two-way sync: after a session, the launcher uploads the player's
@@ -203,6 +204,11 @@ class PlayerStore:
             player = self._player(steamid)
             player["items"] = list(items or [])
             player["default_equips"] = list(default_equips or [])
+            # Newer patched clients persist Operation Riptide quest/account state
+            # in the same inventory.txt. Only replace it when the upload actually
+            # contains the block, so older clients cannot erase newer progress.
+            if operation_riptide is not None:
+                player["operation_riptide"] = dict(operation_riptide)
             # keep ids stable: honor ids the game/we already assigned, hand out
             # fresh unique ids for the rest, never reuse a retired id
             _ensure_stable_high_ids(player)
