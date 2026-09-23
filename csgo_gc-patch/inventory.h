@@ -105,6 +105,11 @@ public:
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
 
+    // Operation rewards differ from ordinary store purchases: Valve's collection
+    // tokens, dossiers and sticker/patch packs are direct loot-list wrappers.
+    // Resolve those wrappers to the actual random reward before it reaches inventory.
+    uint64_t PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
+
     // operation shop (revival): query/spend stars from the player's Operation coin.
     // CanSpendStars never mutates inventory. SpendStars persists and emits the
     // modified coin so Panorama live-refreshes the displayed balance.
