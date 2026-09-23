@@ -194,7 +194,10 @@ class Handler(BaseHTTPRequestHandler):
             text = self._read_raw_body()
             parsed = inventory_mod.parse_inventory_txt(text)
             count = self.store.replace_inventory(
-                steamid, parsed["items"], parsed["default_equips"]
+                steamid,
+                parsed["items"],
+                parsed["default_equips"],
+                parsed.get("operation_riptide"),
             )
             return self._send_json(200, {"ok": True, "items": count})
 
