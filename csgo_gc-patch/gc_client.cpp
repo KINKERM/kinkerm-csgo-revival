@@ -156,12 +156,81 @@ void ClientGC::HandleNetMessage(const void *data, uint32_t size)
         case k_EMsgGC_IncrementKillCountAttribute:
             IncrementKillCountAttribute(messageRead);
             return;
+
+        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
+            MatchEndRunRewardDrops(messageRead);
+            return;
         }
     }
 
     Platform::Print("ClientGC::HandleNetMessage: unhandled protobuf message %s\n",
         MessageName(messageRead.TypeUnmasked()));
 }
+
+void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchEndRunRewardDrops message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_MatchEndRunRewardDrops failed, ignoring\n");
+        return;
+    }
+
+    if (!message.has_match_end_quest_data())
+    {
+        return;
+    }
+
+    CMsgSOMultipleObjects update;
+    bool changed = false;
+
+    const CMsgGC_ServerQuestUpdateData &questData = message.match_end_quest_data();
+    for (const PlayerQuestData &playerData : questData.player_quest_data())
+    {
+        if (playerData.has_quester_account_id()
+            && playerData.quester_account_id() != AccountId())
+        {
+            continue;
+        }
+
+        // When the server explicitly says Operation points are ineligible
+        // (e.g. an invalid/offline setup), don't mint mission stars. Older
+        // server builds may omit the field entirely, so absence is accepted.
+        if (playerData.has_operation_points_eligible()
+            && !playerData.operation_points_eligible())
+        {
+            Platform::Print("operation: match quest points marked ineligible for account %u\n",
+                AccountId());
+            continue;
+        }
+
+        for (const PlayerQuestData::QuestItemData &quest : playerData.quest_item_data())
+        {
+            if (!quest.has_quest_id() || quest.quest_id() > UINT32_MAX)
+            {
+                continue;
+            }
+
+            const int normal = quest.has_quest_normal_points_earned()
+                ? quest.quest_normal_points_earned() : 0;
+            const int bonus = quest.has_quest_bonus_points_earned()
+                ? quest.quest_bonus_points_earned() : 0;
+
+            if (m_inventory.ApplyOperationQuestProgress(
+                static_cast<uint32_t>(quest.quest_id()), normal, bonus, update))
+            {
+                changed = true;
+            }
+        }
+    }
+
+    if (changed)
+    {
+        // Live-refresh both Panorama and the connected game server's SO cache.
+        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
+    }
+}
+
 
 void ClientGC::HandleSOCacheRequest()
 {
