@@ -139,8 +139,8 @@ private:
     CSOEconItem *FindOperationCoin(uint32_t minStars);
     uint32_t OperationCoinDefForEarnedStars() const;
     uint32_t OperationMissionCardRawStars(const OperationMissionCard &card) const;
-    void AddOperationSeasonalState(CMsgSOMultipleObjects &update) const;
-    void AddOperationQuestState(uint32_t questId, CMsgSOMultipleObjects &update) const;
+    void AddOperationSeasonalState(CMsgSOMultipleObjects &update);
+    void AddOperationQuestState(uint32_t questId, CMsgSOMultipleObjects &update);
 
     // trade-up contracts (revival addition): finds 5 Covert skins from the same
     // collection and same StatTrak state; returns their ids in `out`, or false
