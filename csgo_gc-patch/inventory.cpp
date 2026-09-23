@@ -549,9 +549,12 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
         CMsgSOCacheSubscribed_SubscribedType *object = message.add_objects();
         object->set_type_id(SOTypeGameAccountClient);
         object->add_object_data(accountClient.SerializeAsString());
+    }
 
-        // Operation Riptide shared object. Panorama's original mission/tier UI
-        // explicitly reads cache type "SeasonalOperations" (SO type 41).
+    // Operation state is useful to both Panorama and the connected game server.
+    // The server needs the selected mission card to evaluate the quest
+    // expressions and produce MatchEndRunRewardDrops progress.
+    {
         CSOAccountSeasonalOperation operation;
         operation.set_season_value(GetConfig().OperationSeason());
         operation.set_tier_unlocked(m_operationEarnedStars);
@@ -568,8 +571,6 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
         operationObject->set_type_id(41); // CSOAccountSeasonalOperation
         operationObject->add_object_data(operation.SerializeAsString());
 
-        // Quest progress SOs are type 46. The client combines these values with
-        // the quest definitions already present in items_game.txt.
         if (!m_operationQuestProgress.empty())
         {
             CMsgSOCacheSubscribed_SubscribedType *questObjects = message.add_objects();
