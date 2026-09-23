@@ -360,7 +360,12 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
 
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+        // Operation pass/star-pack uses do not need an item-customization popup.
+        // Graffiti still sets request and keeps the original notification flow.
+        if (notification.has_request())
+        {
+            SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+        }
     }
 }
 
@@ -559,31 +564,44 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
     {
         for (uint32_t i = 0; i < item.quantity(); i++)
         {
-            // operation shop (revival): if this def is a star-priced reward, spend the
-            // stars from the player's Operation coin first. The client already greys
-            // out unaffordable rewards; this enforces it server-side AND does the
-            // actual deduction (the free store otherwise ignores stars).
-            int starCost = GetConfig().OperationShopCost(item.item_def_id());
+            const int starCost = GetConfig().OperationShopCost(item.item_def_id());
+
+            // Validate affordability before allocating a reward, but do not mutate
+            // the wallet yet. The old order deducted first, so an invalid item def
+            // could eat stars without granting anything.
+            if (starCost > 0 && !m_inventory.CanSpendStars(starCost))
+            {
+                Platform::Print("operation shop: refused def %u - not enough stars (need %d)\n",
+                    item.item_def_id(), starCost);
+                continue;
+            }
+
+            const size_t updateCountBefore = inventoryUpdate.size();
+            uint64_t itemId = m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
+            if (!itemId)
+            {
+                Platform::Print("store: purchase failed for def %u\n", item.item_def_id());
+                continue;
+            }
+
             if (starCost > 0)
             {
                 if (!m_inventory.SpendStars(starCost, coinUpdate))
                 {
-                    Platform::Print("operation shop: refused def %u - not enough stars (need %d)\n",
-                        item.item_def_id(), starCost);
+                    // This should be unreachable because the wallet was checked
+                    // immediately above and this GC is single-owner/synchronous.
+                    // Roll the reward back instead of ever granting it for free.
+                    CMsgSOSingleObject rollback;
+                    m_inventory.RemoveItem(itemId, rollback);
+                    inventoryUpdate.resize(updateCountBefore);
+                    Platform::Print("operation shop: rolled back def %u - wallet changed during purchase\n",
+                        item.item_def_id());
                     continue;
                 }
                 coinChanged = true;
             }
 
-            uint64_t itemId = m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
-            if (!itemId)
-            {
-                assert(false);
-            }
-            else
-            {
-                m_transactionItemIds.push_back(itemId);
-            }
+            m_transactionItemIds.push_back(itemId);
         }
     }
 
