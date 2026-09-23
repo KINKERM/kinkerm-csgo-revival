@@ -9,7 +9,7 @@ var OperationUtil = ( function () {
 	                         
 	var m_nRedeemableGoodsCount = 0;
 
-	var m_numMissionsRewardThresholds = 0;
+	var m_numMissionsRewardThresholds = MissionsAPI.GetSeasonalOperationXpRewardsThresholds( nSeasonAccess );
 	var m_bPremiumUser = false;
 	var m_nCoinRank = 0;
 	var m_nActiveCardIndex = 0;
