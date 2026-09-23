@@ -1870,6 +1870,33 @@ uint64_t Inventory::PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObje
     return item.id();
 }
 
+uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update)
+{
+    const LootList *lootList = m_itemSchema.GetDirectLootList(defIndex);
+    if (!lootList)
+    {
+        // Ordinary rewards such as the Operation Riptide Case are meant to be
+        // delivered as the container itself.
+        return PurchaseItem(defIndex, update);
+    }
+
+    CaseOpening rewardOpening{ m_itemSchema, m_random };
+    CSOEconItem selected;
+    if (!rewardOpening.SelectItemFromDirectLootList(*lootList, selected))
+    {
+        Platform::Print("operation shop: failed to resolve direct reward def %u\n", defIndex);
+        return 0;
+    }
+
+    CSOEconItem &item = CreateItem(selected);
+    CMsgSOSingleObject &single = update.emplace_back();
+    ToSingleObject(single, item);
+
+    Platform::Print("operation shop: resolved wrapper def %u -> reward def %u (item %llu)\n",
+        defIndex, item.def_index(), item.id());
+    return item.id();
+}
+
 bool Inventory::CanSpendStars(int cost) const
 {
     if (cost <= 0)
