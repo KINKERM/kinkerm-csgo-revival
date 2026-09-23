@@ -66,6 +66,8 @@ GCConfig::GCConfig()
     if (opShop)
     {
         m_operationStarAttribute = opShop->GetNumber("star_attribute", m_operationStarAttribute);
+        m_operationPassDef = opShop->GetNumber("pass_def", m_operationPassDef);
+        m_operationActivationCoinDef = opShop->GetNumber("activation_coin_def", m_operationActivationCoinDef);
 
         const KeyValue *coinDefs = opShop->GetSubkey("coin_defs");
         if (coinDefs)
@@ -80,12 +82,26 @@ GCConfig::GCConfig()
         const KeyValue *rewards = opShop->GetSubkey("rewards");
         if (rewards)
         {
+            m_operationShopRewards.clear();
             for (const KeyValue &subkey : *rewards)
             {
                 ShopReward reward;
                 reward.defIndex = FromString<uint32_t>(subkey.Name());
                 reward.cost = FromString<int>(subkey.String());
                 m_operationShopRewards.push_back(reward);
+            }
+        }
+
+        const KeyValue *starPacks = opShop->GetSubkey("star_packs");
+        if (starPacks)
+        {
+            m_operationStarPacks.clear();
+            for (const KeyValue &subkey : *starPacks)
+            {
+                OperationStarPack pack;
+                pack.defIndex = FromString<uint32_t>(subkey.Name());
+                pack.stars = FromString<uint32_t>(subkey.String());
+                m_operationStarPacks.push_back(pack);
             }
         }
     }
@@ -118,6 +134,19 @@ int GCConfig::OperationShopCost(uint32_t defIndex) const
         if (reward.defIndex == defIndex)
         {
             return reward.cost;
+        }
+    }
+
+    return 0;
+}
+
+uint32_t GCConfig::OperationStarPackValue(uint32_t defIndex) const
+{
+    for (const OperationStarPack &pack : m_operationStarPacks)
+    {
+        if (pack.defIndex == defIndex)
+        {
+            return pack.stars;
         }
     }
 
