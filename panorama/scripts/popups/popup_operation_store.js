@@ -21,10 +21,10 @@ var CapabilityOperationStore = ( function()
 	var _Init = function()
 	{
 		// Valve's live active-season API returns -1 now that Riptide is over.
-		// This revival intentionally re-opens Operation Riptide (season 11).
+		// This revival intentionally re-opens Operation Riptide (season access 10).
 		var nActiveSeason = OperationUtil.GetOperationInfo().nSeasonAccess;
 		if ( nActiveSeason === null || nActiveSeason === undefined || nActiveSeason < 0 )
-			nActiveSeason = 11;
+			nActiveSeason = 10;
 
 		if( !OperationUtil.ValidateOperationInfo( nActiveSeason ) || !_CanUserDoShopping() )
 		{
