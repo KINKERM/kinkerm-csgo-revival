@@ -205,6 +205,10 @@ class MatchmakingCoordinator:
             if isinstance(maps, list):
                 self._server["maps"] = [str(m) for m in maps if str(m).strip()]
 
+            started_match_id = int(body.get("started_match_id") or 0)
+            if started_match_id:
+                self.server_match_started(started_match_id)
+
             ready_match_id = int(body.get("ready_match_id") or 0)
             if ready_match_id:
                 self._server["ready_match_id"] = ready_match_id
@@ -263,18 +267,42 @@ class MatchmakingCoordinator:
             match = self._matches.get(int(match_id))
             if not match:
                 return []
+
+            result = dict(result or {})
             match.state = "complete"
             steamids = [p.steamid for p in match.players]
-            for p in match.players:
-                self._states[p.steamid] = {
-                    "state": "idle",
-                    "last_match_id": match.match_id,
-                    "last_map": match.map_name,
-                    "result": dict(result or {}),
+
+            if result.get("reason") == "accept_timeout":
+                connected = {
+                    int(x) for x in result.get("connected_account_ids", [])
+                    if str(x).isdigit()
                 }
+                # Players who actually accepted/entered go straight back into the
+                # single Competitive queue. Missing players return idle; this is
+                # the revival equivalent of Valve cancelling a failed accept.
+                for p in match.players:
+                    if p.account_id in connected:
+                        self._queue.append(p)
+                        self._states[p.steamid] = {"state": "searching"}
+                    else:
+                        self._states[p.steamid] = {
+                            "state": "idle",
+                            "error": "match_accept_timeout",
+                            "last_match_id": match.match_id,
+                        }
+            else:
+                for p in match.players:
+                    self._states[p.steamid] = {
+                        "state": "idle",
+                        "last_match_id": match.match_id,
+                        "last_map": match.map_name,
+                        "result": result,
+                    }
+
             if self._assignment and int(self._assignment.get("match_id") or 0) == match.match_id:
                 self._assignment = None
             self._server["ready_match_id"] = 0
+            self._publish_search_states_locked()
             self._try_form_locked()
             return steamids
 
