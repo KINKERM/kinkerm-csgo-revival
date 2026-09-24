@@ -326,7 +326,7 @@
 						<Label class="revival-single-queue__maps" text="DUST II  •  MIRAGE  •  INFERNO  •  NUKE  •  OVERPASS  •  VERTIGO  •  TRAIN  •  CACHE  •  COBBLESTONE  •  ANCIENT  •  ANUBIS  •  TUSCAN  •  CANALS  •  BREACH  •  BASALT  •  OFFICE  •  AGENCY  •  ITALY  •  INSERTION II  •  + ALL INSTALLED DE_/CS_ MAPS" />
 					</Panel>
 				</Panel>
-				<Panel class="left-right-flow full-width fill-parent-flow-height" visible="false">
+				<Panel id="RevivalLegacyMapPicker" class="left-right-flow full-width fill-parent-flow-height" visible="false">
 					<Panel id="JsQuickSelectParent" class="top-bottom-flow map-selection-list__quick-selection-sets">
 						<Label text="#presets_title" class="map-selection__quick-selection-set-title" />
 						<Panel class="game-mode-selection-radios-spacer"/>
