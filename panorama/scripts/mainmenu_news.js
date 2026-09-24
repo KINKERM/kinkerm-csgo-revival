@@ -1,5 +1,4 @@
 'use strict';
-
 var RevivalNews = [
 	{
 		date: '24 Sep 2026',
@@ -23,9 +22,7 @@ var RevivalNews = [
 		link: ''
 	}
 ];
-
 var NewsPanel = (function () {
-
 	var _GetRssFeed = function()
 	{
 		// Do not ask Valve's live BlogAPI for news; that returns modern CS2 posts.
@@ -35,30 +32,23 @@ var NewsPanel = (function () {
 			_OnRssFeedReceived( { items: RevivalNews } );
 		} );
 	}
-
 	var _OnRssFeedReceived = function( feed )
 	{
 		if( $.GetContextPanel().BHasClass( 'news-panel--hide-news-panel' ) )
 		{
 			return;
 		};
-
 		var elLister = $.GetContextPanel().FindChildInLayoutFile( 'NewsPanelLister' );
-
 		if ( elLister === undefined || elLister === null || !feed || !feed.items )
 			return;
-
 		elLister.RemoveAndDeleteChildren();
-
 		feed.items.forEach( function( item, i )
 		{
 			var elEntry = $.CreatePanel( 'Panel', elLister, 'NewEntry' + i, {
 				acceptsinput: true
 			} );
-
 			if ( i === 0 )
 				elEntry.AddClass( 'new' );
-
 			elEntry.BLoadLayoutSnippet( 'news-full-entry' );
 			var elImage = elEntry.FindChildInLayoutFile( 'NewsHeaderImage' );
 			if ( item.imageUrl )
@@ -69,16 +59,12 @@ var NewsPanel = (function () {
 			{
 				elImage.SetImage( 'file://{images}/store/default-news.png' );
 			}
-
 			var elEntryInfo = $.CreatePanel( 'Panel', elEntry, 'NewsInfo' + i );
 			elEntryInfo.BLoadLayoutSnippet( 'news-info' );
-
 			elEntryInfo.SetDialogVariable( 'news_item_date', item.date || '' );
 			elEntryInfo.SetDialogVariable( 'news_item_title', item.title || '' );
 			elEntryInfo.SetDialogVariable( 'news_item_body', item.description || '' );
-
 			elEntry.FindChildInLayoutFile( 'NewsEntryBlurTarget' ).AddBlurPanel( elEntryInfo );
-
 			if ( item.link )
 			{
 				elEntry.SetPanelEvent( 'onactivate', function( link, panel )
@@ -89,13 +75,11 @@ var NewsPanel = (function () {
 			}
 		} );
 	};
-
 	return {
 		GetRssFeed: _GetRssFeed,
 		OnRssFeedReceived: _OnRssFeedReceived,
 	};
 })();
-
 (function()
 {
 	NewsPanel.GetRssFeed();
