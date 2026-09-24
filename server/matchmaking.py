@@ -43,7 +43,7 @@ DEFAULT_MAP_POOL = (
 
 PLAYERS_PER_MATCH = 10
 SERVER_STALE_SECONDS = 12.0
-ALLOCATE_TIMEOUT_SECONDS = 45.0
+ALLOCATE_TIMEOUT_SECONDS = 90.0
 
 
 def account_id_from_steamid64(steamid: str) -> int:
@@ -57,6 +57,8 @@ def account_id_from_steamid64(steamid: str) -> int:
 class QueueEntry:
     steamid: str
     account_id: int
+    game_type: int = 8
+    client_version: int = 0
     joined_at: float = field(default_factory=time.time)
 
 
@@ -135,7 +137,9 @@ class MatchmakingCoordinator:
 
         self._next_match_id += 1
         match_id = self._next_match_id
-        reservation_id = secrets.randbits(63) or match_id
+        # The real reservation id is generated/acknowledged by srcds in its
+        # native 9106 response. Do not invent one in the coordinator.
+        reservation_id = 0
         map_name = self._choose_map_locked()
         match = Match(match_id, reservation_id, players, map_name)
         self._matches[match_id] = match
@@ -147,8 +151,10 @@ class MatchmakingCoordinator:
             "account_ids": [p.account_id for p in players],
             "steamids": [p.steamid for p in players],
             "tickrate": 64,
-            "game_type": 0,
-            "game_mode": 1,
+            "game_type": players[0].game_type if players else 8,
+            "client_version": players[0].client_version if players else 0,
+            "srcds_game_type": 0,
+            "srcds_game_mode": 1,
         }
 
         for p in players:
@@ -162,7 +168,7 @@ class MatchmakingCoordinator:
 
         self._publish_search_states_locked()
 
-    def start(self, steamid: str) -> dict[str, Any]:
+    def start(self, steamid: str, game_type: int = 8, client_version: int = 0) -> dict[str, Any]:
         with self._lock:
             account_id = account_id_from_steamid64(steamid)
             if not account_id:
@@ -174,7 +180,12 @@ class MatchmakingCoordinator:
                 return dict(existing)
 
             self._queue = [q for q in self._queue if q.steamid != steamid]
-            self._queue.append(QueueEntry(steamid=steamid, account_id=account_id))
+            self._queue.append(QueueEntry(
+                steamid=steamid,
+                account_id=account_id,
+                game_type=int(game_type or 8),
+                client_version=int(client_version or 0),
+            ))
             self._states[steamid] = {"state": "searching"}
             self._try_form_locked()
             return dict(self._states[steamid])
@@ -210,10 +221,13 @@ class MatchmakingCoordinator:
                 self.server_match_started(started_match_id)
 
             ready_match_id = int(body.get("ready_match_id") or 0)
-            if ready_match_id:
+            native_reservation_id = int(body.get("reservation_id") or 0)
+            if ready_match_id and native_reservation_id:
                 self._server["ready_match_id"] = ready_match_id
                 match = self._matches.get(ready_match_id)
                 if match and match.state == "allocating" and self._assignment:
+                    match.reservation_id = native_reservation_id
+                    self._assignment["reservation_id"] = native_reservation_id
                     host = self._server.get("public_host", "")
                     port = int(self._server.get("public_port") or 27015)
                     if host:
