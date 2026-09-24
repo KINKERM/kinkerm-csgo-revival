@@ -136,10 +136,15 @@ def main() -> None:
                 dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
                 for name in files:
                     full = os.path.join(base, name)
-                    rel = os.path.relpath(full, args.panorama)
-                    zf.write(full, ("csgo/panorama/" + rel).replace(os.sep, "/"))
+                    rel = os.path.relpath(full, args.panorama).replace(os.sep, "/")
+
+                    # Keep the old direct copy for compatibility, but the real
+                    # override lives in csgo/custom/kinkerm_revival and is
+                    # mounted ahead of Valve's stock VPK by the installer/updater.
+                    zf.write(full, "csgo/panorama/" + rel)
+                    zf.write(full, "csgo/custom/kinkerm_revival/panorama/" + rel)
                     pn += 1
-            print(f"[build_pack] added {pn} panorama file(s) under csgo/panorama/")
+            print(f"[build_pack] added {pn} panorama file(s) to direct + mounted override paths")
         else:
             print("[build_pack] (no panorama folder found - skipping UI)")
 
