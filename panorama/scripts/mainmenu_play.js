@@ -770,15 +770,15 @@ var PlayMenu = ( function()
 			return;
 		}
 
-		m_serverSetting = settings.options.server;
+		// Revival has one official ranked Competitive queue. Do not let stale
+		// stock lobby settings restore Wingman/Casual/private queues.
+		m_serverSetting = 'official';
 		m_permissions = settings.system.access;
-		m_gameModeSetting = settings.game.mode;
-		
-		_SetDirectChallengeKey( settings.options.hasOwnProperty( 'challengekey' ) ? settings.options.challengekey : '' );
-		if ( !m_challengeKey )
-		{
-			m_serverPrimeSetting = settings.game.prime;
-		}
+		m_gameModeSetting = 'competitive';
+		m_isWorkshop = false;
+		m_singleSkirmishMapGroup = null;
+		_SetDirectChallengeKey( '' );
+		m_serverPrimeSetting = 1;
 
 		_setAndSaveGameModeFlags( parseInt( settings.game.gamemodeflags ));
 		
@@ -2786,7 +2786,11 @@ var PlayMenu = ( function()
 		}
 		else
 		{
-			selectedMaps = _GetSelectedMapsForServerTypeAndGameMode( serverType, gameMode );
+			// Stock Panorama only needs a valid mapgroup. The revival backend
+			// ignores this and chooses randomly from the laptop's installed pool.
+			selectedMaps = ( serverType === 'official' && gameMode === 'competitive' )
+				? 'mg_active'
+				: _GetSelectedMapsForServerTypeAndGameMode( serverType, gameMode );
 		}	
 
 		var settings = {
