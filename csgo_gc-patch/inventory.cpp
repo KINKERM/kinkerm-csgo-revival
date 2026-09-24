@@ -6,6 +6,8 @@
 #include "keyvalue.h"
 #include "random.h"
 
+#include <algorithm>
+
 constexpr const char *InventoryFilePath = "csgo_gc/inventory.txt";
 
 // mikkotodo actual versioning
