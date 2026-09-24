@@ -38,6 +38,20 @@ GAME_OVER_PATTERNS = (
     re.compile(r'Match_End', re.I),
 )
 TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
+STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
+STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
+
+
+def account_id_from_log_line(line: str) -> int:
+    if "entered the game" not in line.lower():
+        return 0
+    m = STEAM3_RE.search(line)
+    if m:
+        return int(m.group(1))
+    m = STEAM2_RE.search(line)
+    if m:
+        return int(m.group(2)) * 2 + int(m.group(1))
+    return 0
 
 
 def load_config() -> dict:
@@ -55,6 +69,8 @@ def load_config() -> dict:
     cfg.setdefault("local_port", 27015)
     cfg.setdefault("playit_exe", "")
     cfg.setdefault("extra_srcds_args", "")
+    cfg.setdefault("accept_timeout_seconds", 90)
+    cfg.setdefault("post_match_grace_seconds", 25)
     return cfg
 
 
@@ -116,7 +132,9 @@ mp_friendlyfire 1
 mp_maxrounds 30
 mp_overtime_enable 1
 mp_match_can_clinch 1
-mp_warmuptime 20
+mp_do_warmup_period 1
+mp_warmuptime 3600
+mp_warmup_pausetimer 1
 mp_freezetime 15
 mp_roundtime 1.92
 mp_roundtime_defuse 1.92
@@ -146,6 +164,10 @@ class ServerSlot:
         self.ready_match_id = 0
         self.ct_score = 0
         self.t_score = 0
+        self.expected_account_ids: set[int] = set()
+        self.connected_account_ids: set[int] = set()
+        self.ready_at = 0.0
+        self.started = False
         self._lock = threading.RLock()
         self._ended = False
 
@@ -201,6 +223,12 @@ class ServerSlot:
             self.ready_match_id = 0
             self.ct_score = 0
             self.t_score = 0
+            self.expected_account_ids = {
+                int(x) for x in assignment.get("account_ids", []) if int(x) > 0
+            }
+            self.connected_account_ids.clear()
+            self.ready_at = 0.0
+            self.started = False
             self._ended = False
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
             threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
@@ -215,7 +243,9 @@ class ServerSlot:
         with self._lock:
             if self.alive():
                 self.ready_match_id = self.match_id
-                print(f"[agent] match {self.match_id} server ready")
+                self.ready_at = time.monotonic()
+                print(f"[agent] match {self.match_id} server ready; waiting for "
+                      f"{len(self.expected_account_ids)} accepted players")
 
     def _reader(self) -> None:
         proc = self.proc
@@ -232,13 +262,79 @@ class ServerSlot:
                     self.ct_score = score
                 else:
                     self.t_score = score
+
+            account_id = account_id_from_log_line(line)
+            if account_id:
+                self._player_entered(account_id)
+
             if any(p.search(line) for p in GAME_OVER_PATTERNS):
-                self._report_end_once("game_over")
+                self._report_end_once(
+                    "game_over",
+                    grace=float(self.cfg.get("post_match_grace_seconds", 25)),
+                )
         code = proc.wait()
         if not self._ended and self.match_id:
             self._report_end_once(f"srcds_exit_{code}")
 
-    def _report_end_once(self, reason: str) -> None:
+    def _player_entered(self, account_id: int) -> None:
+        with self._lock:
+            if self._ended or not self.match_id:
+                return
+            if self.expected_account_ids and account_id not in self.expected_account_ids:
+                return
+            before = len(self.connected_account_ids)
+            self.connected_account_ids.add(account_id)
+            if len(self.connected_account_ids) != before:
+                print(f"[agent] accepted player entered: {account_id} "
+                      f"({len(self.connected_account_ids)}/{len(self.expected_account_ids)})")
+            should_start = (
+                not self.started
+                and self.expected_account_ids
+                and self.connected_account_ids >= self.expected_account_ids
+            )
+
+        if should_start:
+            self._begin_match()
+
+    def _begin_match(self) -> None:
+        with self._lock:
+            if self.started or self._ended or not self.match_id:
+                return
+            self.started = True
+            match_id = self.match_id
+            proc = self.proc
+            if proc and proc.stdin:
+                try:
+                    proc.stdin.write("mp_warmup_pausetimer 0\nmp_warmup_end\n")
+                    proc.stdin.flush()
+                except OSError as exc:
+                    print(f"[agent] failed to end warmup: {exc}")
+
+        try:
+            post_json(
+                self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/started",
+                {"match_id": match_id},
+            )
+        except Exception as exc:
+            print(f"[agent] start notification will retry via heartbeat: {exc}")
+        print(f"[agent] all 10 players entered; match {match_id} started")
+
+    def check_accept_timeout(self) -> None:
+        with self._lock:
+            if (
+                self._ended
+                or self.started
+                or not self.ready_at
+                or not self.match_id
+            ):
+                return
+            timeout = float(self.cfg.get("accept_timeout_seconds", 90))
+            expired = time.monotonic() - self.ready_at >= timeout
+        if expired:
+            print("[agent] ACCEPT/join timeout; cancelling reservation")
+            self._report_end_once("accept_timeout")
+
+    def _report_end_once(self, reason: str, grace: float = 0.0) -> None:
         with self._lock:
             if self._ended or not self.match_id:
                 return
@@ -248,22 +344,37 @@ class ServerSlot:
                 "reason": reason,
                 "ct_score": self.ct_score,
                 "t_score": self.t_score,
+                "connected_account_ids": sorted(self.connected_account_ids),
             }
-        try:
-            post_json(
-                self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
-                {"match_id": match_id, "result": result},
-            )
-            print(f"[agent] reported match {match_id} end: {result}")
-        except Exception as exc:
-            print(f"[agent] failed to report match end: {exc}")
-        self.stop()
+
+        def finish() -> None:
+            if grace > 0:
+                print(f"[agent] keeping srcds alive {grace:.0f}s for end-match GC/drop delivery")
+                time.sleep(grace)
+            try:
+                post_json(
+                    self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
+                    {"match_id": match_id, "result": result},
+                )
+                print(f"[agent] reported match {match_id} end: {result}")
+            except Exception as exc:
+                print(f"[agent] failed to report match end: {exc}")
+            self.stop()
+
+        if grace > 0:
+            threading.Thread(target=finish, daemon=True, name="match-end-grace").start()
+        else:
+            finish()
 
     def stop(self) -> None:
         proc = self.proc
         self.proc = None
         self.ready_match_id = 0
         self.match_id = 0
+        self.ready_at = 0.0
+        self.started = False
+        self.expected_account_ids.clear()
+        self.connected_account_ids.clear()
         if proc is None or proc.poll() is not None:
             return
         try:
@@ -313,12 +424,14 @@ def main() -> None:
                 "public_port": int(cfg["public_port"]),
                 "maps": maps,
                 "ready_match_id": slot.ready_match_id,
+                "started_match_id": slot.match_id if slot.started else 0,
             }
             try:
                 reply = post_json(base + "/matchmaking/server/heartbeat", body)
                 assignment = reply.get("assignment")
                 if isinstance(assignment, dict):
                     slot.start(assignment)
+                slot.check_accept_timeout()
             except (urllib.error.URLError, ValueError, OSError) as exc:
                 print(f"[agent] heartbeat failed: {exc}")
             time.sleep(2.0)
