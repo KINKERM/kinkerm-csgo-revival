@@ -3,6 +3,80 @@
 #include "graffiti.h"
 #include "keyvalue.h"
 
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+
+namespace
+{
+constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
+constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
+
+bool WriteMatchmakingBridgeFile(const char *path, const std::string &text)
+{
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open())
+        return false;
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    return out.good();
+}
+
+std::unordered_map<std::string, std::string> ReadMatchmakingBridgeFile(const char *path)
+{
+    std::unordered_map<std::string, std::string> out;
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open())
+        return out;
+
+    std::string line;
+    while (std::getline(in, line))
+    {
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos)
+            continue;
+        std::string key = line.substr(0, eq);
+        std::string value = line.substr(eq + 1);
+        if (!key.empty())
+            out[key] = value;
+    }
+    return out;
+}
+
+uint64_t BridgeU64(const std::unordered_map<std::string, std::string> &kv,
+    const char *key, uint64_t fallback = 0)
+{
+    auto it = kv.find(key);
+    if (it == kv.end() || it->second.empty())
+        return fallback;
+    char *end = nullptr;
+    unsigned long long value = std::strtoull(it->second.c_str(), &end, 10);
+    return (end && *end == '\0') ? static_cast<uint64_t>(value) : fallback;
+}
+
+std::vector<uint32_t> BridgeU32List(
+    const std::unordered_map<std::string, std::string> &kv, const char *key)
+{
+    std::vector<uint32_t> out;
+    auto it = kv.find(key);
+    if (it == kv.end())
+        return out;
+
+    std::istringstream ss(it->second);
+    std::string part;
+    while (std::getline(ss, part, ','))
+    {
+        if (part.empty())
+            continue;
+        char *end = nullptr;
+        unsigned long value = std::strtoul(part.c_str(), &end, 10);
+        if (end && *end == '\0' && value <= UINT32_MAX)
+            out.push_back(static_cast<uint32_t>(value));
+    }
+    return out;
+}
+} // namespace
+
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
     , m_inventory{ steamId }
@@ -74,6 +148,22 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 
         case k_EMsgGCCStrike15_v2_ClientRequestJoinServerData:
             ClientRequestJoinServerData(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingStart:
+            MatchmakingStart(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingStop:
+            MatchmakingStop(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingClient2ServerPing:
+            MatchmakingPing(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingClient2GCHello:
+            MatchmakingHello(messageRead);
             break;
 
         case k_EMsgGCCStrike15_v2_ClientRequestNewMission:
@@ -477,6 +567,191 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     response.mutable_res()->set_server_address(addressString);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
+}
+
+void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingStart message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("matchmaking: failed to parse MatchmakingStart\n");
+        return;
+    }
+
+    m_matchmakingGameType = message.has_game_type() ? message.game_type() : 8;
+    m_matchmakingClientVersion = message.has_client_version() ? message.client_version() : 0;
+    m_matchmakingActive = true;
+    m_lastMatchmakingReservation = 0;
+
+    std::ostringstream request;
+    request << "action=start\n"
+            << "steamid=" << m_steamId << "\n"
+            << "account_id=" << AccountId() << "\n"
+            << "game_type=" << m_matchmakingGameType << "\n"
+            << "client_version=" << m_matchmakingClientVersion << "\n";
+    if (!WriteMatchmakingBridgeFile(MatchmakingRequestPath, request.str()))
+        Platform::Print("matchmaking: failed to write %s\n", MatchmakingRequestPath);
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+    update.set_matchmaking(1);
+    update.add_waiting_account_id_sessions(AccountId());
+    update.mutable_global_stats()->set_players_searching(1);
+    update.mutable_global_stats()->set_servers_available(0);
+    update.mutable_global_stats()->set_search_time_avg(5);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+
+    Platform::Print("matchmaking: queued Competitive search through revival bridge (game_type=%u)\n",
+        m_matchmakingGameType);
+}
+
+void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingStop message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("matchmaking: failed to parse MatchmakingStop\n");
+        return;
+    }
+
+    std::ostringstream request;
+    request << "action=stop\n"
+            << "steamid=" << m_steamId << "\n"
+            << "account_id=" << AccountId() << "\n"
+            << "abandon=" << (message.has_abandon() ? message.abandon() : 0) << "\n";
+    WriteMatchmakingBridgeFile(MatchmakingRequestPath, request.str());
+
+    m_matchmakingActive = false;
+    m_lastMatchmakingReservation = 0;
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+    update.set_matchmaking(0);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+    Platform::Print("matchmaking: search stopped\n");
+}
+
+void ClientGC::MatchmakingPing(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingClient2ServerPing message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("matchmaking: failed to parse MatchmakingClient2ServerPing\n");
+        return;
+    }
+    PollMatchmakingBridge();
+}
+
+void ClientGC::MatchmakingHello(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingClient2GCHello hello;
+    if (!messageRead.ReadProtobuf(hello))
+        return;
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello response;
+    BuildMatchmakingHello(response);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, response);
+    if (m_matchmakingActive)
+        PollMatchmakingBridge();
+}
+
+void ClientGC::PollMatchmakingBridge()
+{
+    const auto state = ReadMatchmakingBridgeFile(MatchmakingStatePath);
+    if (state.empty())
+        return;
+
+    auto stateIt = state.find("state");
+    const std::string phase = stateIt == state.end() ? std::string{} : stateIt->second;
+
+    if (phase == "searching" || phase == "allocating")
+    {
+        m_matchmakingActive = true;
+        CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+        update.set_matchmaking(1);
+
+        std::vector<uint32_t> waiting = BridgeU32List(state, "waiting_account_ids");
+        if (waiting.empty())
+            waiting.push_back(AccountId());
+        for (uint32_t accountId : waiting)
+            update.add_waiting_account_id_sessions(accountId);
+
+        update.mutable_global_stats()->set_players_searching(
+            static_cast<uint32_t>(BridgeU64(state, "players_searching", waiting.size())));
+        update.mutable_global_stats()->set_servers_online(
+            BridgeU64(state, "server_online", 0) ? 1 : 0);
+        update.mutable_global_stats()->set_servers_available(
+            BridgeU64(state, "server_online", 0) && phase == "searching" ? 1 : 0);
+        update.mutable_global_stats()->set_search_time_avg(5);
+        SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+        return;
+    }
+
+    if (phase == "reserved" || phase == "in_match")
+    {
+        const uint64_t reservationId = BridgeU64(state, "reservation_id", 0);
+        const uint64_t matchId = BridgeU64(state, "match_id", reservationId);
+        if (!reservationId || reservationId == m_lastMatchmakingReservation)
+            return;
+
+        auto addressIt = state.find("server_address");
+        auto mapIt = state.find("map");
+        const std::string serverAddress =
+            addressIt == state.end() ? std::string{} : addressIt->second;
+        const std::string mapName =
+            mapIt == state.end() ? std::string{"de_dust2"} : mapIt->second;
+        const uint32_t port = static_cast<uint32_t>(BridgeU64(state, "public_port", 27015));
+        const uint32_t gameType = static_cast<uint32_t>(
+            BridgeU64(state, "game_type", m_matchmakingGameType));
+
+        if (serverAddress.empty())
+            return;
+
+        CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
+        reserve.set_serverid(matchId);
+        reserve.set_direct_udp_port(port);
+        reserve.set_reservationid(reservationId);
+        reserve.set_map(mapName);
+        reserve.set_server_address(serverAddress);
+
+        CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *details =
+            reserve.mutable_reservation();
+        std::vector<uint32_t> accountIds = BridgeU32List(state, "account_ids");
+        if (accountIds.empty())
+            accountIds.push_back(AccountId());
+        for (uint32_t accountId : accountIds)
+            details->add_account_ids(accountId);
+        details->set_game_type(gameType);
+        details->set_match_id(matchId);
+        details->set_server_version(m_matchmakingClientVersion);
+
+        SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
+
+        CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+        update.set_matchmaking(0);
+        for (uint32_t accountId : accountIds)
+            update.add_ongoingmatch_account_id_sessions(accountId);
+        update.mutable_global_stats()->set_players_searching(0);
+        update.mutable_global_stats()->set_servers_online(1);
+        update.mutable_global_stats()->set_servers_available(0);
+        update.mutable_global_stats()->set_ongoing_matches(1);
+        SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+
+        m_lastMatchmakingReservation = reservationId;
+        Platform::Print("matchmaking: MATCH FOUND reservation=%llu map=%s server=%s\n",
+            reservationId, mapName.c_str(), serverAddress.c_str());
+        return;
+    }
+
+    if (phase == "idle")
+    {
+        if (m_matchmakingActive)
+        {
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+            update.set_matchmaking(0);
+            SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+        }
+        m_matchmakingActive = false;
+        m_lastMatchmakingReservation = 0;
+    }
 }
 
 void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
