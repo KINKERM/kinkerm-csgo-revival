@@ -146,6 +146,59 @@ mp_match_end_restart 0
         fh.write(text)
 
 
+def reservation_paths(csgo_dir: str) -> tuple[str, str]:
+    gc_dir = os.path.join(csgo_dir, "csgo_gc")
+    os.makedirs(gc_dir, exist_ok=True)
+    return (
+        os.path.join(gc_dir, "server_reservation.txt"),
+        os.path.join(gc_dir, "server_reservation_response.txt"),
+    )
+
+
+def write_native_reservation(csgo_dir: str, assignment: dict) -> None:
+    request_path, response_path = reservation_paths(csgo_dir)
+    try:
+        os.remove(response_path)
+    except OSError:
+        pass
+
+    account_ids = [
+        int(x) for x in assignment.get("account_ids", []) if int(x) > 0
+    ]
+    lines = [
+        f"match_id={int(assignment.get('match_id') or 0)}",
+        f"game_type={int(assignment.get('game_type') or 8)}",
+        f"server_version={int(assignment.get('client_version') or 0)}",
+        "account_ids=" + ",".join(str(x) for x in account_ids),
+    ]
+    tmp = request_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines) + "\n")
+    os.replace(tmp, request_path)
+
+
+def read_native_reservation_response(csgo_dir: str) -> dict[str, int | str]:
+    _, response_path = reservation_paths(csgo_dir)
+    out: dict[str, int | str] = {}
+    try:
+        with open(response_path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key in ("match_id", "reservation_id"):
+                    try:
+                        out[key] = int(value)
+                    except ValueError:
+                        pass
+                else:
+                    out[key] = value
+    except OSError:
+        pass
+    return out
+
+
 def set_above_normal(proc: subprocess.Popen) -> None:
     if os.name != "nt":
         return
@@ -162,6 +215,7 @@ class ServerSlot:
         self.proc: subprocess.Popen | None = None
         self.match_id = 0
         self.ready_match_id = 0
+        self.reservation_id = 0
         self.ct_score = 0
         self.t_score = 0
         self.expected_account_ids: set[int] = set()
@@ -187,6 +241,7 @@ class ServerSlot:
             map_name = str(assignment.get("map") or "de_dust2")
             srcds = find_srcds(self.cfg["csgo_dir"])
             ensure_match_cfg(self.cfg["csgo_dir"])
+            write_native_reservation(self.cfg["csgo_dir"], assignment)
             cmd = [
                 srcds,
                 "-game", "csgo",
@@ -221,6 +276,7 @@ class ServerSlot:
             set_above_normal(self.proc)
             self.match_id = match_id
             self.ready_match_id = 0
+            self.reservation_id = 0
             self.ct_score = 0
             self.t_score = 0
             self.expected_account_ids = {
@@ -234,18 +290,41 @@ class ServerSlot:
             threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
 
     def _mark_ready_after_boot(self) -> None:
-        # Source 1 can take a few seconds to load the BSP and Steam interfaces.
-        for _ in range(16):
+        # Do not advertise the server until the injected ServerGC has sent native
+        # 9105 to srcds and captured srcds' native 9106 reservation response.
+        # This guarantees clients receive the exact reservation id the game
+        # server accepted instead of a coordinator-invented cookie.
+        deadline = time.monotonic() + 80.0
+        while time.monotonic() < deadline:
             time.sleep(0.5)
             with self._lock:
-                if not self.alive():
+                if not self.alive() or not self.match_id:
                     return
-        with self._lock:
-            if self.alive():
-                self.ready_match_id = self.match_id
-                self.ready_at = time.monotonic()
-                print(f"[agent] match {self.match_id} server ready; waiting for "
-                      f"{len(self.expected_account_ids)} accepted players")
+                match_id = self.match_id
+
+            response = read_native_reservation_response(self.cfg["csgo_dir"])
+            if (
+                int(response.get("match_id") or 0) == match_id
+                and int(response.get("reservation_id") or 0) > 0
+            ):
+                # Give Source a little extra time after accepting the reservation
+                # to finish its map/network startup on slow hardware.
+                time.sleep(1.5)
+                with self._lock:
+                    if not self.alive() or self.match_id != match_id:
+                        return
+                    self.reservation_id = int(response["reservation_id"])
+                    self.ready_match_id = match_id
+                    self.ready_at = time.monotonic()
+                    print(
+                        f"[agent] native 9106 accepted match {match_id}; "
+                        f"reservation={self.reservation_id}; waiting for "
+                        f"{len(self.expected_account_ids)} accepted players"
+                    )
+                return
+
+        print("[agent] srcds never produced native 9106 reservation response; "
+              "coordinator will cancel/requeue this allocation")
 
     def _reader(self) -> None:
         proc = self.proc
@@ -370,6 +449,7 @@ class ServerSlot:
         proc = self.proc
         self.proc = None
         self.ready_match_id = 0
+        self.reservation_id = 0
         self.match_id = 0
         self.ready_at = 0.0
         self.started = False
@@ -424,6 +504,7 @@ def main() -> None:
                 "public_port": int(cfg["public_port"]),
                 "maps": maps,
                 "ready_match_id": slot.ready_match_id,
+                "reservation_id": slot.reservation_id,
                 "started_match_id": slot.match_id if slot.started else 0,
             }
             try:
