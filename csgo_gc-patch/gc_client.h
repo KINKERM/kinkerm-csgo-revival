@@ -74,4 +74,9 @@ private:
     uint64_t m_lastMatchmakingReservation{};
     uint64_t m_lastRewardedReservation{};
     uint32_t m_matchmakingIdleTicks{};
+    uint64_t m_matchmakingServerId{};
+    uint32_t m_matchmakingDirectUdpIp{};
+    uint32_t m_matchmakingDirectUdpPort{};
+    std::string m_matchmakingServerAddress;
+    std::string m_matchmakingMap;
 };
