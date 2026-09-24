@@ -28,6 +28,7 @@ private:
     void UseItemRequest(GCMessageRead &messageRead);
     void ClientRequestJoinServerData(GCMessageRead &messageRead);
     void ClientRequestNewMission(GCMessageRead &messageRead);
+    void ClientRedeemMissionReward(GCMessageRead &messageRead);
     void SetItemPositions(GCMessageRead &messageRead);
     void IncrementKillCountAttribute(GCMessageRead &messageRead);
     void MatchEndRunRewardDrops(GCMessageRead &messageRead);
