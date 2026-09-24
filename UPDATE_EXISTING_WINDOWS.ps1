@@ -174,6 +174,12 @@ if (-not $SkipInstall) {
     if (-not $mountedGameInfo.Contains("custom/kinkerm_revival")) {
         throw "Panorama validation failed: revival override is not mounted in gameinfo.txt"
     }
+    $mountIndex = $mountedGameInfo.IndexOf("custom/kinkerm_revival")
+    $stockIndex = $mountedGameInfo.IndexOf("|gameinfo_path|.")
+    if (($stockIndex -ge 0) -and ($mountIndex -gt $stockIndex)) {
+        throw "Panorama validation failed: revival mount is after stock game content"
+    }
+    Write-Host "    gameinfo SearchPaths priority OK." -ForegroundColor Green
 
     $uiFiles = @(
         "layout\mainmenu_play.xml",
