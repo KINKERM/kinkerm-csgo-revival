@@ -141,6 +141,16 @@ int GCConfig::OperationShopCost(uint32_t defIndex) const
     return 0;
 }
 
+const ShopReward *GCConfig::OperationShopReward(uint32_t redeemId) const
+{
+    if (redeemId >= m_operationShopRewards.size())
+    {
+        return nullptr;
+    }
+
+    return &m_operationShopRewards[redeemId];
+}
+
 uint32_t GCConfig::OperationStarPackValue(uint32_t defIndex) const
 {
     for (const OperationStarPack &pack : m_operationStarPacks)
