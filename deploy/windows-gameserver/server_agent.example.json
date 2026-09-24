@@ -6,5 +6,7 @@
   "public_port": 27015,
   "local_port": 27015,
   "playit_exe": "",
-  "extra_srcds_args": ""
+  "extra_srcds_args": "",
+  "accept_timeout_seconds": 90,
+  "post_match_grace_seconds": 25
 }
