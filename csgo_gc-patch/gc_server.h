@@ -17,8 +17,11 @@ private:
     void HandleClientSOCacheUnsubscribe(uint64_t steamId);
 
     void SendServerWelcome();
+    void SendMatchmakingReservation();
+    void MatchmakingReservationResponse(GCMessageRead &messageRead);
     void IncrementKillCountAttribute(GCMessageRead &messageRead);
     void MatchEndRunRewardDrops(GCMessageRead &messageRead);
 
     bool m_sentWelcome{};
+    bool m_sentReservation{};
 };
