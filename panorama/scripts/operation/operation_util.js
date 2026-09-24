@@ -56,27 +56,44 @@ var OperationUtil = ( function () {
 		m_numTierUnlocked = 0;
 		m_numMissionsCompleted = 0;
 		m_nActiveCardIndex = -1;
-		var idxOperation = InventoryAPI.GetCacheTypeElementIndexByKey( 'SeasonalOperations', nSeasonAccess );
-		if ( idxOperation !== undefined && idxOperation !== null &&
-			InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_value' ) == nSeasonAccess )
+		try
 		{
-			var tierUnlocked = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'tier_unlocked' );
-			var missionsCompleted = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'missions_completed' );
-			var redeemableBalance = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'redeemable_balance' );
-			var seasonPassTime = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_pass_time' );
-			var premiumTiers = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'premium_tiers' );
-			m_numTierUnlocked = tierUnlocked === null || tierUnlocked === undefined ? 0 : Number( tierUnlocked );
-			m_numMissionsCompleted = missionsCompleted === null || missionsCompleted === undefined ? 0 : Number( missionsCompleted );
-			if ( redeemableBalance !== null && redeemableBalance !== undefined )
-				m_numRedeemableBalance = Number( redeemableBalance );
-			m_bPremiumUser = m_bPremiumUser || Number( seasonPassTime ) > 0 || Number( premiumTiers ) > 0;
+			var idxOperation = InventoryAPI.GetCacheTypeElementIndexByKey( 'SeasonalOperations', nSeasonAccess );
+			if ( idxOperation !== undefined && idxOperation !== null &&
+				InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_value' ) == nSeasonAccess )
+			{
+				var tierUnlocked = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'tier_unlocked' );
+				var missionsCompleted = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'missions_completed' );
+				var redeemableBalance = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'redeemable_balance' );
+				var seasonPassTime = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_pass_time' );
+				var premiumTiers = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'premium_tiers' );
+				m_numTierUnlocked = tierUnlocked === null || tierUnlocked === undefined ? 0 : Number( tierUnlocked );
+				m_numMissionsCompleted = missionsCompleted === null || missionsCompleted === undefined ? 0 : Number( missionsCompleted );
+				if ( redeemableBalance !== null && redeemableBalance !== undefined )
+					m_numRedeemableBalance = Number( redeemableBalance );
+				m_bPremiumUser = m_bPremiumUser || Number( seasonPassTime ) > 0 || Number( premiumTiers ) > 0;
+			}
+		}
+		catch ( err )
+		{
+			$.Msg( 'Riptide SeasonalOperations cache fallback: ' + err );
 		}
 		// Mission definitions/reward schemas are already bundled in items_game.txt.
 		// These APIs now become useful again because the matching SO exists.
-		m_nRewardsCount = MissionsAPI.GetSeasonalOperationTrackRewardsCount( nSeasonAccess );
-		m_nLoopingRewardsCount = MissionsAPI.GetSeasonalOperationLoopingRewardsCount( nSeasonAccess );
+		try
+		{
+			m_nRewardsCount = MissionsAPI.GetSeasonalOperationTrackRewardsCount( nSeasonAccess );
+			m_nLoopingRewardsCount = MissionsAPI.GetSeasonalOperationLoopingRewardsCount( nSeasonAccess );
+			m_nActiveCardIndex = MissionsAPI.GetSeasonalOperationMissionCardActiveIdx( nSeasonAccess );
+		}
+		catch ( err )
+		{
+			$.Msg( 'Riptide MissionsAPI fallback: ' + err );
+			m_nRewardsCount = 0;
+			m_nLoopingRewardsCount = 0;
+			m_nActiveCardIndex = -1;
+		}
 		m_numMissionsRewardThresholds = 0;
-		m_nActiveCardIndex = MissionsAPI.GetSeasonalOperationMissionCardActiveIdx( nSeasonAccess );
 		_AddLoopingRewardsToDisplay();
 		return true;
 	};
