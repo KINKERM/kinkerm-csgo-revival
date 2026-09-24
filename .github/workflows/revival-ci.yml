@@ -26,6 +26,15 @@ jobs:
         run: |
           node --check panorama/scripts/mainmenu_play.js
           python -c "import xml.etree.ElementTree as ET; ET.parse(r'panorama/layout/mainmenu_play.xml'); print('Panorama XML OK')"
+      - name: Validate Windows updater syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'UPDATE_EXISTING_WINDOWS.ps1'), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count) { $errors | Format-List; exit 1 }
 
   csgo-gc-win32:
     # Pin VS2022 because the csgo_gc Win32 CMake generator targets VS17.
