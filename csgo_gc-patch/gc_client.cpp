@@ -507,6 +507,7 @@ void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
 
 void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
 {
+    Platform::Print("operation shop: received native redeem request\n");
     CMsgGCCstrike15_v2_ClientRedeemMissionReward message;
     if (!messageRead.ReadProtobuf(message))
     {
