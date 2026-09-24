@@ -115,7 +115,6 @@ public:
     // tokens, dossiers and sticker/patch packs are direct loot-list wrappers.
     // Resolve those wrappers to the actual random reward before it reaches inventory.
     uint64_t PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
-    const OperationShopEntry *OperationShopReward(uint32_t redeemId) const;
 
     // operation shop (revival): query/spend stars from the player's Operation coin.
     // CanSpendStars never mutates inventory. SpendStars persists and emits the
