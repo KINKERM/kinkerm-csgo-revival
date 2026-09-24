@@ -127,12 +127,48 @@ if (-not $SkipInstall) {
     Write-Host "[5/6] Installing pack into CS:GO Legacy..." -ForegroundColor Yellow
     Need-Path $CsgoDir "CS:GO Legacy root"
     Expand-Archive -Path $pack -DestinationPath $CsgoDir -Force
+
+    # Mount the revival content root ahead of Valve stock VPK content.
+    $gameInfo = Join-Path $CsgoDir "csgo\gameinfo.txt"
+    Need-Path $gameInfo "CS:GO gameinfo.txt"
+    $gameInfoText = [IO.File]::ReadAllText($gameInfo)
+    $normalizedGameInfo = $gameInfoText.Replace("\", "/")
+    if (-not $normalizedGameInfo.Contains("custom/kinkerm_revival")) {
+        Copy-Item $gameInfo (Join-Path $backup "gameinfo.txt.pre-kinkerm-revival") -Force
+
+        $rx = New-Object Text.RegularExpressions.Regex(
+            "SearchPaths\s*\{",
+            [Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+        $m = $rx.Match($gameInfoText)
+        if (-not $m.Success) {
+            throw "Could not find SearchPaths block in $gameInfo"
+        }
+
+        $mountLine = "`r`n`t`t`tGame`t`t|gameinfo_path|custom/kinkerm_revival"
+        $gameInfoText = $gameInfoText.Insert($m.Index + $m.Length, $mountLine)
+        [IO.File]::WriteAllText(
+            $gameInfo,
+            $gameInfoText,
+            [Text.UTF8Encoding]::new($false)
+        )
+        Write-Host "    Mounted csgo\custom\kinkerm_revival before stock game content." -ForegroundColor Green
+    } else {
+        Write-Host "    Revival custom override already mounted." -ForegroundColor Green
+    }
 } else {
     Write-Host "[5/6] Client install skipped by request."
 }
 
 Write-Host "[6/6] Validating installed queue UI..." -ForegroundColor Yellow
 if (-not $SkipInstall) {
+    $gameInfo = Join-Path $CsgoDir "csgo\gameinfo.txt"
+    Need-Path $gameInfo "CS:GO gameinfo.txt"
+    $mountedGameInfo = [IO.File]::ReadAllText($gameInfo).Replace("\", "/")
+    if (-not $mountedGameInfo.Contains("custom/kinkerm_revival")) {
+        throw "Panorama validation failed: revival override is not mounted in gameinfo.txt"
+    }
+
     $uiFiles = @(
         "layout\mainmenu_play.xml",
         "scripts\mainmenu_play.js",
@@ -140,20 +176,20 @@ if (-not $SkipInstall) {
     )
     foreach ($rel in $uiFiles) {
         $repoUi = Join-Path (Join-Path $RevivalRepo "panorama") $rel
-        $gameUi = Join-Path (Join-Path $CsgoDir "csgo\panorama") $rel
+        $gameUi = Join-Path (Join-Path $CsgoDir "csgo\custom\kinkerm_revival\panorama") $rel
         Need-Path $repoUi "Repo Panorama file"
-        Need-Path $gameUi "Installed Panorama file"
+        Need-Path $gameUi "Mounted Panorama override"
 
         $repoHash = (Get-FileHash $repoUi -Algorithm SHA256).Hash
         $gameHash = (Get-FileHash $gameUi -Algorithm SHA256).Hash
         if ($repoHash -ne $gameHash) {
-            throw "Panorama validation failed: installed $rel does not match the repo"
+            throw "Panorama validation failed: mounted override $rel does not match the repo"
         }
     }
 
     Need-Path (Join-Path $CsgoDir "csgo_gc.dll") "Installed csgo_gc.dll"
     Need-Path (Join-Path $CsgoDir "csgo_revival.exe") "Installed revival launcher"
-    Write-Host "    Panorama + runtime validation OK." -ForegroundColor Green
+    Write-Host "    Mounted Panorama override + runtime validation OK." -ForegroundColor Green
 }
 
 Write-Host ""
