@@ -274,11 +274,31 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         return;
     }
 
-    CMsgSOMultipleObjects update;
-    bool changed = false;
-
-    if (message.has_match_end_quest_data())
+    uint64_t reservationId = 0;
+    if (message.has_serverinfo() && message.serverinfo().has_reservationid())
     {
+        reservationId = message.serverinfo().reservationid();
+    }
+
+    // srcds may flush the same final stats more than once. Treat a reservation
+    // as one progression transaction so XP, rank wins and timed drops cannot
+    // duplicate during the same match.
+    if (reservationId && reservationId == m_lastRewardedReservation)
+    {
+        Platform::Print("progression: duplicate 9136 ignored for reservation %llu\n",
+            reservationId);
+        return;
+    }
+
+    if (!message.has_match_end_quest_data())
+    {
+        return;
+    }
+
+    CMsgSOMultipleObjects operationUpdate;
+    bool operationChanged = false;
+    bool processedPlayer = false;
+
     const CMsgGC_ServerQuestUpdateData &questData = message.match_end_quest_data();
     for (const PlayerQuestData &playerData : questData.player_quest_data())
     {
@@ -288,14 +308,24 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             continue;
         }
 
-        uint64_t xpEarned = 0;
+        processedPlayer = true;
+
+        uint64_t baseXp64 = 0;
         for (const XpProgressData &xp : playerData.xp_progress_data())
         {
-            xpEarned += xp.xp_points();
+            baseXp64 += xp.xp_points();
         }
-        if (xpEarned > UINT32_MAX)
-            xpEarned = UINT32_MAX;
-        if (xpEarned && m_inventory.AddProfileXp(static_cast<uint32_t>(xpEarned)))
+        if (baseXp64 > UINT32_MAX)
+        {
+            baseXp64 = UINT32_MAX;
+        }
+        const uint32_t baseXp = static_cast<uint32_t>(baseXp64);
+
+        uint32_t levelsGained = 0;
+        const uint32_t awardedXp =
+            m_inventory.ApplyWeeklyProfileXp(baseXp, &levelsGained);
+
+        if (awardedXp)
         {
             CMsgSOMultipleObjects profileUpdate;
             m_inventory.BuildProfilePersonaUpdate(profileUpdate);
@@ -303,69 +333,17 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
 
             CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
             BuildMatchmakingHello(profileHello);
-            SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
+            SendMessageToGame(false,
+                k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
         }
 
-        // When the server explicitly says Operation points are ineligible
-        // (e.g. an invalid/offline setup), don't mint mission stars. Older
-        // server builds may omit the field entirely, so absence is accepted.
-        if (playerData.has_operation_points_eligible()
-            && !playerData.operation_points_eligible())
-        {
-            Platform::Print("operation: match quest points marked ineligible for account %u\n",
-                AccountId());
-            continue;
-        }
-
-        for (const PlayerQuestData::QuestItemData &quest : playerData.quest_item_data())
-        {
-            if (!quest.has_quest_id() || quest.quest_id() > UINT32_MAX)
-            {
-                continue;
-            }
-
-            const int normal = quest.has_quest_normal_points_earned()
-                ? quest.quest_normal_points_earned() : 0;
-            const int bonus = quest.has_quest_bonus_points_earned()
-                ? quest.quest_bonus_points_earned() : 0;
-
-            if (m_inventory.ApplyOperationQuestProgress(
-                static_cast<uint32_t>(quest.quest_id()), normal, bonus, update))
-            {
-                changed = true;
-            }
-        }
-    }
-    }
-
-    if (changed)
-    {
-        // Live-refresh both Panorama and the connected game server's SO cache.
-        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
-    }
-
-    uint64_t reservationId = 0;
-    if (message.has_serverinfo() && message.serverinfo().has_reservationid())
-        reservationId = message.serverinfo().reservationid();
-
-    // srcds can emit more than one match-end GC update. Reward one reservation
-    // once per ClientGC session so repeated quest/stat flushes cannot duplicate drops.
-    if (!reservationId || reservationId != m_lastRewardedReservation)
-    {
-        struct DropSpec
-        {
-            uint32_t defIndex;
-            bool direct;
-            UnacknowledgedType unack;
-        };
-
-        // Two cases, one Dust II 2021 collection roll (Gold Arabesque possible),
-        // and one Cobblestone collection roll (Dragon Lore possible).
-        for (int caseIndex = 0; caseIndex < 2; ++caseIndex)
+        // Legacy profile-rank reward: at most once per Wednesday reset and only
+        // after actually crossing a 5000-XP profile-rank boundary.
+        if (levelsGained)
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
+            if (m_inventory.CreateWeeklyLevelReward(create, drop))
             {
                 SendMessageToGame(true, k_ESOMsg_Create, create);
                 SendMessageToGame(false,
@@ -373,16 +351,13 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        constexpr DropSpec CollectionDrops[] = {
-            { 4793, true, UnacknowledgedLevelUpReward }, // Dust II 2021
-            { 4602, true, UnacknowledgedLevelUpReward }, // Cobblestone
-        };
-        for (const DropSpec &spec : CollectionDrops)
+        // Case drops were playtime driven rather than guaranteed every match.
+        if (playerData.has_time_played() && playerData.time_played())
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (m_inventory.CreateMatchDrop(
-                spec.defIndex, spec.direct, spec.unack, create, drop))
+            if (m_inventory.AddMatchPlaytimeAndCreateCaseDrop(
+                playerData.time_played(), create, drop))
             {
                 SendMessageToGame(true, k_ESOMsg_Create, create);
                 SendMessageToGame(false,
@@ -390,11 +365,74 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        if (reservationId)
-            m_lastRewardedReservation = reservationId;
-        Platform::Print("drops: completed native end-match reward batch for reservation %llu\n",
-            reservationId);
+        // The server reports Competitive wins using the same Steam-user-stat
+        // delta Valve used. A 15-round non-win in classic MR15 is a tie; all
+        // other non-wins are treated as losses for the hidden revival rating.
+        bool won = false;
+        for (const CMsgCsgoSteamUserStatChange &stat : playerData.userstatchanges())
+        {
+            if (stat.ecsgosteamuserstat()
+                    == k_ECsgoSteamUserStat_MatchWinsCompetitive
+                && stat.delta() > 0)
+            {
+                won = true;
+                break;
+            }
+        }
+        const uint32_t roundsWon = baseXp / 30;
+        const bool tied = !won && roundsWon == 15;
+        if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
+        {
+            SendRankUpdate();
+        }
+
+        // Operation missions share the same real match-end packet.
+        const bool operationEligible =
+            !playerData.has_operation_points_eligible()
+            || playerData.operation_points_eligible();
+
+        if (operationEligible)
+        {
+            for (const PlayerQuestData::QuestItemData &quest :
+                playerData.quest_item_data())
+            {
+                if (!quest.has_quest_id() || quest.quest_id() > UINT32_MAX)
+                {
+                    continue;
+                }
+
+                const int normal = quest.has_quest_normal_points_earned()
+                    ? quest.quest_normal_points_earned() : 0;
+                const int bonus = quest.has_quest_bonus_points_earned()
+                    ? quest.quest_bonus_points_earned() : 0;
+
+                if (m_inventory.ApplyOperationQuestProgress(
+                    static_cast<uint32_t>(quest.quest_id()),
+                    normal, bonus, operationUpdate))
+                {
+                    operationChanged = true;
+                }
+            }
+        }
+
+        // gc_server already split 9136 per account, so there should only be one
+        // relevant PlayerQuestData. Do not process accidental duplicates.
+        break;
     }
+
+    if (operationChanged)
+    {
+        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, operationUpdate);
+    }
+
+    if (processedPlayer && reservationId)
+    {
+        m_lastRewardedReservation = reservationId;
+    }
+
+    Platform::Print(
+        "progression: completed match-end processing reservation=%llu account=%u\n",
+        reservationId, AccountId());
 }
 
 
