@@ -54,7 +54,7 @@ def load_config(path: str) -> dict:
             sys.exit(1)
     if not config["game_exe"]:
         if sys.platform.startswith("win"):
-            config["game_exe"] = "csgo.exe"
+            config["game_exe"] = "csgo_revival.exe"
         elif sys.platform == "darwin":
             config["game_exe"] = "csgo_osx64"
         else:
