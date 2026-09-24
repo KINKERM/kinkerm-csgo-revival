@@ -336,8 +336,6 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
     }
-
-    }
     }
 
     if (changed)
