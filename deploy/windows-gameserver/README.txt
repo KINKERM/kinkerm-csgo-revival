@@ -47,3 +47,23 @@ Update work before hosting. 64 tick is deliberate: 128 tick roughly doubles the
 server simulation frequency and is much more likely to produce server-frame
 spikes on this CPU. The agent raises srcds to ABOVE_NORMAL priority, but exact
 server FPS still depends on the specific Celeron, thermals and Windows load.
+
+
+ACCEPT FLOW
+-----------
+When ten players are found, the server boots into a paused Competitive warmup.
+The client receives the native 9107 match reservation and shows the normal
+match-found/ACCEPT flow. The agent watches srcds logs for the ten assigned Steam
+accounts entering the game. Once all ten have entered, it ends warmup and marks
+the match in progress.
+
+If the full group has not entered within accept_timeout_seconds (default 90),
+the server is cancelled. Players who entered are returned to the queue and the
+missing player(s) are returned to idle.
+
+END OF MATCH
+------------
+Do not lower post_match_grace_seconds below about 20 seconds. The default 25
+seconds intentionally leaves srcds alive after Game_Over so the game's native
+match-end GC messages, XP/rank updates, Operation progress and item-drop reveal
+can reach clients before the server process exits.
