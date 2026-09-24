@@ -35,7 +35,7 @@ class Catalog:
     def load(cls, path: str) -> "Catalog":
         if not os.path.exists(path):
             return cls({})
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8-sig") as fh:
             return cls(json.load(fh))
 
     def get_case(self, case_id: str) -> Optional[dict[str, Any]]:
