@@ -520,12 +520,22 @@ void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
         return;
     }
 
-    if (message.campaign_id() != GetConfig().OperationSeason())
+    // Riptide Panorama addresses the active operation through season_access=1,
+    // while the SeasonalOperations SO/campaign itself is season 10. Depending
+    // on the client build, the native redeem request can expose either value.
+    if (message.campaign_id() != GetConfig().OperationSeason()
+        && message.campaign_id() != 1)
     {
-        Platform::Print("operation shop: refused campaign %u (active %u)\n",
+        Platform::Print("operation shop: refused campaign/access %u (active season %u)\n",
             message.campaign_id(), GetConfig().OperationSeason());
         return;
     }
+
+    Platform::Print("operation shop: native redeem campaign/access=%u redeem=%u balance=%u expected_cost=%u\n",
+        message.campaign_id(),
+        message.redeem_id(),
+        message.has_redeemable_balance() ? message.redeemable_balance() : 0,
+        message.has_expected_cost() ? message.expected_cost() : 0);
 
     const ShopReward *reward = GetConfig().OperationShopReward(message.redeem_id());
     if (!reward)
