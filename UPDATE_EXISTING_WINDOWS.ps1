@@ -132,30 +132,36 @@ if (-not $SkipInstall) {
     $gameInfo = Join-Path $CsgoDir "csgo\gameinfo.txt"
     Need-Path $gameInfo "CS:GO gameinfo.txt"
     $gameInfoText = [IO.File]::ReadAllText($gameInfo)
-    $normalizedGameInfo = $gameInfoText.Replace("\", "/")
-    if (-not $normalizedGameInfo.Contains("custom/kinkerm_revival")) {
+
+    if (-not (Test-Path (Join-Path $backup "gameinfo.txt.pre-kinkerm-revival"))) {
         Copy-Item $gameInfo (Join-Path $backup "gameinfo.txt.pre-kinkerm-revival") -Force
-
-        $rx = New-Object Text.RegularExpressions.Regex(
-            "SearchPaths\s*\{",
-            [Text.RegularExpressions.RegexOptions]::IgnoreCase
-        )
-        $m = $rx.Match($gameInfoText)
-        if (-not $m.Success) {
-            throw "Could not find SearchPaths block in $gameInfo"
-        }
-
-        $mountLine = "`r`n`t`t`tGame`t`t|gameinfo_path|custom/kinkerm_revival"
-        $gameInfoText = $gameInfoText.Insert($m.Index + $m.Length, $mountLine)
-        [IO.File]::WriteAllText(
-            $gameInfo,
-            $gameInfoText,
-            [Text.UTF8Encoding]::new($false)
-        )
-        Write-Host "    Mounted csgo\custom\kinkerm_revival before stock game content." -ForegroundColor Green
-    } else {
-        Write-Host "    Revival custom override already mounted." -ForegroundColor Green
     }
+
+    # Remove any older revival mount wherever it was and reinsert it as the
+    # first SearchPaths entry so it wins before stock csgo/pak01 resources.
+    $gameInfoText = [Text.RegularExpressions.Regex]::Replace(
+        $gameInfoText,
+        "(?im)^\s*Game(?:\+Mod)?\s+[^\r\n]*custom[\\/]kinkerm_revival[^\r\n]*\r?\n?",
+        ""
+    )
+
+    $rx = New-Object Text.RegularExpressions.Regex(
+        "SearchPaths\s*\{",
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    $m = $rx.Match($gameInfoText)
+    if (-not $m.Success) {
+        throw "Could not find SearchPaths block in $gameInfo"
+    }
+
+    $mountLine = "`r`n`t`t`tGame`t`t|gameinfo_path|custom/kinkerm_revival"
+    $gameInfoText = $gameInfoText.Insert($m.Index + $m.Length, $mountLine)
+    [IO.File]::WriteAllText(
+        $gameInfo,
+        $gameInfoText,
+        [Text.UTF8Encoding]::new($false)
+    )
+    Write-Host "    Mounted csgo\custom\kinkerm_revival FIRST in SearchPaths." -ForegroundColor Green
 } else {
     Write-Host "[5/6] Client install skipped by request."
 }
