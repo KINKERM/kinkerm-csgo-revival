@@ -89,6 +89,8 @@ csgo_gc-patch\case_opening.cpp  ->  <source>\csgo_gc\case_opening.cpp
 csgo_gc-patch\case_opening.h    ->  <source>\csgo_gc\case_opening.h
 csgo_gc-patch\gc_client.cpp     ->  <source>\csgo_gc\gc_client.cpp
 csgo_gc-patch\gc_client.h       ->  <source>\csgo_gc\gc_client.h
+csgo_gc-patch\gc_shared.cpp     ->  <source>\csgo_gc\gc_shared.cpp
+csgo_gc-patch\gc_shared.h       ->  <source>\csgo_gc\gc_shared.h
 csgo_gc-patch\gc_server.cpp     ->  <source>\csgo_gc\gc_server.cpp
 csgo_gc-patch\gc_server.h       ->  <source>\csgo_gc\gc_server.h
 csgo_gc-patch\item_schema.cpp   ->  <source>\csgo_gc\item_schema.cpp
@@ -219,6 +221,8 @@ running. The reliable fix is a **clean clone plus only the two patched files**:
    csgo_gc-patch\case_opening.h    ->  csgo_gc_clean\csgo_gc\case_opening.h
    csgo_gc-patch\gc_client.cpp     ->  csgo_gc_clean\csgo_gc\gc_client.cpp
    csgo_gc-patch\gc_client.h       ->  csgo_gc_clean\csgo_gc\gc_client.h
+   csgo_gc-patch\gc_shared.cpp     ->  csgo_gc_clean\csgo_gc\gc_shared.cpp
+   csgo_gc-patch\gc_shared.h       ->  csgo_gc_clean\csgo_gc\gc_shared.h
     csgo_gc-patch\gc_server.cpp     ->  csgo_gc_clean\csgo_gc\gc_server.cpp
     csgo_gc-patch\gc_server.h       ->  csgo_gc_clean\csgo_gc\gc_server.h
    csgo_gc-patch\item_schema.cpp   ->  csgo_gc_clean\csgo_gc\item_schema.cpp
