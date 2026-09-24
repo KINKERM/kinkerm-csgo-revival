@@ -97,7 +97,7 @@ var OperationMainMenu = ( function()
 	{
 		var onMissionSelect = function()
 		{
-			var LocalPlayerHasPrime = false;
+			var LocalPlayerHasPrime = PartyListAPI.GetFriendPrimeEligible( MyPersonaAPI.GetXuid() );
 			if ( !LocalPlayerHasPrime )
 			{
 				UiToolkitAPI.ShowGenericPopupTwoOptions(
