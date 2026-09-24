@@ -291,28 +291,27 @@ background work and check cooling first.
 
 MAP POOL
 --------
-The coordinator's broad pool currently includes:
-    de_dust2
-    de_mirage
-    de_inferno
-    de_nuke
-    de_overpass
-    de_vertigo
-    de_train
-    de_cache
-    de_cbble
-    de_ancient
-    de_anubis
-    de_tuscan
-    de_canals
-    de_breach
-    de_basalt
-    cs_office
-    cs_agency
-    cs_italy
+There is one shared Competitive queue. The laptop agent scans its top-level
+csgo\maps folder and advertises every installed BSP whose name begins with:
+    de_
+    cs_
 
-Only maps with a matching csgo\maps\<map>.bsp on the laptop are eligible, so a
-missing old map cannot create a dead match.
+The coordinator chooses randomly from the maps the laptop actually reports.
+That means preserved/removed maps can join the rotation without creating a
+separate client-side map queue.
+
+The known rotation order includes:
+    de_dust2, de_mirage, de_inferno, de_nuke, de_overpass, de_vertigo,
+    de_train, de_cache, de_cbble, de_ancient, de_anubis, de_tuscan,
+    de_canals, de_breach, de_basalt, de_abbey, de_austria, de_biome,
+    de_blackgold, de_chlorine, de_engage, de_grind, de_lite, de_mocha,
+    de_mutiny, de_ruby, de_seaside, de_shipped, de_studio, de_subzero,
+    de_swamp, de_thrill, de_zoo, cs_office, cs_agency, cs_italy,
+    cs_insertion, cs_insertion2
+
+Any other installed top-level de_/cs_ BSP is appended automatically. _se and
+_ve variants are excluded. A missing BSP cannot be selected because it is never
+advertised to the coordinator.
 
 TROUBLESHOOTING
 ---------------
