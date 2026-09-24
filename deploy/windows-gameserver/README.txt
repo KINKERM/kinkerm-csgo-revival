@@ -134,7 +134,7 @@ Example:
   "public_host": "example.gl.joinmc.link",
   "public_port": 30123,
   "local_port": 27015,
-  "playit_exe": "C:\\playit_gg\playit.exe",
+  "playit_exe": "C:\\playit_gg\\playit.exe",
   "extra_srcds_args": "",
   "accept_timeout_seconds": 90,
   "post_match_grace_seconds": 25
