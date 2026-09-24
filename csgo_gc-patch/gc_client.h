@@ -12,6 +12,7 @@ public:
 
 private:
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
+    void HandleIdle() override;
 
     // event handlers
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
@@ -72,4 +73,5 @@ private:
     uint32_t m_matchmakingClientVersion{};
     uint64_t m_lastMatchmakingReservation{};
     uint64_t m_lastRewardedReservation{};
+    uint32_t m_matchmakingIdleTicks{};
 };
