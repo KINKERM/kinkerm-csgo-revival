@@ -13,6 +13,6 @@ exec ./srcds \
     +map de_dust2 \
     +sv_setsteamaccount "" \
     -maxplayers_override 12 \
-    -tickrate 128 \
+    -tickrate 64 \
     -port 27015 \
     +exec server.cfg
