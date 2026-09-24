@@ -80,6 +80,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             ClientRequestNewMission(messageRead);
             break;
 
+        case k_EMsgGCCStrike15_v2_ClientRedeemMissionReward:
+            ClientRedeemMissionReward(messageRead);
+            break;
+
         case k_EMsgGCSetItemPositions:
             SetItemPositions(messageRead);
             break;
@@ -498,6 +502,84 @@ void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
         // the activation spinner and configures matchmaking.
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
     }
+}
+
+
+void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
+{
+    CMsgGCCstrike15_v2_ClientRedeemMissionReward message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCstrike15_v2_ClientRedeemMissionReward failed, ignoring\n");
+        return;
+    }
+
+    if (!message.has_campaign_id() || !message.has_redeem_id())
+    {
+        Platform::Print("operation shop: native redeem missing campaign/redeem id\n");
+        return;
+    }
+
+    if (message.campaign_id() != GetConfig().OperationSeason())
+    {
+        Platform::Print("operation shop: refused campaign %u (active %u)\n",
+            message.campaign_id(), GetConfig().OperationSeason());
+        return;
+    }
+
+    const ShopReward *reward = GetConfig().OperationShopReward(message.redeem_id());
+    if (!reward)
+    {
+        Platform::Print("operation shop: refused unknown redeem id %u\n", message.redeem_id());
+        return;
+    }
+
+    if (message.has_expected_cost()
+        && message.expected_cost() != static_cast<uint32_t>(reward->cost))
+    {
+        Platform::Print("operation shop: refused redeem id %u cost mismatch (%u != %d)\n",
+            message.redeem_id(), message.expected_cost(), reward->cost);
+        return;
+    }
+
+    if (!m_inventory.CanSpendStars(reward->cost))
+    {
+        Platform::Print("operation shop: refused redeem id %u - not enough stars (need %d)\n",
+            message.redeem_id(), reward->cost);
+        return;
+    }
+
+    std::vector<CMsgSOSingleObject> created;
+    const uint64_t itemId = m_inventory.PurchaseOperationReward(reward->defIndex, created);
+    if (!itemId || created.empty())
+    {
+        Platform::Print("operation shop: native redeem failed for def %u\n", reward->defIndex);
+        return;
+    }
+
+    CMsgSOMultipleObjects coinUpdate;
+    if (!m_inventory.SpendStars(reward->cost, coinUpdate))
+    {
+        CMsgSOSingleObject rollback;
+        m_inventory.RemoveItem(itemId, rollback);
+        Platform::Print("operation shop: native redeem rolled back def %u - wallet changed\n",
+            reward->defIndex);
+        return;
+    }
+
+    for (CMsgSOSingleObject &newItem : created)
+    {
+        SendMessageToGame(true, k_ESOMsg_Create, newItem);
+    }
+    SendMessageToGame(true, k_ESOMsg_UpdateMultiple, coinUpdate);
+
+    CMsgGCItemCustomizationNotification notification;
+    notification.add_item_id(itemId);
+    notification.set_request(k_EGCItemCustomizationNotification_ClientRedeemMissionReward);
+    SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+
+    Platform::Print("operation shop: redeemed id %u -> def %u item %llu for %d stars\n",
+        message.redeem_id(), reward->defIndex, itemId, reward->cost);
 }
 
 
