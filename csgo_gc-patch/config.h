@@ -67,6 +67,7 @@ public:
     // in the OperationStarAttribute ("upgrade level"). Keep the costs here in sync with
     // operation_util.js m_rewardSchema points.
     int OperationShopCost(uint32_t defIndex) const;
+    const ShopReward *OperationShopReward(uint32_t redeemId) const;
     uint32_t OperationStarPackValue(uint32_t defIndex) const;
     const std::vector<uint32_t> &OperationCoinDefs() const { return m_operationCoinDefs; }
     uint32_t OperationStarAttribute() const { return m_operationStarAttribute; }
