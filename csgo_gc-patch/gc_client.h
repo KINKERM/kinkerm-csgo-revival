@@ -71,4 +71,5 @@ private:
     uint32_t m_matchmakingGameType{ 8 };
     uint32_t m_matchmakingClientVersion{};
     uint64_t m_lastMatchmakingReservation{};
+    uint64_t m_lastRewardedReservation{};
 };
