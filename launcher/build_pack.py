@@ -130,6 +130,12 @@ def main() -> None:
         print("[build_pack] added csgo_gc/config.txt")
         zf.write(args.items_game, "csgo/scripts/items/items_game.txt")
         print("[build_pack] added csgo/scripts/items/items_game.txt")
+        pbin_tool = os.path.join(REPO, "tools", "pbin.py")
+        if not os.path.isfile(pbin_tool):
+            print(f"[build_pack] ERROR: missing Panorama PBIN tool: {pbin_tool}")
+            sys.exit(4)
+        zf.write(pbin_tool, "csgo/panorama/pbin.py")
+        print("[build_pack] added csgo/panorama/pbin.py")
         if os.path.isdir(args.panorama):
             pn = 0
             for base, dirs, files in os.walk(args.panorama):
