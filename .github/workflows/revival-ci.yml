@@ -23,6 +23,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Clone clean upstream csgo_gc
         shell: pwsh
         run: git clone --depth 1 https://github.com/mikkokko/csgo_gc.git upstream
@@ -41,3 +44,15 @@ jobs:
       - name: Build client server and GC
         shell: pwsh
         run: cmake --build upstream/build --config Release --target csgo srcds csgo_gc
+      - name: Build full revival pack
+        shell: pwsh
+        run: python launcher/build_pack.py --csgo-gc-dir upstream --out csgo-revival-pack.zip
+      - name: Validate pack contents
+        shell: pwsh
+        run: |
+          python -c "import zipfile; z=zipfile.ZipFile('csgo-revival-pack.zip'); n=set(z.namelist()); req={'csgo_gc.dll','csgo_revival.exe','srcds.exe','csgo_gc/config.txt','csgo/scripts/items/items_game.txt','csgo/panorama/layout/mainmenu_play.xml','csgo/panorama/scripts/mainmenu_play.js'}; missing=sorted(req-n); print('missing:', missing); assert not missing"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csgo-revival-pack-${{ github.sha }}
+          path: csgo-revival-pack.zip
+          if-no-files-found: error
