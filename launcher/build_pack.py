@@ -4,7 +4,7 @@
 The pack extracts directly over a CS:GO Legacy install so every friend ends up
 with an IDENTICAL setup (required for Steam P2P lobbies):
 
-  <root>/csgo_gc.dll, csgo.exe, srcds.exe   <- your built, PATCHED csgo_gc
+  <root>/csgo_gc.dll, csgo_revival.exe, srcds.exe <- patched revival runtime
   <root>/csgo_gc/config.txt                 <- this repo's tuned gc-config/config.txt
   <root>/csgo/scripts/items/items_game.txt  <- this repo's custom items_game.txt
 
@@ -120,7 +120,11 @@ def main() -> None:
 
     with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, path in runtime.items():
-            zf.write(path, name)           # runtime files land at the pack root
+            # Keep the Steam-managed Legacy launcher untouched. The csgo_gc
+            # launcher is self-contained and resolves the real launcher DLLs
+            # relative to its own directory, so it can safely use another name.
+            pack_name = "csgo_revival.exe" if name.lower() == "csgo.exe" else name
+            zf.write(path, pack_name)      # runtime files land at the pack root
         print(f"[build_pack] added {len(runtime)} runtime file(s) at root")
         zf.write(args.config, "csgo_gc/config.txt")
         print("[build_pack] added csgo_gc/config.txt")
