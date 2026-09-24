@@ -201,7 +201,11 @@ class Handler(BaseHTTPRequestHandler):
             steamid = str(body.get("steamid", "")).strip()
             if not steamid.isdigit():
                 return self._send_json(400, {"error": "valid steamid required"})
-            return self._send_json(200, self.matchmaking.start(steamid))
+            return self._send_json(200, self.matchmaking.start(
+                steamid,
+                game_type=int(body.get("game_type") or 8),
+                client_version=int(body.get("client_version") or 0),
+            ))
 
         if path == "/matchmaking/stop":
             body = self._read_json_body()
