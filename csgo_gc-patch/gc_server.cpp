@@ -4,6 +4,7 @@
 #include "gc_const_csgo.h"
 #include "graffiti.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
