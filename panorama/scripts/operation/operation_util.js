@@ -58,9 +58,9 @@ var OperationUtil = ( function () {
 		m_nActiveCardIndex = -1;
 		try
 		{
-			var idxOperation = InventoryAPI.GetCacheTypeElementIndexByKey( 'SeasonalOperations', nSeasonAccess );
+			var idxOperation = InventoryAPI.GetCacheTypeElementIndexByKey( 'SeasonalOperations', m_nOperationSeason );
 			if ( idxOperation !== undefined && idxOperation !== null &&
-				InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_value' ) == nSeasonAccess )
+				InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_value' ) == m_nOperationSeason )
 			{
 				var tierUnlocked = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'tier_unlocked' );
 				var missionsCompleted = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'missions_completed' );
