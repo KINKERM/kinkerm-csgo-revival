@@ -112,7 +112,7 @@ def ensure_match_cfg(csgo_dir: str) -> None:
     cfg_dir = os.path.join(csgo_dir, "csgo", "cfg")
     os.makedirs(cfg_dir, exist_ok=True)
     path = os.path.join(cfg_dir, "revival_competitive.cfg")
-    text = r'''hostname "Kinkerm CS:GO Revival Competitive"
+    text = r"""hostname "Kinkerm CS:GO Revival Competitive"
 sv_lan 0
 sv_password ""
 sv_cheats 0
@@ -141,7 +141,7 @@ mp_roundtime_defuse 1.92
 mp_match_restart_delay 15
 mp_endmatch_votenextmap 0
 mp_match_end_restart 0
-'''
+"""
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
 
