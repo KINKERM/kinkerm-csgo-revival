@@ -55,8 +55,8 @@
 		</snippet>
 	</snippets>
 
-	<Panel class="op-mainmenu hidden MainMenuModeOnly" onload="">
-		<Panel id="id-op-mainmenu-upsell" class="op-mainmenu__upsell-container" hittest="true">
+	<Panel class="op-mainmenu MainMenuModeOnly" onload="">
+		<Panel id="id-op-mainmenu-upsell" class="op-mainmenu__upsell-container show" hittest="true">
 			<Panel id="id-op-mainmenu-upsell-bg" class="full-width full-height" blurrects="id-op-mainmenu-upsell-btns-container">
 				                                                                 
 				                                                                        
