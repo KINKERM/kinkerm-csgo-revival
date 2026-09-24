@@ -625,6 +625,11 @@ var PlayMenu = ( function()
 
 	function _IsGameModeAvailable( serverType, gameMode )
 	{
+		// Revival has exactly one official Competitive queue. Stock CS:GO
+		// blocks Competitive for fresh low-level accounts; bypass that gate.
+		if ( serverType === 'official' && gameMode === 'competitive' )
+			return true;
+
 		var isAvailable = true;
 		
 		if ( gameMode === "survival" )
@@ -779,6 +784,15 @@ var PlayMenu = ( function()
 		m_singleSkirmishMapGroup = null;
 		_SetDirectChallengeKey( '' );
 		m_serverPrimeSetting = 1;
+
+		for ( var revivalModeIndex = 0; revivalModeIndex < m_arrGameModeRadios.length; ++revivalModeIndex )
+		{
+			m_arrGameModeRadios[ revivalModeIndex ].visible =
+				( m_arrGameModeRadios[ revivalModeIndex ].id === 'competitive' );
+		}
+		var revivalLegacyMapPicker = $( '#RevivalLegacyMapPicker' );
+		if ( revivalLegacyMapPicker )
+			revivalLegacyMapPicker.visible = false;
 
 		// Full-length Competitive is sv_game_mode_flags 0. The revival has no
 		// short-match/unranked selector, so always normalize stale sessions.
@@ -1289,6 +1303,14 @@ var PlayMenu = ( function()
 
 	function _ShowActiveMapSelectionTab( isEnabled )
 	{
+		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
+		{
+			var revivalLegacyMapPicker = $( '#RevivalLegacyMapPicker' );
+			if ( revivalLegacyMapPicker )
+				revivalLegacyMapPicker.visible = false;
+			return;
+		}
+
 		var panelID = m_activeMapGroupSelectionPanelID;
 
 		for ( var key in m_mapSelectionButtonContainers )
@@ -3079,7 +3101,7 @@ var PlayMenu = ( function()
 		var elBtn = $.GetContextPanel().FindChildTraverse( 'GameModeFlagsBtn' );
 		var elTT = $.GetContextPanel().FindChildTraverse( 'id-tt_gamemodeflags' );
 
-		if ( !GameModeFlags.DoesModeUseFlags( m_gameModeSetting ) || m_isWorkshop )
+		if ( m_gameModeSetting === 'competitive' || !GameModeFlags.DoesModeUseFlags( m_gameModeSetting ) || m_isWorkshop )
 		{
 			elTT.visible = false;
 			return;
