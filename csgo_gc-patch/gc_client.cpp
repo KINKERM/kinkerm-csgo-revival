@@ -534,12 +534,14 @@ void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
         return;
     }
 
+    // The Legacy client derives expected_cost from its bundled Operation schema.
+    // The revival UI/shop table is server-owned, so never trust or require that
+    // client hint to match. The configured reward cost below is authoritative.
     if (message.has_expected_cost()
         && message.expected_cost() != static_cast<uint32_t>(reward->cost))
     {
-        Platform::Print("operation shop: refused redeem id %u cost mismatch (%u != %d)\n",
-            message.redeem_id(), message.expected_cost(), reward->cost);
-        return;
+        Platform::Print("operation shop: client expected cost %u for redeem id %u; using server cost %d\n",
+            message.expected_cost(), message.redeem_id(), reward->cost);
     }
 
     if (!m_inventory.CanSpendStars(reward->cost))
