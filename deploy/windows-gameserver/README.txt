@@ -32,10 +32,12 @@ srcds process, no bots, ABOVE_NORMAL process priority, no extra match instances.
 
 WHAT MUST ALREADY EXIST
 -----------------------
-1. Python 3 on the laptop. In Command Prompt:
+1. Python 3.10 or newer on the laptop. In Command Prompt:
        py -3 --version
    or:
        python --version
+
+   If it reports Python 3.9 or older, install a current Python first.
 
 2. A CS:GO LEGACY installation that contains:
        <csgo_dir>\srcds.exe
