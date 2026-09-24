@@ -657,7 +657,7 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
 static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)
 {
     snprintf(buffer, bufferSize,
-        "%u.%u.%u.%u:%u\n",
+        "%u.%u.%u.%u:%u",
         (ip >> 24) & 0xff,
         (ip >> 16) & 0xff,
         (ip >> 8) & 0xff,
@@ -675,14 +675,35 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     }
 
     CMsgGCCStrike15_v2_ClientRequestJoinServerData response = request;
-    response.mutable_res()->set_serverid(request.version());
-    response.mutable_res()->set_direct_udp_ip(request.server_ip());
-    response.mutable_res()->set_direct_udp_port(request.server_port());
-    response.mutable_res()->set_reservationid(GameServerCookieId);
 
-    char addressString[32];
-    AddressString(request.server_ip(), request.server_port(), addressString, sizeof(addressString));
-    response.mutable_res()->set_server_address(addressString);
+    if (m_lastMatchmakingReservation && !m_matchmakingServerAddress.empty())
+    {
+        CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve *res = response.mutable_res();
+        res->set_serverid(m_matchmakingServerId);
+        if (m_matchmakingDirectUdpIp)
+            res->set_direct_udp_ip(m_matchmakingDirectUdpIp);
+        res->set_direct_udp_port(m_matchmakingDirectUdpPort);
+        res->set_reservationid(m_lastMatchmakingReservation);
+        res->set_server_address(m_matchmakingServerAddress);
+        if (!m_matchmakingMap.empty())
+            res->set_map(m_matchmakingMap);
+
+        Platform::Print(
+            "matchmaking: 9164 returning active reserve %llu server=%s map=%s\n",
+            m_lastMatchmakingReservation,
+            m_matchmakingServerAddress.c_str(), m_matchmakingMap.c_str());
+    }
+    else
+    {
+        response.mutable_res()->set_serverid(request.version());
+        response.mutable_res()->set_direct_udp_ip(request.server_ip());
+        response.mutable_res()->set_direct_udp_port(request.server_port());
+        response.mutable_res()->set_reservationid(GameServerCookieId);
+
+        char addressString[32];
+        AddressString(request.server_ip(), request.server_port(), addressString, sizeof(addressString));
+        response.mutable_res()->set_server_address(addressString);
+    }
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
 }
@@ -701,6 +722,11 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     m_matchmakingActive = true;
     m_lastMatchmakingReservation = 0;
     m_matchmakingIdleTicks = 0;
+    m_matchmakingServerId = 0;
+    m_matchmakingDirectUdpIp = 0;
+    m_matchmakingDirectUdpPort = 0;
+    m_matchmakingServerAddress.clear();
+    m_matchmakingMap.clear();
 
     std::ostringstream request;
     request << "action=start\n"
@@ -742,6 +768,11 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
     m_matchmakingActive = false;
     m_lastMatchmakingReservation = 0;
     m_matchmakingIdleTicks = 0;
+    m_matchmakingServerId = 0;
+    m_matchmakingDirectUdpIp = 0;
+    m_matchmakingDirectUdpPort = 0;
+    m_matchmakingServerAddress.clear();
+    m_matchmakingMap.clear();
 
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
     update.set_matchmaking(0);
@@ -860,6 +891,11 @@ void ClientGC::PollMatchmakingBridge()
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 
         m_lastMatchmakingReservation = reservationId;
+        m_matchmakingServerId = matchId;
+        m_matchmakingDirectUdpIp = directUdpIp;
+        m_matchmakingDirectUdpPort = port;
+        m_matchmakingServerAddress = serverAddress;
+        m_matchmakingMap = mapName;
         Platform::Print("matchmaking: MATCH FOUND reservation=%llu map=%s server=%s\n",
             reservationId, mapName.c_str(), serverAddress.c_str());
         return;
