@@ -63,7 +63,7 @@ def load_config() -> dict:
         print(f"[agent] missing {CONFIG_PATH}")
         print("[agent] copy server_agent.example.json to server_agent.json and edit it.")
         raise SystemExit(1)
-    with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+    with open(CONFIG_PATH, "r", encoding="utf-8-sig") as fh:
         cfg = json.load(fh)
     for key in ("backend_url", "csgo_dir", "public_host"):
         if not str(cfg.get(key, "")).strip():
