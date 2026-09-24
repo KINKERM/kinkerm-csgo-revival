@@ -21,24 +21,14 @@ from typing import Any
 # the coordinator chooses only from the intersection. This lets an old install
 # keep removed maps without creating dead reservations for maps it does not have.
 DEFAULT_MAP_POOL = (
-    "de_dust2",
-    "de_mirage",
-    "de_inferno",
-    "de_nuke",
-    "de_overpass",
-    "de_vertigo",
-    "de_train",
-    "de_cache",
-    "de_cbble",
-    "de_ancient",
-    "de_anubis",
-    "de_tuscan",
-    "de_canals",
-    "de_breach",
-    "de_basalt",
-    "cs_office",
-    "cs_agency",
-    "cs_italy",
+    "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_overpass",
+    "de_vertigo", "de_train", "de_cache", "de_cbble", "de_ancient",
+    "de_anubis", "de_tuscan", "de_canals", "de_breach", "de_basalt",
+    "de_abbey", "de_austria", "de_biome", "de_blackgold", "de_chlorine",
+    "de_engage", "de_grind", "de_lite", "de_mocha", "de_mutiny",
+    "de_ruby", "de_seaside", "de_shipped", "de_studio", "de_subzero",
+    "de_swamp", "de_thrill", "de_zoo",
+    "cs_office", "cs_agency", "cs_italy", "cs_insertion", "cs_insertion2",
 )
 
 PLAYERS_PER_MATCH = 10
@@ -120,11 +110,15 @@ class MatchmakingCoordinator:
             }
 
     def _choose_map_locked(self) -> str:
-        available = [str(x) for x in self._server.get("maps", []) if x]
+        # The laptop reports every installed de_/cs_ BSP. Treat that installed
+        # set as the real single-queue pool so preserved/removed CS:GO maps are
+        # automatically eligible without needing a client-side map picker.
+        available = [
+            str(x) for x in self._server.get("maps", [])
+            if str(x).startswith(("de_", "cs_"))
+        ]
         if available:
-            candidates = [m for m in self._map_pool if m in set(available)]
-            if candidates:
-                return random.choice(candidates)
+            return random.choice(available)
         return random.choice(self._map_pool)
 
     def _try_form_locked(self) -> None:
