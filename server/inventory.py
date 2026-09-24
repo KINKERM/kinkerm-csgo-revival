@@ -111,6 +111,10 @@ def build_inventory_tree(player: dict[str, Any]) -> dict[str, Any]:
     if isinstance(operation, dict):
         tree["operation_riptide"] = _normalize_operation_state(operation)
 
+    profile = player.get("revival_profile")
+    if isinstance(profile, dict):
+        tree["revival_profile"] = _normalize_profile_state(profile)
+
     return tree
 
 
@@ -137,6 +141,19 @@ _INT_FIELDS = ("inventory", "level", "quality", "flags", "origin", "in_use", "ra
 _OPERATION_INT_FIELDS = (
     "season", "earned_stars", "missions_completed", "mission_id", "season_pass_time"
 )
+_PROFILE_INT_FIELDS = ("level", "xp", "competitive_rank", "competitive_wins")
+
+
+def _normalize_profile_state(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    out = {field: _as_int(raw.get(field), 0)
+           for field in _PROFILE_INT_FIELDS if field in raw}
+    out["level"] = min(40, max(1, _as_int(out.get("level"), 1)))
+    out["xp"] = min(4999, max(0, _as_int(out.get("xp"), 0)))
+    out["competitive_rank"] = min(18, max(0, _as_int(out.get("competitive_rank"), 0)))
+    out["competitive_wins"] = max(0, _as_int(out.get("competitive_wins"), 0))
+    return out
 
 
 def _normalize_operation_state(raw: Any) -> dict[str, Any]:
@@ -225,9 +242,13 @@ def parse_inventory_txt(text: str) -> dict[str, Any]:
     operation_raw = root.get("operation_riptide")
     operation = (_normalize_operation_state(operation_raw)
                  if isinstance(operation_raw, dict) else None)
+    profile_raw = root.get("revival_profile")
+    profile = (_normalize_profile_state(profile_raw)
+               if isinstance(profile_raw, dict) else None)
 
     return {
         "items": items,
         "default_equips": default_equips,
         "operation_riptide": operation,
+        "revival_profile": profile,
     }
