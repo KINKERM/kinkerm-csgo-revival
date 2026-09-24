@@ -78,7 +78,7 @@ On the PC where you already build csgo_gc:
 2. Copy all files from:
        csgo_gc-patch\*
    over:
-       <your csgo_gc source>\csgo\*
+       <your csgo_gc source>\csgo_gc\*
    replacing matching files.
 
    New matchmaking files that MUST be copied include:
