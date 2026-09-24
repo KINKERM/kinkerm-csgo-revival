@@ -1989,3 +1989,78 @@ ToggleButton.play-menu-option-btn:selected Label
 	font-weight: lighter;
 	font-size: 20px;
 }
+
+
+/* CS:GO Revival: one shared ranked Competitive queue. */
+.revival-single-queue
+{
+    width: 100%;
+    height: fill-parent-flow( 1.0 );
+    horizontal-align: center;
+    vertical-align: center;
+}
+
+.revival-single-queue__card
+{
+    width: 78%;
+    min-height: 360px;
+    horizontal-align: center;
+    vertical-align: center;
+    flow-children: down;
+    padding: 38px 52px;
+    background-color: #101820df;
+    border: 1px solid #ffffff18;
+    box-shadow: 0px 8px 24px 0px #00000088;
+}
+
+.revival-single-queue__icon
+{
+    width: 64px;
+    height: 64px;
+    horizontal-align: center;
+    wash-color: #d9e7f5;
+    margin-bottom: 12px;
+}
+
+.revival-single-queue__title
+{
+    horizontal-align: center;
+    font-family: stratum2Font;
+    font-size: 34px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    color: white;
+}
+
+.revival-single-queue__subtitle
+{
+    horizontal-align: center;
+    margin-top: 8px;
+    font-family: stratum2Font;
+    font-size: 20px;
+    color: #9fc6e8;
+    letter-spacing: 1px;
+}
+
+.revival-single-queue__body
+{
+    width: 88%;
+    horizontal-align: center;
+    text-align: center;
+    margin-top: 28px;
+    font-family: stratum2Font;
+    font-size: 19px;
+    color: #d7dce1;
+}
+
+.revival-single-queue__maps
+{
+    width: 92%;
+    horizontal-align: center;
+    text-align: center;
+    margin-top: 28px;
+    font-family: stratum2Font;
+    font-size: 17px;
+    line-height: 24px;
+    color: #aeb8c2;
+}
