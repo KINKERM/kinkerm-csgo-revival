@@ -1287,6 +1287,102 @@ const Collection *ItemSchema::FindCollectionForItem(uint32_t itemDefIndex,
     return &collection;
 }
 
+bool ItemSchema::CreateRandomCollectionItem(Random &random,
+    const std::vector<std::string_view> &collectionNames,
+    ItemOrigin origin,
+    UnacknowledgedType unacknowledgedType,
+    CSOEconItem &item) const
+{
+    std::vector<const CollectionItem *> candidates;
+    for (const Collection &collection : m_collections)
+    {
+        bool wanted = false;
+        for (std::string_view name : collectionNames)
+        {
+            if (collection.name == name)
+            {
+                wanted = true;
+                break;
+            }
+        }
+        if (!wanted)
+        {
+            continue;
+        }
+
+        for (const CollectionItem &entry : collection.items)
+        {
+            if (entry.itemInfo && entry.paintKitInfo)
+            {
+                candidates.push_back(&entry);
+            }
+        }
+    }
+
+    if (candidates.empty())
+    {
+        Platform::Print("drops: no items found in weekly collection pool\n");
+        return false;
+    }
+
+    // Match case/collection rarity behavior: choose the grade by rarity weight,
+    // then choose uniformly among the skins of that grade.
+    std::vector<uint32_t> rarities;
+    float totalWeight = 0.0f;
+    for (const CollectionItem *entry : candidates)
+    {
+        if (std::find(rarities.begin(), rarities.end(), entry->rarity) != rarities.end())
+        {
+            continue;
+        }
+        rarities.push_back(entry->rarity);
+        totalWeight += GetConfig().GetRarityWeight(entry->rarity);
+    }
+
+    if (rarities.empty() || totalWeight <= 0.0f)
+    {
+        return false;
+    }
+
+    float roll = random.Float(0.0f, totalWeight);
+    uint32_t chosenRarity = rarities.front();
+    float accum = 0.0f;
+    for (uint32_t rarity : rarities)
+    {
+        accum += GetConfig().GetRarityWeight(rarity);
+        if (roll < accum)
+        {
+            chosenRarity = rarity;
+            break;
+        }
+    }
+
+    std::vector<const CollectionItem *> tier;
+    for (const CollectionItem *entry : candidates)
+    {
+        if (entry->rarity == chosenRarity)
+        {
+            tier.push_back(entry);
+        }
+    }
+    if (tier.empty())
+    {
+        return false;
+    }
+
+    const CollectionItem *chosen = tier[random.Integer<size_t>(0, tier.size() - 1)];
+
+    LootListItem loot;
+    loot.itemInfo = chosen->itemInfo;
+    loot.type = LootListItemPaintable;
+    loot.paintKitInfo = chosen->paintKitInfo;
+    loot.rarity = chosen->rarity;
+    loot.quality = chosen->itemInfo->m_quality;
+
+    return CreateItemFromLootListItem(
+        random, loot, false, origin, unacknowledgedType, item);
+}
+
 // trade-up contracts (revival addition) --- 5 Covert -> gold recipe
 // collect every unusual (knife/glove) leaf list reachable from a loot list
 static void CollectUnusualLists(const LootList *list, std::vector<const LootList *> &out)
