@@ -86,7 +86,7 @@ var PlayMenu = ( function()
 
 			                                             
 			  
-			if ( GameModeFlags.DoesModeUseFlags( m_gameModeSetting ) && !m_gameModeFlags[ m_serverSetting + m_gameModeSetting ] )                                               
+			if ( m_gameModeSetting !== 'competitive' && GameModeFlags.DoesModeUseFlags( m_gameModeSetting ) && !m_gameModeFlags[ m_serverSetting + m_gameModeSetting ] )                                               
 			{
 				btnStartSearch.RemoveClass( 'pressed' );
 
@@ -780,11 +780,10 @@ var PlayMenu = ( function()
 		_SetDirectChallengeKey( '' );
 		m_serverPrimeSetting = 1;
 
-		_setAndSaveGameModeFlags( parseInt( settings.game.gamemodeflags ));
-		
-		                                       
-		m_isWorkshop = settings.game.mapgroupname
-			&& settings.game.mapgroupname.includes( '@workshop' );
+		// Full-length Competitive is sv_game_mode_flags 0. The revival has no
+		// short-match/unranked selector, so always normalize stale sessions.
+		_setAndSaveGameModeFlags( 0 );
+		m_isWorkshop = false;
 		
 		                                                                      
 		$.GetContextPanel().SwitchClass( "gamemode", m_gameModeSetting );
@@ -2769,6 +2768,11 @@ var PlayMenu = ( function()
 
 		var gameModeFlags = m_gameModeFlags[ m_serverSetting + m_gameModeSetting ] ? m_gameModeFlags[ m_serverSetting + m_gameModeSetting ] : 0;
 		var primePreference = m_serverPrimeSetting;
+		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
+		{
+			gameModeFlags = 0; // full-length MR15, not Short Match
+			primePreference = 1; // ranked
+		}
 
 		var selectedMaps;
 
