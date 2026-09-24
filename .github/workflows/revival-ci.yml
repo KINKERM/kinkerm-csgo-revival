@@ -70,7 +70,7 @@ jobs:
       - name: Validate pack contents
         shell: pwsh
         run: |
-          python -c "import zipfile; z=zipfile.ZipFile('csgo-revival-pack.zip'); n=set(z.namelist()); req={'csgo_gc.dll','csgo_revival.exe','srcds.exe','csgo_gc/config.txt','csgo/scripts/items/items_game.txt','csgo/panorama/layout/mainmenu_play.xml','csgo/panorama/scripts/mainmenu_play.js','csgo/panorama/styles/mainmenu_play.css'}; missing=sorted(req-n); print('missing:', missing); assert not missing"
+          python -c "import zipfile; z=zipfile.ZipFile('csgo-revival-pack.zip'); n=set(z.namelist()); req={'csgo_gc.dll','csgo_revival.exe','srcds.exe','csgo_gc/config.txt','csgo/scripts/items/items_game.txt','csgo/panorama/pbin.py','csgo/panorama/layout/mainmenu_play.xml','csgo/panorama/scripts/mainmenu_play.js','csgo/panorama/styles/mainmenu_play.css'}; missing=sorted(req-n); print('missing:', missing); assert not missing"
           python -c "from pathlib import Path; s=Path('launcher/launcher.py').read_text(encoding='utf-8'); assert '"-dev"' in s; print('launcher -dev Panorama override OK')"
       - uses: actions/upload-artifact@v4
         with:
