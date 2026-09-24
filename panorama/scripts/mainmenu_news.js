@@ -1,57 +1,63 @@
 'use strict';
 
+var RevivalNews = [
+	{
+		date: '24 Sep 2026',
+		title: 'CS:GO Revival',
+		description: 'The revival client now owns its main-menu news feed instead of showing Counter-Strike 2 news from Valve.',
+		imageUrl: '',
+		link: ''
+	},
+	{
+		date: '24 Sep 2026',
+		title: 'Operation Riptide Restored',
+		description: 'Operation pass activation, stars, the Riptide shop, rewards, mission state, and coin progression are being restored through the revival Game Coordinator.',
+		imageUrl: '',
+		link: ''
+	},
+	{
+		date: '24 Sep 2026',
+		title: 'Official Matchmaking Returns',
+		description: 'The Online / Official Play entry is back. Competitive and Wingman matchmaking are being wired to revival-hosted dedicated servers.',
+		imageUrl: '',
+		link: ''
+	}
+];
+
 var NewsPanel = (function () {
 
 	var _GetRssFeed = function()
 	{
-		BlogAPI.RequestRSSFeed();
+		// Do not ask Valve's live BlogAPI for news; that returns modern CS2 posts.
+		// Keep the legacy main-menu presentation but own the actual feed locally.
+		$.Schedule( 0.0, function()
+		{
+			_OnRssFeedReceived( { items: RevivalNews } );
+		} );
 	}
 
 	var _OnRssFeedReceived = function( feed )
 	{
-		                                          
-
 		if( $.GetContextPanel().BHasClass( 'news-panel--hide-news-panel' ) )
 		{
 			return;
 		};
-		
+
 		var elLister = $.GetContextPanel().FindChildInLayoutFile( 'NewsPanelLister' );
 
-		if ( elLister === undefined || elLister === null || !feed )
+		if ( elLister === undefined || elLister === null || !feed || !feed.items )
 			return;
 
 		elLister.RemoveAndDeleteChildren();
 
-		                                     
-		var foundFirstNewsItem = false;
-
-		feed[ 'items' ].forEach( function( item, i )
+		feed.items.forEach( function( item, i )
 		{
 			var elEntry = $.CreatePanel( 'Panel', elLister, 'NewEntry' + i, {
 				acceptsinput: true
 			} );
 
-			var lastReadItem = GameInterfaceAPI.GetSettingString( 'ui_news_last_read_link' );
-
-			                                                           
-			if ( !foundFirstNewsItem && !item.categories.includes( 'Minor' ) )
-			{
-				foundFirstNewsItem = true;
-
-				                                             
+			if ( i === 0 )
 				elEntry.AddClass( 'new' );
-
-				if ( item.link != lastReadItem )
-				{
-					UiToolkitAPI.ShowCustomLayoutPopupParameters( '', 'file://{resources}/layout/popups/popup_news.xml',
-						'date=' + item.date + "&" + 
-						'title=' + item.title + "&" + 
-						'link=' + item.link );
-				}
-
-				GameInterfaceAPI.SetSettingString( 'ui_news_last_read_link', item.link );
-			}
 
 			elEntry.BLoadLayoutSnippet( 'news-full-entry' );
 			var elImage = elEntry.FindChildInLayoutFile( 'NewsHeaderImage' );
@@ -61,43 +67,36 @@ var NewsPanel = (function () {
 			}
 			else
 			{
-				elImage.SetImage( "file://{images}/store/default-news.png" );
+				elImage.SetImage( 'file://{images}/store/default-news.png' );
 			}
 
 			var elEntryInfo = $.CreatePanel( 'Panel', elEntry, 'NewsInfo' + i );
 			elEntryInfo.BLoadLayoutSnippet( 'news-info' );
 
-			elEntryInfo.SetDialogVariable( 'news_item_date', item.date );
-			elEntryInfo.SetDialogVariable( 'news_item_title', item.title );
-			elEntryInfo.SetDialogVariable( 'news_item_body', item.description );
+			elEntryInfo.SetDialogVariable( 'news_item_date', item.date || '' );
+			elEntryInfo.SetDialogVariable( 'news_item_title', item.title || '' );
+			elEntryInfo.SetDialogVariable( 'news_item_body', item.description || '' );
 
-			         
 			elEntry.FindChildInLayoutFile( 'NewsEntryBlurTarget' ).AddBlurPanel( elEntryInfo );
 
-			elEntry.SetPanelEvent( "onactivate", function( link, elEntry, clearNew )
+			if ( item.link )
 			{
-				SteamOverlayAPI.OpenURL( link );
-
-				if ( clearNew )
+				elEntry.SetPanelEvent( 'onactivate', function( link, panel )
 				{
-					GameInterfaceAPI.SetSettingString( 'ui_news_last_read_link', link );
-					elEntry.RemoveClass( 'new' );
-				}
-
-			}.bind( SteamOverlayAPI, item.link, elEntry, i == 0 ) );
-		
+					SteamOverlayAPI.OpenURL( link );
+					panel.RemoveClass( 'new' );
+				}.bind( undefined, item.link, elEntry ) );
+			}
 		} );
 	};
 
 	return {
-		GetRssFeed			: _GetRssFeed,
+		GetRssFeed: _GetRssFeed,
 		OnRssFeedReceived: _OnRssFeedReceived,
 	};
 })();
 
-
-( function()
+(function()
 {
 	NewsPanel.GetRssFeed();
-	$.RegisterForUnhandledEvent( "PanoramaComponent_Blog_RSSFeedReceived", NewsPanel.OnRssFeedReceived );
 })();
