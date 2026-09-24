@@ -84,10 +84,11 @@ The updater:
 2. fetches the newest `operation-revival-finish`
 3. restores the saved data/config
 4. applies the complete `csgo_gc-patch` overlay
-5. builds `csgo.exe`, `srcds.exe`, and `csgo_gc.dll`
-6. builds the full client pack including Panorama
+5. rebuilds the GC/runtime only when `csgo_gc-patch` changed; otherwise reuses the existing Release binaries
+6. builds the full client pack including the modified Panorama source
 7. installs the pack into CS:GO Legacy
-8. checks that the installed queue UI matches the repo
+8. runs `REPACK_PANORAMA.ps1`: preserves `_code.pbin`, unpacks it with `pbin.py`, overlays the revival Panorama files, repacks `code.pbin`, and patches `panorama.dll`
+9. validates the actual packed `code.pbin` for the Revival Competitive UI/logic markers
 
 Backups are written under:
 
@@ -171,6 +172,33 @@ The revival Panorama overrides intentionally provide:
 - one visible Revival Competitive queue card
 
 The backend, not Panorama, chooses the map.
+
+### Panorama PBIN
+
+This CS:GO Legacy build does not use the edited loose Panorama source by itself.
+The updater uses the same PBIN workflow as the earlier Operation work:
+
+```text
+<csgo>\csgo\panorama\_code.pbin        preserved baseline
+<csgo>\csgo\panorama\pbin.py          repack/patch tool
+<csgo>\csgo\panorama\panorama\...    unpacked staging tree
+<csgo>\csgo\panorama\code.pbin        rebuilt archive
+<csgo>\bin\panorama.dll                 patched for modified PBIN
+```
+
+Equivalent manual commands from `<csgo>\csgo\panorama` are:
+
+```powershell
+py -3 pbin.py unpack _code.pbin
+# overlay modified files into .\panorama\
+py -3 pbin.py pack
+py -3 pbin.py patch_panorama
+```
+
+`code.pbin` uses fixed per-file slots. `REPACK_PANORAMA.ps1` compacts the
+modified matchmaking XML/JS/CSS in staging before packing so they remain within
+their original slots. The updater validates the rebuilt PBIN itself; merely
+seeing modified loose files under `csgo\panorama` is not considered success.
 
 The full client pack must contain at least:
 
@@ -344,11 +372,12 @@ After updating, verify:
 
 1. backend starts with the migrated non-empty catalog
 2. launcher starts without regenerating `launcher.cfg`
-3. Play shows only the Revival Competitive queue card
-4. laptop agent prints the expected large installed map list
-5. queue reaches MATCH FOUND when 10 players are present
-6. reservation id reported by server/client matches
-7. after a completed match, profile XP/rank state is still present after restart
+3. `csgo\panorama\code.pbin` contains the Revival queue markers and `panorama.dll` is patched
+4. Play shows only the Revival Competitive queue card
+5. laptop agent prints the expected large installed map list
+6. queue reaches MATCH FOUND when 10 players are present
+7. reservation id reported by server/client matches
+8. after a completed match, profile XP/rank state is still present after restart
 
 The CI workflow also compiles the Win32 GC and builds a complete
 `csgo-revival-pack.zip`, validating that the required Panorama/runtime files are
