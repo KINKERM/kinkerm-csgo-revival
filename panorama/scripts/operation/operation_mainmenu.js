@@ -50,19 +50,29 @@ var OperationMainMenu = ( function()
 	};
 	var _CheckUsersOperationStatus = function()
 	{
-		OperationUtil.ValidateOperationInfo( _m_nSeasonIndex );
-		var oStatus = OperationUtil.GetOperationInfo();
-		if ( _m_nSeasonIndex === -1 ||
-			!_m_nSeasonIndex ||
-			oStatus.nCoinRank === -1 ||
-			oStatus.nCoinRank === undefined ||
-			oStatus.nCoinRank === null )
-		{
-			return;
-		}
-		_ShowUpdatePanelBasedOnStatus( oStatus );
+		// Never let a stale/unsupported Operation API hide the entire featured
+		// panel. Show the Riptide frame first, then populate it best-effort.
 		_m_cp.RemoveClass( 'hidden' );
 		$.DispatchEvent( 'HideMainMenuNewsPanel' );
+		try
+		{
+			OperationUtil.ValidateOperationInfo( _m_nSeasonIndex );
+			var oStatus = OperationUtil.GetOperationInfo();
+			if ( _m_nSeasonIndex === -1 || !_m_nSeasonIndex ||
+				oStatus.nCoinRank === -1 ||
+				oStatus.nCoinRank === undefined ||
+				oStatus.nCoinRank === null )
+			{
+				_ShowUpSell();
+				return;
+			}
+			_ShowUpdatePanelBasedOnStatus( oStatus );
+		}
+		catch ( err )
+		{
+			$.Msg( 'Riptide main-menu state fallback: ' + err );
+			_ShowUpSell();
+		}
 	};
 	var _ShowUpdatePanelBasedOnStatus = function( oStatus )
 	{
