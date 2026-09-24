@@ -42,7 +42,7 @@ def load_config() -> dict:
     os.makedirs(DATA_DIR, exist_ok=True)
     config: dict = {}
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as fh:
             config = json.load(fh)
 
     # fill in any missing keys (also upgrades older config files in place)
