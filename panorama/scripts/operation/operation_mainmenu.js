@@ -1,7 +1,7 @@
 'use strict';
 var OperationMainMenu = ( function()
 {
-	var _m_nSeasonIndex = null;
+	var _m_nSeasonIndex = 10;
 	var _m_InventoryUpdatedHandler = null;
 	var _m_cp = $.GetContextPanel();
 	var _m_DeepStatsEvtHandle = null;
@@ -38,13 +38,12 @@ var OperationMainMenu = ( function()
 	};
 	var _OnInventoryUpdated = function()
 	{
+		_m_cp.RemoveClass( 'hidden' );
+		$.DispatchEvent( 'HideMainMenuNewsPanel' );
 		if ( !MyPersonaAPI.IsInventoryValid() )
 		{
+			$.Schedule( .25, _OnInventoryUpdated );
 			return;
-		}
-		if ( !_m_nSeasonIndex )
-		{
-			_m_nSeasonIndex = 1;
 		}
 		_CheckUsersOperationStatus();
 	};
@@ -198,6 +197,11 @@ var OperationMainMenu = ( function()
 	var _UpdateSelectedMissionCard = function( cardIndex )
 	{
 		var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( _m_nSeasonIndex, Number( cardIndex ));
+		if ( !jsoCardDetails )
+		{
+			_ShowUpSell();
+			return;
+		}
 		var elLabel = $.GetContextPanel().FindChildInLayoutFile( 'id-missions-selected-card-name' );
 		var nWeek = cardIndex + 1;
 		elLabel.text = $.Localize( "#op_mainmenu_mission_week_prefix") + " " + nWeek + ": " + $.Localize( jsoCardDetails.name );
@@ -233,7 +237,7 @@ var OperationMainMenu = ( function()
 		}
 		var numPreviousMissionsCompletedForReward = 0;
 		var numNextMissionsCompletedNeededForReward = null;
-		var allThresholds = oStatus.nMissionsRewardThresholds.split( ',' );
+		var allThresholds = String( oStatus.nMissionsRewardThresholds || '' ).split( ',' );
 		for ( var j = 0; j < allThresholds.length; ++j )
 		{
 			var numericThreshold = parseInt( allThresholds[ j ] );
