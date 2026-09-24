@@ -141,7 +141,12 @@ _INT_FIELDS = ("inventory", "level", "quality", "flags", "origin", "in_use", "ra
 _OPERATION_INT_FIELDS = (
     "season", "earned_stars", "missions_completed", "mission_id", "season_pass_time"
 )
-_PROFILE_INT_FIELDS = ("level", "xp", "competitive_rank", "competitive_wins")
+_PROFILE_INT_FIELDS = (
+    "level", "xp", "competitive_rank", "competitive_wins",
+    "profile_week", "weekly_base_xp", "weekly_level_reward_claimed",
+    "case_playtime_seconds", "case_drops_this_week", "next_case_drop_seconds",
+    "competitive_rating", "competitive_matches",
+)
 
 
 def _normalize_profile_state(raw: Any) -> dict[str, Any]:
@@ -153,6 +158,20 @@ def _normalize_profile_state(raw: Any) -> dict[str, Any]:
     out["xp"] = min(4999, max(0, _as_int(out.get("xp"), 0)))
     out["competitive_rank"] = min(18, max(0, _as_int(out.get("competitive_rank"), 0)))
     out["competitive_wins"] = max(0, _as_int(out.get("competitive_wins"), 0))
+    out["profile_week"] = max(0, _as_int(out.get("profile_week"), 0))
+    out["weekly_base_xp"] = max(0, _as_int(out.get("weekly_base_xp"), 0))
+    out["weekly_level_reward_claimed"] = 1 if _as_int(
+        out.get("weekly_level_reward_claimed"), 0) else 0
+    out["case_playtime_seconds"] = max(
+        0, _as_int(out.get("case_playtime_seconds"), 0))
+    out["case_drops_this_week"] = min(
+        2, max(0, _as_int(out.get("case_drops_this_week"), 0)))
+    out["next_case_drop_seconds"] = max(
+        0, _as_int(out.get("next_case_drop_seconds"), 0))
+    out["competitive_rating"] = min(
+        2300, max(600, _as_int(out.get("competitive_rating"), 1200)))
+    out["competitive_matches"] = max(
+        0, _as_int(out.get("competitive_matches"), 0))
     return out
 
 
