@@ -750,6 +750,11 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
     // inventory update response
     std::vector<CMsgSOSingleObject> inventoryUpdate;
 
+    // Operation-store purchases need the same customization notification that
+    // MissionsAPI redemption normally produces, otherwise the Riptide reveal
+    // popup waits four seconds and reports "item not given".
+    std::vector<uint64_t> operationRewardItemIds;
+
     // operation shop (revival): star deduction for the player's coin
     CMsgSOMultipleObjects coinUpdate;
     bool coinChanged = false;
@@ -798,6 +803,10 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
             }
 
             m_transactionItemIds.push_back(itemId);
+            if (starCost > 0)
+            {
+                operationRewardItemIds.push_back(itemId);
+            }
         }
     }
 
@@ -822,6 +831,18 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
     for (auto &newItem : inventoryUpdate)
     {
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
+    }
+
+    // The Operation inspect screen listens for the client-side
+    // "reward_redeemed" customization event and uses its item id to finish the
+    // reveal. Emit it only after the SO create so the item already exists when
+    // Panorama opens the inventory-inspect popup.
+    for (uint64_t itemId : operationRewardItemIds)
+    {
+        CMsgGCItemCustomizationNotification notification;
+        notification.add_item_id(itemId);
+        notification.set_request(k_EGCItemCustomizationNotification_ClientRedeemMissionReward);
+        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 
     // this will run the steam callback
