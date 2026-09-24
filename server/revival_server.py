@@ -30,6 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import inventory as inventory_mod
 from catalog import Catalog
+from matchmaking import MatchmakingCoordinator
 from store import PlayerStore
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +80,7 @@ class Handler(BaseHTTPRequestHandler):
     catalog: Catalog
     admin_token: str
     sync_token: str
+    matchmaking: MatchmakingCoordinator
     gold_tradeup_crate_def: int = 0
     gold_tradeup_key_def: int = 0
 
@@ -156,6 +158,17 @@ class Handler(BaseHTTPRequestHandler):
                 "items": self.catalog.items,
             })
 
+        if path.startswith("/matchmaking/state/"):
+            steamid = path[len("/matchmaking/state/"):]
+            if not steamid.isdigit():
+                return self._send_text(400, "invalid steamid")
+            return self._send_json(200, self.matchmaking.state(steamid))
+
+        if path == "/matchmaking/admin/state":
+            if not self._authed():
+                return self._send_text(401, "unauthorized")
+            return self._send_json(200, self.matchmaking.snapshot())
+
         if path.startswith("/inventory/"):
             steamid = path[len("/inventory/"):]
             if not steamid.isdigit():
@@ -182,6 +195,37 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0].rstrip("/")
+
+        if path == "/matchmaking/start":
+            body = self._read_json_body()
+            steamid = str(body.get("steamid", "")).strip()
+            if not steamid.isdigit():
+                return self._send_json(400, {"error": "valid steamid required"})
+            return self._send_json(200, self.matchmaking.start(steamid))
+
+        if path == "/matchmaking/stop":
+            body = self._read_json_body()
+            steamid = str(body.get("steamid", "")).strip()
+            if not steamid.isdigit():
+                return self._send_json(400, {"error": "valid steamid required"})
+            return self._send_json(200, self.matchmaking.stop(steamid))
+
+        if path == "/matchmaking/server/heartbeat":
+            body = self._read_json_body()
+            return self._send_json(200, self.matchmaking.server_heartbeat(body))
+
+        if path == "/matchmaking/server/started":
+            body = self._read_json_body()
+            self.matchmaking.server_match_started(int(body.get("match_id") or 0))
+            return self._send_json(200, {"ok": True})
+
+        if path == "/matchmaking/server/ended":
+            body = self._read_json_body()
+            steamids = self.matchmaking.server_match_ended(
+                int(body.get("match_id") or 0),
+                body.get("result") if isinstance(body.get("result"), dict) else {},
+            )
+            return self._send_json(200, {"ok": True, "players": steamids})
 
         # Two-way sync: a client uploads its local inventory.txt so opened cases,
         # new skins and equips persist. Requires the sync (or admin) token.
@@ -254,12 +298,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str, sync_token: str,
+                 matchmaking: MatchmakingCoordinator,
                  gold_tradeup_crate_def: int = 0, gold_tradeup_key_def: int = 0):
     return type("BoundHandler", (Handler,), {
         "store": store,
         "catalog": catalog,
         "admin_token": admin_token,
         "sync_token": sync_token,
+        "matchmaking": matchmaking,
         "gold_tradeup_crate_def": gold_tradeup_crate_def,
         "gold_tradeup_key_def": gold_tradeup_key_def,
     })
@@ -289,8 +335,9 @@ def main() -> None:
         else:
             print(f"[revival] WARNING: gold_tradeup_case '{gold_case_slug}' not found in catalog")
 
+    matchmaking = MatchmakingCoordinator()
     handler = make_handler(store, catalog, config["admin_token"], config["sync_token"],
-                           gold_crate_def, gold_key_def)
+                           matchmaking, gold_crate_def, gold_key_def)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
 
     print(f"[revival] serving on http://{args.host}:{args.port}")
