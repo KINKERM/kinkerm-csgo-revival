@@ -407,8 +407,6 @@ void Inventory::ReadFromFile()
             profileKey->GetNumber<uint32_t>("competitive_matches", m_competitiveMatches);
     }
 
-    RefreshProfileWeek();
-
     const KeyValue *operationKey = inventoryKey.GetSubkey("operation_riptide");
     if (operationKey)
     {
@@ -435,6 +433,7 @@ void Inventory::ReadFromFile()
             }
         }
     }
+    RefreshProfileWeek();
 }
 
 void Inventory::ReadItem(const KeyValue &itemKey, CSOEconItem &item) const
