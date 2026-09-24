@@ -6,7 +6,7 @@ A friend runs this ONE file and it will, with no manual editing:
   2. auto-detect their SteamID64 (via Steam's loginusers.vdf / registry)
   3. download the revival "pack" (patched csgo_gc + our tuned config.txt + our
      custom items_game.txt with Kinkerm's Case and everything we added) and
-     extract it straight into the CS:GO install
+     overlay the revival files into the CS:GO install without replacing stock csgo.exe
   4. write launcher.cfg for them (server pre-filled)
   5. sync their inventory from the server and launch the game (Steam P2P ready)
 
@@ -177,7 +177,7 @@ def install_pack(csgo_dir: str) -> None:
                 log(f"skipping unsafe path in pack: {member}")
                 continue
         zf.extractall(csgo_dir)
-    log("pack installed (patched csgo_gc + config.txt + custom items_game.txt).")
+    log("pack installed (side-by-side revival launcher + GC/config/items/UI overrides).")
 
 
 def write_launcher_cfg(csgo_dir: str, steam_id: str) -> str:
