@@ -203,10 +203,10 @@
 				<Panel class="vertical-center left-right-flow">
 					<DropDown class="PopupButton" id="PlayTopNavDropdown" menuclass="DropDownMenu Width-300" oninputsubmit="PlayMenu.PlayTopNavDropdownChanged()">
 						<Label text="#play_setting_online" id="Play-official" data-type="official" value="1"/>
-						<Label text="#play_setting_offline" id="Play-listen" data-type="listen" value="2"/>
-						<Label text="#play_setting_training_course" id="PlayTraining" data-type="training" value="3"/>
-						<Label text="#play_setting_workshop" id="PlayWorkshop" data-type="workshop" value="4"/>
-						<Label text="#play_setting_community" id="PlayCommunity" data-type="community" value="5"/>
+						<Label text="#play_setting_offline" id="Play-listen" data-type="listen" value="2" visible="false"/>
+						<Label text="#play_setting_training_course" id="PlayTraining" data-type="training" value="3" visible="false"/>
+						<Label text="#play_setting_workshop" id="PlayWorkshop" data-type="workshop" value="4" visible="false"/>
+						<Label text="#play_setting_community" id="PlayCommunity" data-type="community" value="5" visible="false"/>
 					</DropDown>
 					<DropDown class="PopupButton play-menu__tournament-only" id="TournamentTeamDropdown" menuclass="DropDownMenu Width-300" />
 					<DropDown class="PopupButton play-menu__tournament-only" id="TournamentStageDropdown" menuclass="DropDownMenu Width-300" />
@@ -219,35 +219,35 @@
 						<Label text="#SFUI_GameModeCompetitive"/>
 						<Panel id="GameModeAlert" class="navbar-btn__notification-dot hidden"/>
 					</RadioButton>
-					<RadioButton id='scrimcomp2v2'
+					<RadioButton id='scrimcomp2v2' visible="false"
 								group="gamemodes" >
 							<Label text="#SFUI_GameModeScrimComp2v2"/>
 							<Panel id="GameModeAlert" class="navbar-btn__notification-dot hidden"/>
 					</RadioButton>
 					<Panel class="game-mode-selection-radios-spacer"></Panel>
-					<RadioButton id='casual'
+					<RadioButton id='casual' visible="false"
 								group="gamemodes" >
 						<Label text="#SFUI_GameModeCasual"/>
 					</RadioButton>
-					<RadioButton id='deathmatch'
+					<RadioButton id='deathmatch' visible="false"
 								group="gamemodes" >
 						<Label text="#SFUI_Deathmatch"/>
 					</RadioButton>
-					<RadioButton id='skirmish'
+					<RadioButton id='skirmish' visible="false"
 								group="gamemodes" >
 							<Label text="#SFUI_GameModeSkirmish"/>
 					</RadioButton>
-					<RadioButton id='survival'
+					<RadioButton id='survival' visible="false"
 								group="gamemodes" >
 						<Label text="#SFUI_GameModeSurvival"/>
 					</RadioButton>
-					<RadioButton id='cooperative'
+					<RadioButton id='cooperative' visible="false"
 								group="gamemodes" >
 						<Label text="#SFUI_GameModeCooperative"
 						onmouseover="UiToolkitAPI.ShowTextTooltip( 'cooperative', '#PlayMenu_guardian_tooltip' );"
 						onmouseout="UiToolkitAPI.HideTextTooltip();"/>
 					</RadioButton>
-					<RadioButton id='coopmission'
+					<RadioButton id='coopmission' visible="false"
 								group="gamemodes" >
 						<Label text="#SFUI_GameModeCoopMission"
 						onmouseover="UiToolkitAPI.ShowTextTooltip( 'coopmission', '#PlayMenu_guardian_tooltip' );"
@@ -317,7 +317,7 @@
 							</TooltipPanel>
 						</Panel>
 					</Panel>
-				<Panel class="left-right-flow full-width fill-parent-flow-height">
+				<Panel class="left-right-flow full-width fill-parent-flow-height" visible="false">
 					<Panel id="JsQuickSelectParent" class="top-bottom-flow map-selection-list__quick-selection-sets">
 						<Label text="#presets_title" class="map-selection__quick-selection-set-title" />
 						<Panel class="game-mode-selection-radios-spacer"/>
