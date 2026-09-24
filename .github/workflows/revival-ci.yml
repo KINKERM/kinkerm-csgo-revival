@@ -19,7 +19,8 @@ jobs:
         run: python -m py_compile server/matchmaking.py server/revival_server.py launcher/launcher.py deploy/windows-gameserver/agent.py
 
   csgo-gc-win32:
-    runs-on: windows-latest
+    # Pin VS2022 because the csgo_gc Win32 CMake generator targets VS17.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Clone clean upstream csgo_gc
