@@ -2076,6 +2076,12 @@ uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgS
     return item.id();
 }
 
+const OperationShopEntry *Inventory::OperationShopReward(uint32_t redeemId) const
+{
+    return m_itemSchema.GetOperationShopEntry(redeemId);
+}
+
+
 bool Inventory::SetOperationMissionCard(uint32_t season,
     uint32_t missionCardId,
     CMsgSOMultipleObjects &update)
