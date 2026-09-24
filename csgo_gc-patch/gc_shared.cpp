@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "gc_shared.h"
 
+#include <chrono>
+
 void SharedGC::StartThread()
 {
     m_thread = std::thread{ &SharedGC::WorkerThread, this };
