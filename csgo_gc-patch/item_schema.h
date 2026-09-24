@@ -145,6 +145,13 @@ struct OperationMissionCard
     std::vector<uint32_t> questIds;
 };
 
+struct OperationShopEntry
+{
+    uint32_t redeemId{};
+    uint32_t defIndex{};
+    int cost{};
+};
+
 class ItemSchema
 {
 public:
@@ -170,6 +177,7 @@ public:
     const QuestDefinition *GetQuestDefinition(uint32_t questId) const;
     const OperationMissionCard *GetOperationMissionCardForQuest(uint32_t questId) const;
     const OperationMissionCard *GetOperationMissionCard(uint32_t cardId) const;
+    const OperationShopEntry *GetOperationShopEntry(uint32_t redeemId) const;
 
     // for case opening FIXME: do we want to keep this here???
     bool CreateItemFromLootListItem(Random &random,
@@ -336,6 +344,7 @@ private:
     std::unordered_map<uint32_t, QuestDefinition> m_questDefinitions;
     std::vector<OperationMissionCard> m_operationMissionCards;
     std::unordered_map<uint32_t, size_t> m_operationMissionCardByQuest;
+    std::unordered_map<uint32_t, OperationShopEntry> m_operationShopEntries;
 
     // trade-up contracts (revival addition): parsed collections, plus a lookup
     // from (itemDefIndex << 32 | paintKitDefIndex) to the owning collection index
