@@ -134,6 +134,15 @@ public:
         uint32_t missionCardId,
         CMsgSOMultipleObjects &update);
 
+    // Persistent CS:GO profile progression. One profile rank is 5000 XP and
+    // rank 40 is the pre-service-medal cap used by the legacy client.
+    uint32_t ProfileLevel() const { return m_profileLevel; }
+    uint32_t ProfileXp() const { return m_profileXp; }
+    RankId CompetitiveRank() const { return m_competitiveRank; }
+    uint32_t CompetitiveWins() const { return m_competitiveWins; }
+    bool AddProfileXp(uint32_t amount);
+    void BuildProfilePersonaUpdate(CMsgSOMultipleObjects &update);
+
 private:
     uint32_t AccountId() const;
 
@@ -204,6 +213,11 @@ private:
     uint32_t m_lastHighItemId{};
     ItemMap m_items;
     std::vector<CSOEconDefaultEquippedDefinitionInstanceClient> m_defaultEquips;
+
+    uint32_t m_profileLevel{ 1 };
+    uint32_t m_profileXp{};
+    RankId m_competitiveRank{ RankNone };
+    uint32_t m_competitiveWins{};
 
     // Persistent Operation Riptide progress. Spendable stars remain on the coin
     // item attribute; earnedStars is deliberately separate because purchased
