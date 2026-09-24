@@ -272,7 +272,7 @@
 				</Panel>
 			</Panel>
 			<Panel class="top-bottom-flow full-width full-height">
-					<Panel class="settings-container content-navbar__tabs--small">
+					<Panel class="settings-container content-navbar__tabs--small" visible="false">
 						<Panel class="left-right-flow full-height">
 							<ToggleButton id="JsDirectChallengeBtn" html="true" class="play-menu-toggle-prime play-menu-option-btn play-menu-option-long-btn" onactivate="PlayMenu.OnDirectChallengeBtn()">
 								<Panel id="id-play-menu-toggle-slider" class="PopupButton play-menu-prime-toggle__slider-pill">
