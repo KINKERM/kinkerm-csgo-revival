@@ -29,10 +29,10 @@ jobs:
       - name: Apply complete revival overlay
         shell: pwsh
         run: Copy-Item -Path 'csgo_gc-patch\*' -Destination 'upstream\csgo_gc\' -Force
-      - name: Install Win32 MbedTLS
+      - name: Install Win32 dependencies
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install mbedtls:x86-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install mbedtls:x86-windows protobuf:x86-windows
       - name: Configure Win32 Release
         shell: pwsh
         run: |
