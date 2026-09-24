@@ -219,7 +219,11 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                 if action == "start":
                     state = _http_json(
                         "POST", base + "/matchmaking/start",
-                        {"steamid": config["steam_id"]},
+                        {
+                            "steamid": config["steam_id"],
+                            "game_type": int(request.get("game_type") or 8),
+                            "client_version": int(request.get("client_version") or 0),
+                        },
                     )
                     _write_mm_state(config, state)
                     searching = True
