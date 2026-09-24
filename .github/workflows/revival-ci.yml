@@ -6,6 +6,10 @@ on:
       - operation-revival-finish
   workflow_dispatch:
 
+concurrency:
+  group: revival-matchmaking-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-syntax:
     runs-on: windows-latest
