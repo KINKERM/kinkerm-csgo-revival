@@ -79,7 +79,7 @@ class PlayerStore:
     # ---- persistence -------------------------------------------------------
     def _load(self) -> None:
         if os.path.exists(self._path):
-            with open(self._path, "r", encoding="utf-8") as fh:
+            with open(self._path, "r", encoding="utf-8-sig") as fh:
                 self._players = json.load(fh)
         else:
             self._players = {}
