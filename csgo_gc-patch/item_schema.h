@@ -190,6 +190,14 @@ public:
         uint32_t paintKitDefIndex,
         const CollectionItem **outItem) const;
 
+    // Legacy weekly profile-rank rewards: pick a random painted skin from one
+    // of the named map collections parsed from items_game.txt.
+    bool CreateRandomCollectionItem(Random &random,
+        const std::vector<std::string_view> &collectionNames,
+        ItemOrigin origin,
+        UnacknowledgedType unacknowledgedType,
+        CSOEconItem &item) const;
+
     // trade-up contracts (revival addition) --- 5 Covert -> gold recipe
     // returns the unusual (knife/glove) loot list associated with the case that
     // a given Covert skin belongs to, or nullptr if none is known. The returned
