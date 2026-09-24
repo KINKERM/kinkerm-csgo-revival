@@ -95,6 +95,18 @@ ClientGC::~ClientGC()
     Platform::Print("ClientGC destroyed\n");
 }
 
+void ClientGC::HandleIdle()
+{
+    if (!m_matchmakingActive)
+        return;
+
+    // SharedGC wakes every 250 ms. Poll twice per second while searching so
+    // launcher/backend state changes reach Panorama even if CS:GO sends no
+    // additional matchmaking request after 9101.
+    if ((++m_matchmakingIdleTicks & 1u) == 0)
+        PollMatchmakingBridge();
+}
+
 void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer)
 {
     switch (type)
@@ -688,6 +700,7 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     m_matchmakingClientVersion = message.has_client_version() ? message.client_version() : 0;
     m_matchmakingActive = true;
     m_lastMatchmakingReservation = 0;
+    m_matchmakingIdleTicks = 0;
 
     std::ostringstream request;
     request << "action=start\n"
@@ -728,6 +741,7 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
 
     m_matchmakingActive = false;
     m_lastMatchmakingReservation = 0;
+    m_matchmakingIdleTicks = 0;
 
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
     update.set_matchmaking(0);
@@ -813,6 +827,10 @@ void ClientGC::PollMatchmakingBridge()
 
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
         reserve.set_serverid(matchId);
+        const uint32_t directUdpIp = static_cast<uint32_t>(
+            BridgeU64(state, "direct_udp_ip", 0));
+        if (directUdpIp)
+            reserve.set_direct_udp_ip(directUdpIp);
         reserve.set_direct_udp_port(port);
         reserve.set_reservationid(reservationId);
         reserve.set_map(mapName);
@@ -857,6 +875,7 @@ void ClientGC::PollMatchmakingBridge()
         }
         m_matchmakingActive = false;
         m_lastMatchmakingReservation = 0;
+        m_matchmakingIdleTicks = 0;
     }
 }
 
