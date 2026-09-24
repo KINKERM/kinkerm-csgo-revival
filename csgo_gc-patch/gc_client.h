@@ -27,6 +27,11 @@ private:
     void ClientPlayerDecalSign(GCMessageRead &messageRead);
     void UseItemRequest(GCMessageRead &messageRead);
     void ClientRequestJoinServerData(GCMessageRead &messageRead);
+    void MatchmakingStart(GCMessageRead &messageRead);
+    void MatchmakingStop(GCMessageRead &messageRead);
+    void MatchmakingPing(GCMessageRead &messageRead);
+    void MatchmakingHello(GCMessageRead &messageRead);
+    void PollMatchmakingBridge();
     void ClientRequestNewMission(GCMessageRead &messageRead);
     void ClientRedeemMissionReward(GCMessageRead &messageRead);
     void SetItemPositions(GCMessageRead &messageRead);
@@ -61,4 +66,9 @@ private:
     // microtransactions, we only have one going at a time
     uint64_t m_transactionId{};
     std::vector<uint64_t> m_transactionItemIds;
+
+    bool m_matchmakingActive{};
+    uint32_t m_matchmakingGameType{ 8 };
+    uint32_t m_matchmakingClientVersion{};
+    uint64_t m_lastMatchmakingReservation{};
 };
