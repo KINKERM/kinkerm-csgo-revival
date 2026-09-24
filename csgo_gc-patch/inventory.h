@@ -126,6 +126,12 @@ public:
     bool CreateRandomCaseMatchDrop(
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool CreateWeeklyLevelReward(
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool AddMatchPlaytimeAndCreateCaseDrop(uint32_t seconds,
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
 
     // operation shop (revival): query/spend stars from the player's Operation coin.
     // CanSpendStars never mutates inventory. SpendStars persists and emits the
@@ -151,11 +157,15 @@ public:
     uint32_t ProfileXp() const { return m_profileXp; }
     RankId CompetitiveRank() const { return m_competitiveRank; }
     uint32_t CompetitiveWins() const { return m_competitiveWins; }
-    bool AddProfileXp(uint32_t amount);
+    bool AddProfileXp(uint32_t amount, uint32_t *levelsGained = nullptr);
+    uint32_t ApplyWeeklyProfileXp(uint32_t baseXp, uint32_t *levelsGained = nullptr);
+    bool ApplyCompetitiveMatchResult(bool won, bool tied);
     void BuildProfilePersonaUpdate(CMsgSOMultipleObjects &update);
 
 private:
     uint32_t AccountId() const;
+    uint32_t CurrentProfileWeek() const;
+    void RefreshProfileWeek();
 
     bool IsOperationCoinDef(uint32_t defIndex) const;
     uint32_t OperationStars(const CSOEconItem &item) const;
@@ -229,6 +239,19 @@ private:
     uint32_t m_profileXp{};
     RankId m_competitiveRank{ RankNone };
     uint32_t m_competitiveWins{};
+
+    // Riptide-era weekly progression/drop state.
+    uint32_t m_profileWeek{};
+    uint32_t m_weeklyBaseXp{};
+    bool m_weeklyLevelRewardClaimed{};
+    uint32_t m_casePlaytimeSeconds{};
+    uint32_t m_caseDropsThisWeek{};
+    uint32_t m_nextCaseDropSeconds{};
+
+    // Valve's exact hidden skill-group formula is not public. Keep a persistent
+    // internal rating while exposing the real 0..18 legacy rank ids.
+    int32_t m_competitiveRating{ 1200 };
+    uint32_t m_competitiveMatches{};
 
     // Persistent Operation Riptide progress. Spendable stars remain on the coin
     // item attribute; earnedStars is deliberately separate because purchased
