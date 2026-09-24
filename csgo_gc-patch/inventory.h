@@ -126,10 +126,6 @@ public:
     bool CreateRandomCaseMatchDrop(
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
-    bool CreateRandomCollectionMatchDrop(uint32_t oneInChance,
-        UnacknowledgedType unacknowledgedType,
-        CMsgSOSingleObject &create,
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
     bool CreateWeeklyLevelReward(
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
