@@ -274,14 +274,11 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         return;
     }
 
-    if (!message.has_match_end_quest_data())
-    {
-        return;
-    }
-
     CMsgSOMultipleObjects update;
     bool changed = false;
 
+    if (message.has_match_end_quest_data())
+    {
     const CMsgGC_ServerQuestUpdateData &questData = message.match_end_quest_data();
     for (const PlayerQuestData &playerData : questData.player_quest_data())
     {
@@ -340,10 +337,65 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
     }
 
+    }
+    }
+
     if (changed)
     {
         // Live-refresh both Panorama and the connected game server's SO cache.
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
+    }
+
+    uint64_t reservationId = 0;
+    if (message.has_serverinfo() && message.serverinfo().has_reservationid())
+        reservationId = message.serverinfo().reservationid();
+
+    // srcds can emit more than one match-end GC update. Reward one reservation
+    // once per ClientGC session so repeated quest/stat flushes cannot duplicate drops.
+    if (!reservationId || reservationId != m_lastRewardedReservation)
+    {
+        struct DropSpec
+        {
+            uint32_t defIndex;
+            bool direct;
+            UnacknowledgedType unack;
+        };
+
+        // Two cases, one Dust II 2021 collection roll (Gold Arabesque possible),
+        // and one Cobblestone collection roll (Dragon Lore possible).
+        for (int caseIndex = 0; caseIndex < 2; ++caseIndex)
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        constexpr DropSpec CollectionDrops[] = {
+            { 4793, true, UnacknowledgedLevelUpReward }, // Dust II 2021
+            { 4602, true, UnacknowledgedLevelUpReward }, // Cobblestone
+        };
+        for (const DropSpec &spec : CollectionDrops)
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateMatchDrop(
+                spec.defIndex, spec.direct, spec.unack, create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        if (reservationId)
+            m_lastRewardedReservation = reservationId;
+        Platform::Print("drops: completed native end-match reward batch for reservation %llu\n",
+            reservationId);
     }
 }
 
