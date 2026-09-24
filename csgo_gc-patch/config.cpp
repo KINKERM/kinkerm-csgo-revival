@@ -143,16 +143,41 @@ int GCConfig::OperationShopCost(uint32_t defIndex) const
 
 const ShopReward *GCConfig::OperationShopReward(uint32_t redeemId) const
 {
-    // Legacy Panorama normally sends the zero-based reward row index, but some
-    // builds expose the actual item definition id. Accept both representations.
-    if (redeemId < m_operationShopRewards.size())
+    // Valve's native Operation redeem message sends CRC32(item_name), not a
+    // reward row or item definition. Map the real Riptide season-10 ids to the
+    // reward defs already configured in operation_shop.rewards.
+    uint32_t defIndex = 0;
+    switch (redeemId)
     {
-        return &m_operationShopRewards[redeemId];
+    case 3161140792u: defIndex = 4795; break; // crate_patch_pack03
+    case 486239559u:  defIndex = 4783; break; // crate_sticker_pack_op_riptide_capsule
+    case 3394577585u: defIndex = 4779; break; // crate_sticker_pack_riptide_surfshop
+    case 766835476u:  defIndex = 4790; break; // crate_community_29
+    case 4262277037u: defIndex = 4788; break; // Train Covert
+    case 2179775250u: defIndex = 4787; break; // Train Classified
+    case 1690286011u: defIndex = 4786; break; // Train Restricted
+    case 3750698461u: defIndex = 4785; break; // Train Mil-Spec
+    case 3820610303u: defIndex = 4794; break; // Mirage 2021
+    case 205604202u:  defIndex = 4793; break; // Dust II 2021
+    case 1519885759u: defIndex = 4792; break; // Vertigo 2021
+    case 3278305639u: defIndex = 4769; break; // CT Master Agents
+    case 1517267165u: defIndex = 4770; break; // T Master Agents
+    case 3736209238u: defIndex = 4768; break; // Superior Agents
+    case 1969402445u: defIndex = 4767; break; // Exceptional Agents
+    case 2249793569u: defIndex = 4766; break; // Distinguished Agents
+    default:
+        // Compatibility for tools/builds that send a row index or item def.
+        if (redeemId < m_operationShopRewards.size())
+        {
+            return &m_operationShopRewards[redeemId];
+        }
+        defIndex = redeemId;
+        break;
     }
 
     for (const ShopReward &reward : m_operationShopRewards)
     {
-        if (reward.defIndex == redeemId)
+        if (reward.defIndex == defIndex)
         {
             return &reward;
         }
