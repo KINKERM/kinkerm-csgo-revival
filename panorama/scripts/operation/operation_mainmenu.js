@@ -44,7 +44,7 @@ var OperationMainMenu = ( function()
 		}
 		if ( !_m_nSeasonIndex )
 		{
-			_m_nSeasonIndex = 10;
+			_m_nSeasonIndex = 1;
 		}
 		_CheckUsersOperationStatus();
 	};
