@@ -143,12 +143,22 @@ int GCConfig::OperationShopCost(uint32_t defIndex) const
 
 const ShopReward *GCConfig::OperationShopReward(uint32_t redeemId) const
 {
-    if (redeemId >= m_operationShopRewards.size())
+    // Legacy Panorama normally sends the zero-based reward row index, but some
+    // builds expose the actual item definition id. Accept both representations.
+    if (redeemId < m_operationShopRewards.size())
     {
-        return nullptr;
+        return &m_operationShopRewards[redeemId];
     }
 
-    return &m_operationShopRewards[redeemId];
+    for (const ShopReward &reward : m_operationShopRewards)
+    {
+        if (reward.defIndex == redeemId)
+        {
+            return &reward;
+        }
+    }
+
+    return nullptr;
 }
 
 uint32_t GCConfig::OperationStarPackValue(uint32_t defIndex) const
