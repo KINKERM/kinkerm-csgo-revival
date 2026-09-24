@@ -18,6 +18,23 @@ $tableFile = Join-Path $panoramaDir "code.pbin.table"
 $stageDir = Join-Path $panoramaDir "panorama"
 $panoramaDll = Join-Path $CsgoDir "bin\panorama.dll"
 
+# Undo the incorrect custom SearchPaths workaround from earlier revisions.
+$gameInfo = Join-Path $CsgoDir "csgo\gameinfo.txt"
+if (Test-Path $gameInfo) {
+    $gameInfoText = [IO.File]::ReadAllText($gameInfo)
+    $cleaned = [Text.RegularExpressions.Regex]::Replace(
+        $gameInfoText,
+        "(?im)^\s*Game(?:\+Mod)?\s+[^\r\n]*custom[\\/]kinkerm_revival[^\r\n]*\r?\n?",
+        ""
+    )
+    if ($cleaned -ne $gameInfoText) {
+        [IO.File]::WriteAllText($gameInfo, $cleaned, [Text.UTF8Encoding]::new($false))
+        Write-Host "[pbin] removed obsolete custom/kinkerm_revival SearchPaths line" -ForegroundColor Yellow
+    }
+}
+$badCustom = Join-Path $CsgoDir "csgo\custom\kinkerm_revival"
+if (Test-Path $badCustom) { Remove-Item $badCustom -Recurse -Force }
+
 Need-Path $panoramaDir "CS:GO Panorama directory"
 Need-Path $repoPbinTool "Revival pbin.py"
 Need-Path $codePbin "CS:GO code.pbin"
