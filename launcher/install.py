@@ -157,6 +157,39 @@ def download(url: str) -> bytes:
         return resp.read()
 
 
+def mount_revival_override(csgo_dir: str) -> None:
+    """Mount revival custom content before stock CS:GO/VPK content."""
+    gameinfo = os.path.join(csgo_dir, "csgo", "gameinfo.txt")
+    if not os.path.isfile(gameinfo):
+        log(f"gameinfo.txt not found: {gameinfo}")
+        sys.exit(3)
+
+    with open(gameinfo, "r", encoding="utf-8-sig", errors="replace") as fh:
+        text = fh.read()
+
+    mount_token = "custom/kinkerm_revival"
+    normalized = text.replace("\\", "/")
+    if mount_token in normalized:
+        log("revival custom override already mounted in gameinfo.txt")
+        return
+
+    match = re.search(r"SearchPaths\s*\{", text, flags=re.IGNORECASE)
+    if not match:
+        log("could not find SearchPaths block in csgo/gameinfo.txt")
+        sys.exit(3)
+
+    backup = gameinfo + ".pre-kinkerm-revival"
+    if not os.path.exists(backup):
+        with open(backup, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+    mount_line = "\n\t\t\tGame\t\t|gameinfo_path|custom/kinkerm_revival"
+    text = text[:match.end()] + mount_line + text[match.end():]
+    with open(gameinfo, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+    log("mounted csgo/custom/kinkerm_revival before stock CS:GO content")
+
+
 def install_pack(csgo_dir: str) -> None:
     if "CHANGE_ME" in PACK_URL or "CHANGE_ME" in SERVER_URL:
         log("HOST hasn't set SERVER_URL / PACK_URL in install.py yet - ask them.")
@@ -177,7 +210,9 @@ def install_pack(csgo_dir: str) -> None:
                 log(f"skipping unsafe path in pack: {member}")
                 continue
         zf.extractall(csgo_dir)
-    log("pack installed (side-by-side revival launcher + GC/config/items/UI overrides).")
+
+    mount_revival_override(csgo_dir)
+    log("pack installed (runtime + GC/config/items + mounted Panorama override).")
 
 
 def write_launcher_cfg(csgo_dir: str, steam_id: str) -> str:
