@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Windows one-slot CS:GO Revival dedicated-server agent.
+
+- No port forwarding is required. Run playit.gg separately (or set playit_exe)
+  and put the public tunnel hostname/port in server_agent.json.
+- The agent heartbeats the central revival backend, receives one match
+  assignment, starts exactly one 64-tick srcds.exe, and frees the slot when the
+  match ends.
+- Standard library only.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(HERE, "server_agent.json")
+
+MAP_POOL = (
+    "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_overpass",
+    "de_vertigo", "de_train", "de_cache", "de_cbble", "de_ancient",
+    "de_anubis", "de_tuscan", "de_canals", "de_breach", "de_basalt",
+    "cs_office", "cs_agency", "cs_italy",
+)
+
+GAME_OVER_PATTERNS = (
+    re.compile(r'World triggered "Game_Over"', re.I),
+    re.compile(r'Game Over:', re.I),
+    re.compile(r'Match_End', re.I),
+)
+TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
+
+
+def load_config() -> dict:
+    if not os.path.exists(CONFIG_PATH):
+        print(f"[agent] missing {CONFIG_PATH}")
+        print("[agent] copy server_agent.example.json to server_agent.json and edit it.")
+        raise SystemExit(1)
+    with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    for key in ("backend_url", "csgo_dir", "public_host"):
+        if not str(cfg.get(key, "")).strip():
+            raise SystemExit(f"[agent] '{key}' is required in server_agent.json")
+    cfg.setdefault("agent_id", "revival-laptop-1")
+    cfg.setdefault("public_port", 27015)
+    cfg.setdefault("local_port", 27015)
+    cfg.setdefault("playit_exe", "")
+    cfg.setdefault("extra_srcds_args", "")
+    return cfg
+
+
+def post_json(url: str, body: dict) -> dict:
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "csgo-revival-gameserver/1.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        raw = resp.read()
+    return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def find_srcds(csgo_dir: str) -> str:
+    candidates = (
+        os.path.join(csgo_dir, "srcds.exe"),
+        os.path.join(csgo_dir, "bin", "srcds.exe"),
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    raise FileNotFoundError(
+        "srcds.exe was not found. The normal legacy install sometimes includes it; "
+        "if yours does not, install CS:GO Dedicated Server (SteamCMD app 740) and "
+        "set csgo_dir to that folder."
+    )
+
+
+def installed_maps(csgo_dir: str) -> list[str]:
+    maps_dir = os.path.join(csgo_dir, "csgo", "maps")
+    return [m for m in MAP_POOL if os.path.isfile(os.path.join(maps_dir, m + ".bsp"))]
+
+
+def ensure_match_cfg(csgo_dir: str) -> None:
+    cfg_dir = os.path.join(csgo_dir, "csgo", "cfg")
+    os.makedirs(cfg_dir, exist_ok=True)
+    path = os.path.join(cfg_dir, "revival_competitive.cfg")
+    text = r'''hostname "Kinkerm CS:GO Revival Competitive"
+sv_lan 0
+sv_password ""
+sv_cheats 0
+sv_pure 0
+sv_allow_votes 1
+sv_deadtalk 1
+sv_hibernate_when_empty 0
+sv_hibernate_postgame_delay 5
+sv_setsteamaccount ""
+log on
+
+bot_quota 0
+mp_autokick 0
+mp_autoteambalance 1
+mp_limitteams 2
+mp_friendlyfire 1
+mp_maxrounds 30
+mp_overtime_enable 1
+mp_match_can_clinch 1
+mp_warmuptime 20
+mp_freezetime 15
+mp_roundtime 1.92
+mp_roundtime_defuse 1.92
+mp_match_restart_delay 15
+mp_endmatch_votenextmap 0
+mp_match_end_restart 0
+'''
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def set_above_normal(proc: subprocess.Popen) -> None:
+    if os.name != "nt":
+        return
+    try:
+        ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000
+        ctypes.windll.kernel32.SetPriorityClass(int(proc._handle), ABOVE_NORMAL_PRIORITY_CLASS)
+    except Exception as exc:
+        print(f"[agent] could not raise srcds priority: {exc}")
+
+
+class ServerSlot:
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.proc: subprocess.Popen | None = None
+        self.match_id = 0
+        self.ready_match_id = 0
+        self.ct_score = 0
+        self.t_score = 0
+        self._lock = threading.RLock()
+        self._ended = False
+
+    def alive(self) -> bool:
+        with self._lock:
+            return self.proc is not None and self.proc.poll() is None
+
+    def start(self, assignment: dict) -> None:
+        match_id = int(assignment.get("match_id") or 0)
+        if not match_id:
+            return
+        with self._lock:
+            if self.alive() and self.match_id == match_id:
+                return
+            self.stop()
+
+            map_name = str(assignment.get("map") or "de_dust2")
+            srcds = find_srcds(self.cfg["csgo_dir"])
+            ensure_match_cfg(self.cfg["csgo_dir"])
+            cmd = [
+                srcds,
+                "-game", "csgo",
+                "-console",
+                "-usercon",
+                "-secure",
+                "-tickrate", "64",
+                "-port", str(int(self.cfg["local_port"])),
+                "-maxplayers_override", "10",
+                "+game_type", "0",
+                "+game_mode", "1",
+                "+map", map_name,
+                "+exec", "revival_competitive.cfg",
+            ]
+            extra = str(self.cfg.get("extra_srcds_args") or "").strip()
+            if extra:
+                cmd.extend(extra.split())
+
+            print(f"[agent] starting match {match_id} on {map_name} @ 64 tick")
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+            self.proc = subprocess.Popen(
+                cmd,
+                cwd=self.cfg["csgo_dir"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                text=True,
+                errors="replace",
+                bufsize=1,
+                creationflags=creationflags,
+            )
+            set_above_normal(self.proc)
+            self.match_id = match_id
+            self.ready_match_id = 0
+            self.ct_score = 0
+            self.t_score = 0
+            self._ended = False
+            threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
+            threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
+
+    def _mark_ready_after_boot(self) -> None:
+        # Source 1 can take a few seconds to load the BSP and Steam interfaces.
+        for _ in range(16):
+            time.sleep(0.5)
+            with self._lock:
+                if not self.alive():
+                    return
+        with self._lock:
+            if self.alive():
+                self.ready_match_id = self.match_id
+                print(f"[agent] match {self.match_id} server ready")
+
+    def _reader(self) -> None:
+        proc = self.proc
+        if proc is None or proc.stdout is None:
+            return
+        for raw in proc.stdout:
+            line = raw.rstrip()
+            if line:
+                print("[srcds] " + line)
+            m = TEAM_SCORE_RE.search(line)
+            if m:
+                score = int(m.group(2))
+                if m.group(1).upper() == "CT":
+                    self.ct_score = score
+                else:
+                    self.t_score = score
+            if any(p.search(line) for p in GAME_OVER_PATTERNS):
+                self._report_end_once("game_over")
+        code = proc.wait()
+        if not self._ended and self.match_id:
+            self._report_end_once(f"srcds_exit_{code}")
+
+    def _report_end_once(self, reason: str) -> None:
+        with self._lock:
+            if self._ended or not self.match_id:
+                return
+            self._ended = True
+            match_id = self.match_id
+            result = {
+                "reason": reason,
+                "ct_score": self.ct_score,
+                "t_score": self.t_score,
+            }
+        try:
+            post_json(
+                self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
+                {"match_id": match_id, "result": result},
+            )
+            print(f"[agent] reported match {match_id} end: {result}")
+        except Exception as exc:
+            print(f"[agent] failed to report match end: {exc}")
+        self.stop()
+
+    def stop(self) -> None:
+        proc = self.proc
+        self.proc = None
+        self.ready_match_id = 0
+        self.match_id = 0
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            if proc.stdin:
+                proc.stdin.write("quit\n")
+                proc.stdin.flush()
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+
+def maybe_start_playit(cfg: dict) -> subprocess.Popen | None:
+    path = str(cfg.get("playit_exe") or "").strip()
+    if not path:
+        return None
+    if not os.path.isfile(path):
+        print(f"[agent] playit_exe not found: {path}")
+        return None
+    print("[agent] starting playit tunnel agent")
+    return subprocess.Popen([path], cwd=os.path.dirname(path))
+
+
+def main() -> None:
+    cfg = load_config()
+    maps = installed_maps(cfg["csgo_dir"])
+    if not maps:
+        raise SystemExit("[agent] no supported BSP maps found under csgo/maps")
+
+    print("[agent] installed matchmaking maps: " + ", ".join(maps))
+    print(f"[agent] public tunnel: {cfg['public_host']}:{cfg['public_port']}")
+    playit = maybe_start_playit(cfg)
+    slot = ServerSlot(cfg)
+    base = cfg["backend_url"].rstrip("/")
+
+    try:
+        while True:
+            body = {
+                "agent_id": cfg["agent_id"],
+                "public_host": cfg["public_host"],
+                "public_port": int(cfg["public_port"]),
+                "maps": maps,
+                "ready_match_id": slot.ready_match_id,
+            }
+            try:
+                reply = post_json(base + "/matchmaking/server/heartbeat", body)
+                assignment = reply.get("assignment")
+                if isinstance(assignment, dict):
+                    slot.start(assignment)
+            except (urllib.error.URLError, ValueError, OSError) as exc:
+                print(f"[agent] heartbeat failed: {exc}")
+            time.sleep(2.0)
+    except KeyboardInterrupt:
+        print("\n[agent] stopping")
+    finally:
+        slot.stop()
+        if playit and playit.poll() is None:
+            playit.terminate()
+
+
+if __name__ == "__main__":
+    main()
