@@ -4,6 +4,11 @@
 #include "gc_const_csgo.h"
 #include "graffiti.h"
 
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+
 // yuck!! needed for CSteamID (construct full id from account id)
 #include "steam/steamclientpublic.h"
 
@@ -60,6 +65,11 @@ void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         {
         case k_EMsgGCServerHello:
             SendServerWelcome();
+            SendMatchmakingReservation();
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingServerReservationResponse:
+            MatchmakingReservationResponse(messageRead);
             break;
 
         case k_EMsgGCCStrike15_v2_Server2GCClientValidate:
@@ -272,6 +282,126 @@ void ServerGC::SendServerWelcome()
     PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
 
     m_sentWelcome = true;
+}
+
+namespace
+{
+constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;
+constexpr const char *ServerReservationPath = "csgo_gc/server_reservation.txt";
+constexpr const char *ServerReservationResponsePath = "csgo_gc/server_reservation_response.txt";
+
+std::unordered_map<std::string, std::string> ReadServerReservationFile()
+{
+    std::unordered_map<std::string, std::string> out;
+    std::ifstream in(ServerReservationPath, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        const size_t eq = line.find('=');
+        if (eq != std::string::npos)
+            out[line.substr(0, eq)] = line.substr(eq + 1);
+    }
+    return out;
+}
+
+uint64_t ReservationNumber(
+    const std::unordered_map<std::string, std::string> &kv,
+    const char *key, uint64_t fallback = 0)
+{
+    auto it = kv.find(key);
+    if (it == kv.end())
+        return fallback;
+    char *end = nullptr;
+    const unsigned long long value = std::strtoull(it->second.c_str(), &end, 10);
+    return end && *end == '\0' ? static_cast<uint64_t>(value) : fallback;
+}
+} // namespace
+
+void ServerGC::SendMatchmakingReservation()
+{
+    if (m_sentReservation)
+        return;
+
+    const auto kv = ReadServerReservationFile();
+    const uint64_t matchId = ReservationNumber(kv, "match_id");
+    if (!matchId)
+    {
+        Platform::Print("matchmaking server: no local reservation file; normal standalone srcds mode\n");
+        return;
+    }
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve reserve;
+    reserve.set_match_id(matchId);
+    reserve.set_game_type(static_cast<uint32_t>(ReservationNumber(kv, "game_type", 8)));
+    reserve.set_server_version(
+        static_cast<uint32_t>(ReservationNumber(kv, "server_version", 0)));
+
+    auto accounts = kv.find("account_ids");
+    if (accounts != kv.end())
+    {
+        std::istringstream stream(accounts->second);
+        std::string part;
+        while (std::getline(stream, part, ','))
+        {
+            char *end = nullptr;
+            const unsigned long value = std::strtoul(part.c_str(), &end, 10);
+            if (end && *end == '\0' && value && value <= UINT32_MAX)
+                reserve.add_account_ids(static_cast<uint32_t>(value));
+        }
+    }
+
+    if (!reserve.account_ids_size())
+    {
+        Platform::Print("matchmaking server: reservation %llu has no accounts; refusing 9105\n",
+            matchId);
+        return;
+    }
+
+    GCMessageWrite write{ RevivalMsgMatchmakingGC2ServerReserve, reserve };
+    PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
+    m_sentReservation = true;
+
+    Platform::Print(
+        "matchmaking server: sent native 9105 match=%llu accounts=%d game_type=%u version=%u\n",
+        matchId, reserve.account_ids_size(), reserve.game_type(), reserve.server_version());
+}
+
+void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingServerReservationResponse response;
+    if (!messageRead.ReadProtobuf(response))
+    {
+        Platform::Print("matchmaking server: failed to parse native 9106 response\n");
+        return;
+    }
+
+    const uint64_t matchId =
+        response.has_reservation() && response.reservation().has_match_id()
+            ? response.reservation().match_id() : 0;
+    const uint64_t reservationId =
+        response.has_reservationid() ? response.reservationid() : 0;
+
+    if (!matchId || !reservationId)
+    {
+        Platform::Print(
+            "matchmaking server: native 9106 missing match/reservation id (match=%llu reservation=%llu)\n",
+            matchId, reservationId);
+        return;
+    }
+
+    std::ofstream out(ServerReservationResponsePath, std::ios::binary | std::ios::trunc);
+    if (out.is_open())
+    {
+        out << "match_id=" << matchId << "\n";
+        out << "reservation_id=" << reservationId << "\n";
+        if (response.has_map())
+            out << "map=" << response.map() << "\n";
+        out.flush();
+    }
+
+    Platform::Print(
+        "matchmaking server: native 9106 accepted match=%llu reservation=%llu map=%s\n",
+        matchId, reservationId, response.has_map() ? response.map().c_str() : "");
 }
 
 void ServerGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
