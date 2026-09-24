@@ -47,6 +47,20 @@ Write-Host "[1/6] Updating code to latest $Branch..." -ForegroundColor Yellow
 & git -C $RevivalRepo fetch origin $Branch
 if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
 
+# A setup ZIP/manual copy may have placed this updater in the checkout before the
+# branch itself started tracking it. That leaves an untracked file at the exact
+# path Git must create and makes checkout abort. Preserve it in the timestamped
+# backup, then remove only that one conflicting untracked file.
+$updaterRel = "UPDATE_EXISTING_WINDOWS.ps1"
+& git -C $RevivalRepo ls-files --error-unmatch -- $updaterRel *> $null
+$updaterTracked = ($LASTEXITCODE -eq 0)
+$updaterPath = Join-Path $RevivalRepo $updaterRel
+if ((-not $updaterTracked) -and (Test-Path $updaterPath)) {
+    Copy-Item $updaterPath (Join-Path $backup "UPDATE_EXISTING_WINDOWS.pre-branch.ps1") -Force
+    Remove-Item $updaterPath -Force
+    Write-Host "    Removed conflicting untracked updater after backing it up." -ForegroundColor Yellow
+}
+
 # Decide whether the compiled GC/runtime actually changed before moving HEAD.
 & git -C $RevivalRepo diff --quiet $currentHead "origin/$Branch" -- "csgo_gc-patch"
 $gcDiffExit = $LASTEXITCODE
