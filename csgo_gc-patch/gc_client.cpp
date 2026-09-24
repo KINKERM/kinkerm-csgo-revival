@@ -4,6 +4,8 @@
 #include "keyvalue.h"
 
 #include <fstream>
+
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <unordered_map>
