@@ -116,6 +116,17 @@ public:
     // Resolve those wrappers to the actual random reward before it reaches inventory.
     uint64_t PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
 
+    // Native end-of-match rewards. Creates the inventory SO plus the 9137
+    // preview payload used by CS:GO's end-match item reveal.
+    bool CreateMatchDrop(uint32_t defIndex,
+        bool resolveDirectLoot,
+        UnacknowledgedType unacknowledgedType,
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool CreateRandomCaseMatchDrop(
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+
     // operation shop (revival): query/spend stars from the player's Operation coin.
     // CanSpendStars never mutates inventory. SpendStars persists and emits the
     // modified coin so Panorama live-refreshes the displayed balance.
