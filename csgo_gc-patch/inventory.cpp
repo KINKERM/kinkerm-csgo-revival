@@ -40,6 +40,10 @@ inline bool IsDefaultItemId(uint64_t itemId, uint32_t &defIndex, uint32_t &paint
 Inventory::Inventory(uint64_t steamId)
     : m_steamId{ steamId }
 {
+    m_profileLevel = static_cast<uint32_t>(std::max(GetConfig().Level(), 1));
+    m_profileXp = static_cast<uint32_t>(std::max(GetConfig().Xp(), 0));
+    m_competitiveRank = GetConfig().CompetitiveRank();
+    m_competitiveWins = static_cast<uint32_t>(std::max(GetConfig().CompetitiveWins(), 0));
     ReadFromFile();
 }
 
@@ -345,6 +349,19 @@ void Inventory::ReadFromFile()
         }
     }
 
+    const KeyValue *profileKey = inventoryKey.GetSubkey("revival_profile");
+    if (profileKey)
+    {
+        m_profileLevel = std::clamp(profileKey->GetNumber<uint32_t>("level", m_profileLevel), 1u, 40u);
+        m_profileXp = profileKey->GetNumber<uint32_t>("xp", m_profileXp);
+        if (m_profileXp >= 5000)
+            m_profileXp %= 5000;
+        const uint32_t rank = profileKey->GetNumber<uint32_t>(
+            "competitive_rank", static_cast<uint32_t>(m_competitiveRank));
+        m_competitiveRank = static_cast<RankId>(std::min<uint32_t>(rank, RankGlobalElite));
+        m_competitiveWins = profileKey->GetNumber<uint32_t>("competitive_wins", m_competitiveWins);
+    }
+
     const KeyValue *operationKey = inventoryKey.GetSubkey("operation_riptide");
     if (operationKey)
     {
@@ -454,6 +471,14 @@ void Inventory::WriteToFile() const
     }
 
     {
+        KeyValue &profileKey = inventoryKey.AddSubkey("revival_profile");
+        profileKey.AddNumber("level", m_profileLevel);
+        profileKey.AddNumber("xp", m_profileXp);
+        profileKey.AddNumber("competitive_rank", static_cast<uint32_t>(m_competitiveRank));
+        profileKey.AddNumber("competitive_wins", m_competitiveWins);
+    }
+
+    {
         KeyValue &operationKey = inventoryKey.AddSubkey("operation_riptide");
         operationKey.AddNumber("season", GetConfig().OperationSeason());
         operationKey.AddNumber("earned_stars", m_operationEarnedStars);
@@ -529,7 +554,7 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
 
     {
         CSOPersonaDataPublic personaData;
-        personaData.set_player_level(level);
+        personaData.set_player_level(m_profileLevel);
         personaData.set_elevated_state(true);
 
         CMsgSOCacheSubscribed_SubscribedType *object = message.add_objects();
@@ -2075,6 +2100,37 @@ uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgS
         defIndex, item.def_index(), item.id());
     return item.id();
 }
+
+bool Inventory::AddProfileXp(uint32_t amount)
+{
+    if (!amount || m_profileLevel >= 40)
+        return false;
+
+    uint64_t total = static_cast<uint64_t>(m_profileXp) + amount;
+    bool changed = amount != 0;
+
+    while (total >= 5000 && m_profileLevel < 40)
+    {
+        total -= 5000;
+        ++m_profileLevel;
+    }
+
+    m_profileXp = (m_profileLevel >= 40) ? 0 : static_cast<uint32_t>(total);
+    WriteToFile();
+
+    Platform::Print("progression: profile XP +%u -> level %u, xp %u/5000\n",
+        amount, m_profileLevel, m_profileXp);
+    return changed;
+}
+
+void Inventory::BuildProfilePersonaUpdate(CMsgSOMultipleObjects &update)
+{
+    CSOPersonaDataPublic persona;
+    persona.set_player_level(m_profileLevel);
+    persona.set_elevated_state(true);
+    AddToMultipleObjects(update, SOTypePersonaDataPublic, persona);
+}
+
 
 bool Inventory::SetOperationMissionCard(uint32_t season,
     uint32_t missionCardId,
