@@ -29,7 +29,11 @@ MAP_POOL = (
     "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_overpass",
     "de_vertigo", "de_train", "de_cache", "de_cbble", "de_ancient",
     "de_anubis", "de_tuscan", "de_canals", "de_breach", "de_basalt",
-    "cs_office", "cs_agency", "cs_italy",
+    "de_abbey", "de_austria", "de_biome", "de_blackgold", "de_chlorine",
+    "de_engage", "de_grind", "de_lite", "de_mocha", "de_mutiny",
+    "de_ruby", "de_seaside", "de_shipped", "de_studio", "de_subzero",
+    "de_swamp", "de_thrill", "de_zoo",
+    "cs_office", "cs_agency", "cs_italy", "cs_insertion", "cs_insertion2",
 )
 
 GAME_OVER_PATTERNS = (
@@ -105,7 +109,22 @@ def find_srcds(csgo_dir: str) -> str:
 
 def installed_maps(csgo_dir: str) -> list[str]:
     maps_dir = os.path.join(csgo_dir, "csgo", "maps")
-    return [m for m in MAP_POOL if os.path.isfile(os.path.join(maps_dir, m + ".bsp"))]
+    if not os.path.isdir(maps_dir):
+        return []
+
+    # Single huge queue: every top-level defuse/hostage BSP installed on the
+    # laptop is eligible. Keep the known pool first for stable logs, then append
+    # any other preserved de_/cs_ maps automatically.
+    found = {
+        name[:-4]
+        for name in os.listdir(maps_dir)
+        if name.lower().endswith(".bsp")
+        and name[:-4].lower().startswith(("de_", "cs_"))
+        and not name[:-4].lower().endswith(("_se", "_ve"))
+    }
+    ordered = [m for m in MAP_POOL if m in found]
+    ordered.extend(sorted(found.difference(ordered)))
+    return ordered
 
 
 def ensure_match_cfg(csgo_dir: str) -> None:
