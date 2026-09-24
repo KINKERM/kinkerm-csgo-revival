@@ -188,7 +188,7 @@ def write_launcher_cfg(csgo_dir: str, steam_id: str) -> str:
             f"server_url={SERVER_URL}\n"
             f"steam_id={steam_id}\n"
             f"csgo_dir={csgo_dir}\n"
-            "game_args=-steam -game csgo -novid\n"
+            "game_args=-steam -game csgo -novid -dev\n"
             "launch_game=1\n"
             "sync_token=\n"
         )
