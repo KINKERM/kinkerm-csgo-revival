@@ -44,6 +44,10 @@ Inventory::Inventory(uint64_t steamId)
     m_profileXp = static_cast<uint32_t>(std::max(GetConfig().Xp(), 0));
     m_competitiveRank = GetConfig().CompetitiveRank();
     m_competitiveWins = static_cast<uint32_t>(std::max(GetConfig().CompetitiveWins(), 0));
+    if (m_competitiveRank != RankNone)
+    {
+        m_competitiveRating = 600 + (static_cast<int32_t>(m_competitiveRank) - 1) * 100;
+    }
     ReadFromFile();
 }
 
@@ -89,6 +93,35 @@ void Inventory::ToSingleObject(CMsgSOSingleObject &message, SOTypeId type, const
 uint32_t Inventory::AccountId() const
 {
     return m_steamId & 0xffffffff;
+}
+
+uint32_t Inventory::CurrentProfileWeek() const
+{
+    // Legacy CS:GO's XP/rank-up reward reset was mid-week. Shift the Unix
+    // Thursday epoch by one day so integer weeks roll over Wednesday 00:00 UTC.
+    const uint64_t now = static_cast<uint64_t>(time(nullptr));
+    return static_cast<uint32_t>((now + 86400ull) / 604800ull);
+}
+
+void Inventory::RefreshProfileWeek()
+{
+    const uint32_t week = CurrentProfileWeek();
+    if (m_profileWeek != week)
+    {
+        m_profileWeek = week;
+        m_weeklyBaseXp = 0;
+        m_weeklyLevelRewardClaimed = false;
+        m_casePlaytimeSeconds = 0;
+        m_caseDropsThisWeek = 0;
+        m_nextCaseDropSeconds = m_random.Integer<uint32_t>(2u * 3600u, 4u * 3600u);
+        WriteToFile();
+        Platform::Print("progression: weekly state reset (week %u, first case target %us)\n",
+            week, m_nextCaseDropSeconds);
+    }
+    else if (!m_nextCaseDropSeconds)
+    {
+        m_nextCaseDropSeconds = m_random.Integer<uint32_t>(2u * 3600u, 4u * 3600u);
+    }
 }
 
 bool Inventory::IsOperationCoinDef(uint32_t defIndex) const
@@ -360,7 +393,21 @@ void Inventory::ReadFromFile()
             "competitive_rank", static_cast<uint32_t>(m_competitiveRank));
         m_competitiveRank = static_cast<RankId>(std::min<uint32_t>(rank, RankGlobalElite));
         m_competitiveWins = profileKey->GetNumber<uint32_t>("competitive_wins", m_competitiveWins);
+        m_profileWeek = profileKey->GetNumber<uint32_t>("profile_week", 0);
+        m_weeklyBaseXp = profileKey->GetNumber<uint32_t>("weekly_base_xp", 0);
+        m_weeklyLevelRewardClaimed =
+            profileKey->GetNumber<uint32_t>("weekly_level_reward_claimed", 0) != 0;
+        m_casePlaytimeSeconds = profileKey->GetNumber<uint32_t>("case_playtime_seconds", 0);
+        m_caseDropsThisWeek = profileKey->GetNumber<uint32_t>("case_drops_this_week", 0);
+        m_nextCaseDropSeconds = profileKey->GetNumber<uint32_t>("next_case_drop_seconds", 0);
+        m_competitiveRating = std::clamp(
+            profileKey->GetNumber<int32_t>("competitive_rating", m_competitiveRating),
+            600, 2300);
+        m_competitiveMatches =
+            profileKey->GetNumber<uint32_t>("competitive_matches", m_competitiveMatches);
     }
+
+    RefreshProfileWeek();
 
     const KeyValue *operationKey = inventoryKey.GetSubkey("operation_riptide");
     if (operationKey)
@@ -476,6 +523,14 @@ void Inventory::WriteToFile() const
         profileKey.AddNumber("xp", m_profileXp);
         profileKey.AddNumber("competitive_rank", static_cast<uint32_t>(m_competitiveRank));
         profileKey.AddNumber("competitive_wins", m_competitiveWins);
+        profileKey.AddNumber("profile_week", m_profileWeek);
+        profileKey.AddNumber("weekly_base_xp", m_weeklyBaseXp);
+        profileKey.AddNumber("weekly_level_reward_claimed", m_weeklyLevelRewardClaimed ? 1 : 0);
+        profileKey.AddNumber("case_playtime_seconds", m_casePlaytimeSeconds);
+        profileKey.AddNumber("case_drops_this_week", m_caseDropsThisWeek);
+        profileKey.AddNumber("next_case_drop_seconds", m_nextCaseDropSeconds);
+        profileKey.AddNumber("competitive_rating", m_competitiveRating);
+        profileKey.AddNumber("competitive_matches", m_competitiveMatches);
     }
 
     {
@@ -2165,22 +2220,125 @@ bool Inventory::CreateRandomCaseMatchDrop(
     CMsgSOSingleObject &create,
     CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
 {
-    // Fracture, Snakebite, Riptide, Dreams & Nightmares. All exist in the
-    // bundled legacy schema and keep the revival's drop pool era-appropriate.
-    constexpr std::array<uint32_t, 4> Cases{ 4717, 4747, 4790, 4818 };
+    // 2021 regular drop pool: Clutch, Danger Zone, Prisma, Prisma 2, Fracture,
+    // Snakebite. Operation Riptide Case is intentionally excluded: Valve sold
+    // that one through Operation stars instead of the normal timed case drop.
+    constexpr std::array<uint32_t, 6> Cases{ 4471, 4548, 4598, 4695, 4698, 4747 };
     const uint32_t defIndex = Cases[m_random.Integer<size_t>(0, Cases.size() - 1)];
     return CreateMatchDrop(
         defIndex, false, UnacknowledgedDropped, create, notification);
 }
 
-
-bool Inventory::AddProfileXp(uint32_t amount)
+bool Inventory::CreateWeeklyLevelReward(
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
 {
+    RefreshProfileWeek();
+    if (m_weeklyLevelRewardClaimed)
+    {
+        return false;
+    }
+
+    // Legacy weekly level-up reward was either graffiti or a skin from the
+    // normal map-collection pool. Use the real schema entries for both.
+    const bool graffiti = m_random.Integer<int>(0, 1) == 0;
+    bool created = false;
+
+    if (graffiti)
+    {
+        // Standard graffiti box, resolved immediately to its actual spray.
+        created = CreateMatchDrop(
+            4621, true, UnacknowledgedLevelUpReward, create, notification);
+    }
+    else
+    {
+        static const std::vector<std::string_view> Collections{
+            "set_italy",
+            "set_lake",
+            "set_safehouse",
+            "set_bank",
+            "set_dust_2",
+            "set_train",
+            "set_nuke_2",
+            "set_inferno_2",
+        };
+
+        CSOEconItem selected;
+        if (m_itemSchema.CreateRandomCollectionItem(
+            m_random, Collections, ItemOriginCrate, UnacknowledgedLevelUpReward, selected))
+        {
+            CSOEconItem &item = CreateItem(selected);
+            ToSingleObject(create, item);
+            ItemToPreviewDataBlock(item, *notification.mutable_iteminfo());
+            notification.mutable_iteminfo()->set_dropreason(0);
+            created = true;
+        }
+    }
+
+    if (created)
+    {
+        m_weeklyLevelRewardClaimed = true;
+        WriteToFile();
+        Platform::Print("drops: weekly profile-rank reward granted\n");
+    }
+    return created;
+}
+
+bool Inventory::AddMatchPlaytimeAndCreateCaseDrop(uint32_t seconds,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    RefreshProfileWeek();
+
+    const uint64_t newPlaytime =
+        static_cast<uint64_t>(m_casePlaytimeSeconds) + seconds;
+    m_casePlaytimeSeconds = newPlaytime > UINT32_MAX
+        ? UINT32_MAX : static_cast<uint32_t>(newPlaytime);
+
+    if (m_caseDropsThisWeek >= 2
+        || m_casePlaytimeSeconds < m_nextCaseDropSeconds)
+    {
+        WriteToFile();
+        return false;
+    }
+
+    if (!CreateRandomCaseMatchDrop(create, notification))
+    {
+        WriteToFile();
+        return false;
+    }
+
+    ++m_caseDropsThisWeek;
+    if (m_caseDropsThisWeek == 1)
+    {
+        // The normal first weekly case arrives after a few hours. A second case
+        // existed in the legacy system but was deliberately much rarer.
+        const uint32_t extra =
+            m_random.Integer<uint32_t>(20u * 3600u, 100u * 3600u);
+        const uint64_t next = static_cast<uint64_t>(m_casePlaytimeSeconds) + extra;
+        m_nextCaseDropSeconds = next > UINT32_MAX
+            ? UINT32_MAX : static_cast<uint32_t>(next);
+    }
+    else
+    {
+        m_nextCaseDropSeconds = UINT32_MAX;
+    }
+
+    WriteToFile();
+    Platform::Print("drops: timed case drop %u/2 after %us weekly playtime\n",
+        m_caseDropsThisWeek, m_casePlaytimeSeconds);
+    return true;
+}
+
+bool Inventory::AddProfileXp(uint32_t amount, uint32_t *levelsGained)
+{
+    if (levelsGained)
+        *levelsGained = 0;
     if (!amount || m_profileLevel >= 40)
         return false;
 
+    const uint32_t oldLevel = m_profileLevel;
     uint64_t total = static_cast<uint64_t>(m_profileXp) + amount;
-    bool changed = amount != 0;
 
     while (total >= 5000 && m_profileLevel < 40)
     {
@@ -2189,11 +2347,107 @@ bool Inventory::AddProfileXp(uint32_t amount)
     }
 
     m_profileXp = (m_profileLevel >= 40) ? 0 : static_cast<uint32_t>(total);
+    if (levelsGained)
+        *levelsGained = m_profileLevel - oldLevel;
     WriteToFile();
 
     Platform::Print("progression: profile XP +%u -> level %u, xp %u/5000\n",
         amount, m_profileLevel, m_profileXp);
-    return changed;
+    return true;
+}
+
+uint32_t Inventory::ApplyWeeklyProfileXp(uint32_t baseXp, uint32_t *levelsGained)
+{
+    if (levelsGained)
+        *levelsGained = 0;
+    if (!baseXp)
+        return 0;
+
+    RefreshProfileWeek();
+
+    const uint64_t start = m_weeklyBaseXp;
+    const uint64_t end = std::min<uint64_t>(UINT32_MAX, start + baseXp);
+
+    auto overlap = [](uint64_t begin, uint64_t finish, uint64_t lo, uint64_t hi) -> uint64_t
+    {
+        const uint64_t a = std::max(begin, lo);
+        const uint64_t b = std::min(finish, hi);
+        return b > a ? b - a : 0;
+    };
+
+    // 2021 weekly XP curve:
+    //   3500 bonus XP paid at +3x, then 1500 bonus XP at +1x.
+    //   Once roughly 11167 total XP has been earned in the week, further base
+    //   XP is reduced to about 17.5%. 6167 base + 5000 bonus = 11167 total.
+    const uint64_t normalBase = overlap(start, end, 0, 6167);
+    const uint64_t reducedBase = end - start - normalBase;
+
+    auto cumulativeBonus = [](uint64_t raw) -> uint64_t
+    {
+        const uint64_t triple = std::min<uint64_t>(raw * 3, 3500);
+        const uint64_t secondRaw = raw > 1167 ? raw - 1167 : 0;
+        const uint64_t single = std::min<uint64_t>(secondRaw, 1500);
+        return triple + single;
+    };
+
+    const uint64_t bonus = cumulativeBonus(end) - cumulativeBonus(start);
+    const uint64_t reducedAward = (reducedBase * 175) / 1000;
+    uint64_t awarded64 = normalBase + reducedAward + bonus;
+    if (awarded64 > UINT32_MAX)
+        awarded64 = UINT32_MAX;
+
+    m_weeklyBaseXp = static_cast<uint32_t>(end);
+    const uint32_t awarded = static_cast<uint32_t>(awarded64);
+    AddProfileXp(awarded, levelsGained);
+    WriteToFile();
+
+    Platform::Print(
+        "progression: weekly XP base=%u awarded=%u base_this_week=%u\n",
+        baseXp, awarded, m_weeklyBaseXp);
+    return awarded;
+}
+
+bool Inventory::ApplyCompetitiveMatchResult(bool won, bool tied)
+{
+    const RankId oldRank = m_competitiveRank;
+    const uint32_t oldWins = m_competitiveWins;
+
+    ++m_competitiveMatches;
+    if (won)
+    {
+        ++m_competitiveWins;
+        m_competitiveRating += (m_competitiveWins <= 10) ? 45 : 30;
+    }
+    else if (tied)
+    {
+        m_competitiveRating += 3;
+    }
+    else
+    {
+        m_competitiveRating -= (m_competitiveWins < 10) ? 20 : 28;
+    }
+    m_competitiveRating = std::clamp(m_competitiveRating, 600, 2300);
+
+    // CS:GO kept players unranked until 10 Competitive wins. Once placed, map
+    // the persistent hidden rating onto the real 18 legacy skill-group ids.
+    if (oldRank == RankNone && m_competitiveWins < 10)
+    {
+        m_competitiveRank = RankNone;
+    }
+    else
+    {
+        const int rank = std::clamp(1 + (m_competitiveRating - 600) / 100, 1, 18);
+        m_competitiveRank = static_cast<RankId>(rank);
+    }
+
+    WriteToFile();
+    Platform::Print(
+        "matchmaking: comp result %s rating=%d rank=%u wins=%u matches=%u\n",
+        won ? "win" : (tied ? "tie" : "loss"),
+        m_competitiveRating, static_cast<uint32_t>(m_competitiveRank),
+        m_competitiveWins, m_competitiveMatches);
+
+    return oldRank != m_competitiveRank || oldWins != m_competitiveWins;
 }
 
 void Inventory::BuildProfilePersonaUpdate(CMsgSOMultipleObjects &update)
