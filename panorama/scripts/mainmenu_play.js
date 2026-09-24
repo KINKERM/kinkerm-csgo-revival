@@ -82,14 +82,7 @@ var PlayMenu = ( function()
 		{
 
 			                                                                                                                                                       
-			if ( !_CheckContainerHasAnyChildChecked( _GetMapListForServerTypeAndGameMode( m_activeMapGroupSelectionPanelID ) ) )
-			{
-				_NoMapSelectedPopup();
 
-				btnStartSearch.RemoveClass( 'pressed' );
-
-				return;
-			}
 
 			                                             
 			  
@@ -126,6 +119,8 @@ var PlayMenu = ( function()
 
 	function _Init()
 	{
+		m_serverSetting = 'official';
+		m_gameModeSetting = 'competitive';
 		                                                                                                     
 		                         
 		    
