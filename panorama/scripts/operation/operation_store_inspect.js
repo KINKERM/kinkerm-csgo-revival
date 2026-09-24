@@ -376,9 +376,7 @@ var OperationStoreInspect = ( function()
 			else{
 				elGetStars.text = $.Localize( '#op_stars_upsell' );
 			}
-			_m_cp.FindChildInLayoutFile( 'id-op-store-inspect-get-more-points-btn' ).SetPanelEvent(
-				'onactivate', OperationUtil.OpenUpSell.bind( undefined, starsNeeded )
-			);
+			_m_cp.FindChildInLayoutFile( 'id-op-store-inspect-get-more-points-btn' ).visible = false;
 		}
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-reward-btn_cancel' ).SetPanelEvent(
 			'onactivate',
@@ -409,26 +407,10 @@ var OperationStoreInspect = ( function()
 	};
 	var OnActivateConfirmReward = function()
 	{
-		// revival: MissionsAPI.ActionRedeemOperationGoods() is a Game-Coordinator
-		// operation-redeem call this server does not implement (it silently does
-		// nothing, then the reveal times out with "item not given"). Instead route
-		// the purchase through csgo_gc's STORE - the exact same path the pass uses in
-		// operation_util _OpenStoreForPass - which grants any item for free.
-		// _m_rewardId is the faux item id (def + paint 0) csgo_gc's store accepts.
+		MissionsAPI.ActionRedeemOperationGoods( _m_nSeasonAccess, _m_rewardIndex );
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-confirm-btn_label' ).enabled = false;
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-confirm-btn_cancel' ).enabled = false;
-		$.DispatchEvent( 'UIPopupButtonClicked', '' );   // close this confirm popup
-		UiToolkitAPI.ShowCustomLayoutPopupParameters(
-			'',
-			'file://{resources}/layout/popups/popup_inventory_inspect.xml',
-			'itemid=' + _m_rewardId +
-			'&' + 'inspectonly=false' +
-			'&' + 'asyncworkitemwarning=no' +
-			'&' + 'bluroperationpanel=true' +
-			'&' + 'storeitemid=' + _m_rewardId +
-			'&' + 'overridepurchasemultiple=0',
-			'none'
-		);
+		_StartRevealAnim();
 	};
 	var _StartRevealAnim = function()
 	{
