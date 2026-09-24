@@ -29,9 +29,15 @@ jobs:
       - name: Apply complete revival overlay
         shell: pwsh
         run: Copy-Item -Path 'csgo_gc-patch\*' -Destination 'upstream\csgo_gc\' -Force
+      - name: Install Win32 MbedTLS
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install mbedtls:x86-windows
       - name: Configure Win32 Release
         shell: pwsh
-        run: cmake -S upstream -B upstream/build -G 'Visual Studio 17 2022' -A Win32
+        run: |
+          cmake -S upstream -B upstream/build -G 'Visual Studio 17 2022' -A Win32 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
       - name: Build client server and GC
         shell: pwsh
         run: cmake --build upstream/build --config Release --target csgo srcds csgo_gc
