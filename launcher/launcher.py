@@ -64,6 +64,14 @@ def load_config(path: str) -> dict:
             config["game_exe"] = "csgo_linux64"
     if not config["game_args"]:
         config["game_args"] = "-steam -game csgo -novid"
+
+    # CS:GO Panorama normally reads its signed code.pbin archive. With -dev,
+    # the engine prefers the extracted loose panorama/layout, scripts and styles
+    # tree we install, which is required for the revival queue UI.
+    game_args = config["game_args"].split()
+    if "-dev" not in game_args:
+        config["game_args"] = (config["game_args"].strip() + " -dev").strip()
+
     return config
 
 
