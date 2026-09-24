@@ -1,7 +1,7 @@
 'use strict';
 var OperationMainMenu = ( function()
 {
-	var _m_nSeasonIndex = 10;
+	var _m_nSeasonIndex = null;
 	var _m_InventoryUpdatedHandler = null;
 	var _m_cp = $.GetContextPanel();
 	var _m_DeepStatsEvtHandle = null;
@@ -38,40 +38,33 @@ var OperationMainMenu = ( function()
 	};
 	var _OnInventoryUpdated = function()
 	{
-		_m_cp.RemoveClass( 'hidden' );
-		$.DispatchEvent( 'HideMainMenuNewsPanel' );
 		if ( !MyPersonaAPI.IsInventoryValid() )
 		{
-			$.Schedule( .25, _OnInventoryUpdated );
 			return;
 		}
+		if ( !_m_nSeasonIndex )
+		{
+			_m_nSeasonIndex = 10;
+		}
+		_m_cp.RemoveClass( 'hidden' );
+		$.DispatchEvent( 'HideMainMenuNewsPanel' );
 		_CheckUsersOperationStatus();
 	};
 	var _CheckUsersOperationStatus = function()
 	{
-		// Never let a stale/unsupported Operation API hide the entire featured
-		// panel. Show the Riptide frame first, then populate it best-effort.
+		OperationUtil.ValidateOperationInfo( _m_nSeasonIndex );
+		var oStatus = OperationUtil.GetOperationInfo();
+		if ( _m_nSeasonIndex === -1 ||
+			!_m_nSeasonIndex ||
+			oStatus.nCoinRank === -1 ||
+			oStatus.nCoinRank === undefined ||
+			oStatus.nCoinRank === null )
+		{
+			return;
+		}
+		_ShowUpdatePanelBasedOnStatus( oStatus );
 		_m_cp.RemoveClass( 'hidden' );
 		$.DispatchEvent( 'HideMainMenuNewsPanel' );
-		try
-		{
-			OperationUtil.ValidateOperationInfo( _m_nSeasonIndex );
-			var oStatus = OperationUtil.GetOperationInfo();
-			if ( _m_nSeasonIndex === -1 || !_m_nSeasonIndex ||
-				oStatus.nCoinRank === -1 ||
-				oStatus.nCoinRank === undefined ||
-				oStatus.nCoinRank === null )
-			{
-				_ShowUpSell();
-				return;
-			}
-			_ShowUpdatePanelBasedOnStatus( oStatus );
-		}
-		catch ( err )
-		{
-			$.Msg( 'Riptide main-menu state fallback: ' + err );
-			_ShowUpSell();
-		}
 	};
 	var _ShowUpdatePanelBasedOnStatus = function( oStatus )
 	{
@@ -96,7 +89,7 @@ var OperationMainMenu = ( function()
 	{
 		var onMissionSelect = function()
 		{
-			var LocalPlayerHasPrime = OperationUtil.GetOperationInfo().bPrime;
+			var LocalPlayerHasPrime = false;
 			if ( !LocalPlayerHasPrime )
 			{
 				UiToolkitAPI.ShowGenericPopupTwoOptions(
@@ -126,7 +119,7 @@ var OperationMainMenu = ( function()
 		btnPremium.SetPanelEvent( 'onactivate',
 			OperationUtil.OpenUpSell.bind( undefined )
 		);
-		var sUserOwnedOperationPassItemID = OperationUtil.GetOwnedPassItemId();
+		var sUserOwnedOperationPassItemID = InventoryAPI.GetActiveSeasonPassItemId();
 		var sFauxPassItemID = OperationUtil.GetPassFauxId();
 		btnPremium.text = sUserOwnedOperationPassItemID ? '#SFUI_ConfirmBtn_ActivatePassNow' : '#op_get_premium';
 		elUpsell.FindChildInLayoutFile( 'id-op-mainmenu-upsell-store-image' ).itemid = sFauxPassItemID;
@@ -197,11 +190,6 @@ var OperationMainMenu = ( function()
 	var _UpdateSelectedMissionCard = function( cardIndex )
 	{
 		var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( _m_nSeasonIndex, Number( cardIndex ));
-		if ( !jsoCardDetails )
-		{
-			_ShowUpSell();
-			return;
-		}
 		var elLabel = $.GetContextPanel().FindChildInLayoutFile( 'id-missions-selected-card-name' );
 		var nWeek = cardIndex + 1;
 		elLabel.text = $.Localize( "#op_mainmenu_mission_week_prefix") + " " + nWeek + ": " + $.Localize( jsoCardDetails.name );
@@ -237,7 +225,7 @@ var OperationMainMenu = ( function()
 		}
 		var numPreviousMissionsCompletedForReward = 0;
 		var numNextMissionsCompletedNeededForReward = null;
-		var allThresholds = String( oStatus.nMissionsRewardThresholds || '' ).split( ',' );
+		var allThresholds = oStatus.nMissionsRewardThresholds.split( ',' );
 		for ( var j = 0; j < allThresholds.length; ++j )
 		{
 			var numericThreshold = parseInt( allThresholds[ j ] );
@@ -308,7 +296,7 @@ var OperationMainMenu = ( function()
 			_m_cp.FindChildInLayoutFile( 'id-op-mainmenu-stats-upsell' ).SetHasClass( 'hide', false );
 			_m_cp.FindChildInLayoutFile( 'id-op-mainmenu-stats-store-image' ).itemid = OperationUtil.GetPassFauxId();
 			elBtn.text = $.Localize(
-				OperationUtil.GetOwnedPassItemId() ?
+				InventoryAPI.GetActiveSeasonPassItemId() ?
 				'#SFUI_ConfirmBtn_ActivatePassNow' :
 				'#op_get_premium'
 				).toUpperCase();
