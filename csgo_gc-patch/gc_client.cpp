@@ -295,7 +295,7 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
     }
 
     // srcds may flush the same final stats more than once. Treat a reservation
-    // as one progression transaction so XP, rank wins and timed drops cannot
+    // as one progression transaction so XP, rank wins and revival drops cannot
     // duplicate during the same match.
     if (reservationId && reservationId == m_lastRewardedReservation)
     {
@@ -351,13 +351,16 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                 k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
         }
 
-        // Legacy profile-rank reward: at most once per Wednesday reset and only
-        // after actually crossing a 5000-XP profile-rank boundary.
-        if (levelsGained)
+        // Revival reward rules use the native 9137 end-match reveal path:
+        // - every completed match: one guaranteed random case
+        // - every completed match: 20% chance of a Dust II 2021 / Cobblestone /
+        //   Cache collection skin
+        // - every profile level gained: two extra cases + one guaranteed
+        //   collection skin
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (m_inventory.CreateWeeklyLevelReward(create, drop))
+            if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
             {
                 SendMessageToGame(true, k_ESOMsg_Create, create);
                 SendMessageToGame(false,
@@ -365,13 +368,36 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        // Case drops were playtime driven rather than guaranteed every match.
-        if (playerData.has_time_played() && playerData.time_played())
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (m_inventory.AddMatchPlaytimeAndCreateCaseDrop(
-                playerData.time_played(), create, drop))
+            if (m_inventory.CreateRandomCollectionMatchDrop(
+                5, UnacknowledgedDropped, create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        for (uint32_t level = 0; level < levelsGained; ++level)
+        {
+            for (int caseReward = 0; caseReward < 2; ++caseReward)
+            {
+                CMsgSOSingleObject create;
+                CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+                if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
+                {
+                    SendMessageToGame(true, k_ESOMsg_Create, create);
+                    SendMessageToGame(false,
+                        k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+                }
+            }
+
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRandomCollectionMatchDrop(
+                1, UnacknowledgedLevelUpReward, create, drop))
             {
                 SendMessageToGame(true, k_ESOMsg_Create, create);
                 SendMessageToGame(false,
