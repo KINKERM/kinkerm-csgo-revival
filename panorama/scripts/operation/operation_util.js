@@ -493,7 +493,7 @@ var OperationUtil = ( function () {
 	}
 	function _OpenPopupCustomLayoutOperationHub ( rewardIdxToSetWhenOpen )
 	{
-		var nActiveSeason = m_nOperationSeason;
+		var nActiveSeason = 1;
 		if ( nActiveSeason < 0 )
 			return;
 		var elPanel = UiToolkitAPI.ShowCustomLayoutPopupParameters(
@@ -511,7 +511,7 @@ var OperationUtil = ( function () {
 	function _OpenPopupCustomLayoutOperationStore()
 	{
 		$.DispatchEvent( 'ContextMenuEvent', '' );
-		var nActiveSeason = m_nOperationSeason;
+		var nActiveSeason = 1;
 		if ( nActiveSeason < 0 )
 			nActiveSeason = _IfOperationEndedGetExtendedSeasonWithRedeemableBalance();
 		if ( nActiveSeason < 0 )
@@ -565,7 +565,7 @@ var OperationUtil = ( function () {
 			StoreAPI.RecordUIEvent( "OperationJournal_Purchase", nSourceLayoutId );
 		}
 		$.DispatchEvent( 'PlaySoundEffect', 'tab_mainmenu_inventory', 'MOUSE' );
-		var nActiveSeason = m_nOperationSeason;
+		var nActiveSeason = 1;
 		if ( nActiveSeason < 0 )
 		{
 			_IfOperationEndedGetExtendedSeasonWithRedeemableBalance( true );
