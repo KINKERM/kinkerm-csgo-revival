@@ -291,6 +291,24 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             continue;
         }
 
+        uint64_t xpEarned = 0;
+        for (const XpProgressData &xp : playerData.xp_progress_data())
+        {
+            xpEarned += xp.xp_points();
+        }
+        if (xpEarned > UINT32_MAX)
+            xpEarned = UINT32_MAX;
+        if (xpEarned && m_inventory.AddProfileXp(static_cast<uint32_t>(xpEarned)))
+        {
+            CMsgSOMultipleObjects profileUpdate;
+            m_inventory.BuildProfilePersonaUpdate(profileUpdate);
+            SendMessageToGame(true, k_ESOMsg_UpdateMultiple, profileUpdate);
+
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
+            BuildMatchmakingHello(profileHello);
+            SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
+        }
+
         // When the server explicitly says Operation points are ineligible
         // (e.g. an invalid/offline setup), don't mint mission stars. Older
         // server builds may omit the field entirely, so absence is accepted.
@@ -333,7 +351,7 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
 void ClientGC::HandleSOCacheRequest()
 {
     CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, GetConfig().Level(), true);
+    m_inventory.BuildCacheSubscription(message, m_inventory.ProfileLevel(), true);
 
     GCMessageWrite messageWrite{ k_ESOMsg_CacheSubscribed, message };
     PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
@@ -395,8 +413,8 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
     message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
     message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    message.set_player_level(GetConfig().Level());
-    message.set_player_cur_xp(GetConfig().Xp());
+    message.set_player_level(m_inventory.ProfileLevel());
+    message.set_player_cur_xp(m_inventory.ProfileXp());
 }
 
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
@@ -405,7 +423,7 @@ void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike1
     // mikkotodo remove dox
     message.set_version(0); // this is accurate
     message.set_game_data(csWelcome.SerializeAsString());
-    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), GetConfig().Level(), false);
+    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), m_inventory.ProfileLevel(), false);
     message.mutable_location()->set_latitude(65.0133006f);
     message.mutable_location()->set_longitude(25.4646212f);
     message.mutable_location()->set_country("FI"); // finland
@@ -421,8 +439,8 @@ void ClientGC::SendRankUpdate()
 
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(AccountId());
-    rank->set_rank_id(GetConfig().CompetitiveRank());
-    rank->set_wins(GetConfig().CompetitiveWins());
+    rank->set_rank_id(m_inventory.CompetitiveRank());
+    rank->set_wins(m_inventory.CompetitiveWins());
     rank->set_rank_type_id(RankTypeCompetitive);
 
     rank = message.add_rankings();
