@@ -2230,6 +2230,28 @@ bool Inventory::CreateRandomCaseMatchDrop(
         defIndex, false, UnacknowledgedDropped, create, notification);
 }
 
+bool Inventory::CreateRandomCollectionMatchDrop(uint32_t oneInChance,
+    UnacknowledgedType unacknowledgedType,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    if (oneInChance > 1
+        && m_random.Integer<uint32_t>(1u, oneInChance) != 1u)
+    {
+        return false;
+    }
+
+    // Revival map-collection pool requested for end-match rewards:
+    // 2021 Dust II can roll AK-47 | Gold Arabesque; Cobblestone can roll
+    // AWP | Dragon Lore; Cache remains in the pool as well.
+    constexpr std::array<uint32_t, 3> CollectionWrappers{ 4793, 4602, 4603 };
+    const uint32_t defIndex =
+        CollectionWrappers[m_random.Integer<size_t>(0, CollectionWrappers.size() - 1)];
+
+    return CreateMatchDrop(
+        defIndex, true, unacknowledgedType, create, notification);
+}
+
 bool Inventory::CreateWeeklyLevelReward(
     CMsgSOSingleObject &create,
     CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
