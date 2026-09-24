@@ -167,21 +167,24 @@ def mount_revival_override(csgo_dir: str) -> None:
     with open(gameinfo, "r", encoding="utf-8-sig", errors="replace") as fh:
         text = fh.read()
 
-    mount_token = "custom/kinkerm_revival"
-    normalized = text.replace("\\", "/")
-    if mount_token in normalized:
-        log("revival custom override already mounted in gameinfo.txt")
-        return
+    backup = gameinfo + ".pre-kinkerm-revival"
+    if not os.path.exists(backup):
+        with open(backup, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+    # Remove any older copy of our mount line and reinsert it immediately after
+    # SearchPaths { so it wins before stock csgo / pak01 VPK resources.
+    text = re.sub(
+        r"^\s*Game(?:\+Mod)?\s+[^\r\n]*custom[\\/]kinkerm_revival[^\r\n]*\r?\n?",
+        "",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
 
     match = re.search(r"SearchPaths\s*\{", text, flags=re.IGNORECASE)
     if not match:
         log("could not find SearchPaths block in csgo/gameinfo.txt")
         sys.exit(3)
-
-    backup = gameinfo + ".pre-kinkerm-revival"
-    if not os.path.exists(backup):
-        with open(backup, "w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
 
     mount_line = "\n\t\t\tGame\t\t|gameinfo_path|custom/kinkerm_revival"
     text = text[:match.end()] + mount_line + text[match.end():]
