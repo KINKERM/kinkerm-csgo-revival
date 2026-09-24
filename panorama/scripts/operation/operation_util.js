@@ -526,22 +526,6 @@ var OperationUtil = ( function () {
 	}
 	function _OpenUpSell( starsNeeded = 0, bForceOpenStarsPurchase = false )
 	{
-		function _OpenStarStore()
-		{
-			var elPopup = UiToolkitAPI.ShowCustomLayoutPopupParameters(
-				'',
-				'file://{resources}/layout/popups/popup_operation_store.xml',
-				'bluroperationpanel=true',
-				'none'
-			);
-			elPopup.SetAttributeInt( "starsneeded", starsNeeded );
-			var oOldStarsActivate = _UpdateOldStars();
-			if ( oOldStarsActivate.ids.length > 0 )
-			{
-				elPopup.SetAttributeString( "oldstarstoactivate", oOldStarsActivate.ids.join( ',' ) );
-				elPopup.SetAttributeInt( "oldstarstoactivatevalue", oOldStarsActivate.value );
-			}
-		}
 		function _OpenStoreForPass( passId )
 		{
 			if( passId )
@@ -590,12 +574,14 @@ var OperationUtil = ( function () {
 		var passId = _GetOwnedPassItemId();
 		if ( m_bPremiumUser || bForceOpenStarsPurchase )
 		{
-			_OpenStarStore();
+			UiToolkitAPI.ShowGenericPopup(
+				'#op_stars_shop_title',
+				'Stars are earned from missions. Star grants are admin-only on this revival.',
+				''
+			);
+			return;
 		}
-		else
-		{
-			_OpenStoreForPass( passId );
-		}
+		_OpenStoreForPass( passId );
 	}
 	var _GetPassFauxId = function()
 	{
