@@ -2101,6 +2101,79 @@ uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgS
     return item.id();
 }
 
+bool Inventory::CreateMatchDrop(uint32_t defIndex,
+    bool resolveDirectLoot,
+    UnacknowledgedType unacknowledgedType,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    uint64_t itemId = 0;
+
+    if (resolveDirectLoot)
+    {
+        const LootList *lootList = m_itemSchema.GetDirectLootList(defIndex);
+        if (!lootList)
+        {
+            Platform::Print("drops: no direct loot list for wrapper def %u\n", defIndex);
+            return false;
+        }
+
+        CaseOpening opening{ m_itemSchema, m_random };
+        CSOEconItem selected;
+        if (!opening.SelectItemFromDirectLootList(*lootList, selected))
+        {
+            Platform::Print("drops: failed to roll collection wrapper def %u\n", defIndex);
+            return false;
+        }
+
+        // The selector is also used by the Operation shop and therefore creates
+        // Purchased items. End-match rewards need the legacy unacknowledged type
+        // so the inventory/end-match UI treats them as drops.
+        selected.set_origin(ItemOriginCrate);
+        selected.set_inventory(InventoryUnacknowledged(unacknowledgedType));
+
+        CSOEconItem &item = CreateItem(selected);
+        itemId = item.id();
+        ToSingleObject(create, item);
+        ItemToPreviewDataBlock(item, *notification.mutable_iteminfo());
+    }
+    else
+    {
+        CSOEconItem &item = AllocateItem(0);
+        itemId = item.id();
+        if (!m_itemSchema.CreateItem(
+            defIndex, ItemOriginCrate, unacknowledgedType, item))
+        {
+            m_items.erase(itemId);
+            Platform::Print("drops: failed to create case def %u\n", defIndex);
+            return false;
+        }
+
+        ToSingleObject(create, item);
+        ItemToPreviewDataBlock(item, *notification.mutable_iteminfo());
+    }
+
+    notification.mutable_iteminfo()->set_dropreason(0);
+    WriteToFile();
+
+    Platform::Print("drops: created end-match item %llu from source def %u\n",
+        itemId, defIndex);
+    return true;
+}
+
+bool Inventory::CreateRandomCaseMatchDrop(
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    // Fracture, Snakebite, Riptide, Dreams & Nightmares. All exist in the
+    // bundled legacy schema and keep the revival's drop pool era-appropriate.
+    constexpr std::array<uint32_t, 4> Cases{ 4717, 4747, 4790, 4818 };
+    const uint32_t defIndex = Cases[m_random.Integer<size_t>(0, Cases.size() - 1)];
+    return CreateMatchDrop(
+        defIndex, false, UnacknowledgedDropped, create, notification);
+}
+
+
 bool Inventory::AddProfileXp(uint32_t amount)
 {
     if (!amount || m_profileLevel >= 40)
