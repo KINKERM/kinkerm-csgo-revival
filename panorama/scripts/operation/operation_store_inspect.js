@@ -407,11 +407,6 @@ var OperationStoreInspect = ( function()
 	};
 	var OnActivateConfirmReward = function()
 	{
-		// The ended-operation MissionsAPI redeem path can stop inside the Legacy
-		// client before it ever sends GC message 9209. Route the exact same reward
-		// through the revival store transaction instead. csgo_gc recognizes these
-		// defs as Operation rewards, spends the configured star cost, resolves the
-		// wrapper/loot list, and emits the normal reward_redeemed notification.
 		ItemInfo.ItemPurchase( _m_rewardId );
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-confirm-btn_label' ).enabled = false;
 		_m_cp.FindChildInLayoutFile( 'id-op-inspect-shop-get-confirm-btn_cancel' ).enabled = false;
