@@ -538,12 +538,15 @@ void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
         message.has_redeemable_balance() ? message.redeemable_balance() : 0,
         message.has_expected_cost() ? message.expected_cost() : 0);
 
-    const OperationShopEntry *reward = m_inventory.OperationShopReward(message.redeem_id());
+    const ShopReward *reward = GetConfig().OperationShopReward(message.redeem_id());
     if (!reward)
     {
         Platform::Print("operation shop: refused unknown redeem id %u\n", message.redeem_id());
         return;
     }
+
+    Platform::Print("operation shop: resolved native redeem id %u -> def %u cost %d\n",
+        message.redeem_id(), reward->defIndex, reward->cost);
 
     // The Legacy client derives expected_cost from its bundled Operation schema.
     // The revival UI/shop table is server-owned, so never trust or require that
