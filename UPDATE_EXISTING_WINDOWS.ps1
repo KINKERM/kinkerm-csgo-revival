@@ -119,15 +119,22 @@ if (-not $SkipInstall) {
 
 Write-Host "[6/6] Validating installed queue UI..." -ForegroundColor Yellow
 if (-not $SkipInstall) {
-    $repoUi = Join-Path $RevivalRepo "panorama\layout\mainmenu_play.xml"
-    $gameUi = Join-Path $CsgoDir "csgo\panorama\layout\mainmenu_play.xml"
-    Need-Path $repoUi "Repo Panorama layout"
-    Need-Path $gameUi "Installed Panorama layout"
+    $uiFiles = @(
+        "layout\mainmenu_play.xml",
+        "scripts\mainmenu_play.js",
+        "styles\mainmenu_play.css"
+    )
+    foreach ($rel in $uiFiles) {
+        $repoUi = Join-Path (Join-Path $RevivalRepo "panorama") $rel
+        $gameUi = Join-Path (Join-Path $CsgoDir "csgo\panorama") $rel
+        Need-Path $repoUi "Repo Panorama file"
+        Need-Path $gameUi "Installed Panorama file"
 
-    $a = (Get-FileHash $repoUi -Algorithm SHA256).Hash
-    $b = (Get-FileHash $gameUi -Algorithm SHA256).Hash
-    if ($a -ne $b) {
-        throw "Panorama validation failed: installed mainmenu_play.xml does not match the repo"
+        $repoHash = (Get-FileHash $repoUi -Algorithm SHA256).Hash
+        $gameHash = (Get-FileHash $gameUi -Algorithm SHA256).Hash
+        if ($repoHash -ne $gameHash) {
+            throw "Panorama validation failed: installed $rel does not match the repo"
+        }
     }
 
     Need-Path (Join-Path $CsgoDir "csgo_gc.dll") "Installed csgo_gc.dll"
