@@ -1,0 +1,10 @@
+{
+  "backend_url": "https://YOUR-REVIVAL-BACKEND.example",
+  "agent_id": "revival-laptop-1",
+  "csgo_dir": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive",
+  "public_host": "YOUR-PLAYIT-HOST.ply.gg",
+  "public_port": 27015,
+  "local_port": 27015,
+  "playit_exe": "",
+  "extra_srcds_args": ""
+}
