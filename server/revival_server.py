@@ -242,6 +242,7 @@ class Handler(BaseHTTPRequestHandler):
                 parsed["items"],
                 parsed["default_equips"],
                 parsed.get("operation_riptide"),
+                parsed.get("revival_profile"),
             )
             return self._send_json(200, {"ok": True, "items": count})
 
