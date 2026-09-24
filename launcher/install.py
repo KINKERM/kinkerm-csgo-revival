@@ -26,6 +26,8 @@ import os
 import re
 import sys
 import zipfile
+import shutil
+import subprocess
 import urllib.request
 import urllib.error
 
@@ -157,6 +159,99 @@ def download(url: str) -> bytes:
         return resp.read()
 
 
+def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
+    panorama_dir = os.path.join(csgo_dir, "csgo", "panorama")
+    pbin_tool = os.path.join(panorama_dir, "pbin.py")
+    code_pbin = os.path.join(panorama_dir, "code.pbin")
+    original_pbin = os.path.join(panorama_dir, "_code.pbin")
+    table_file = os.path.join(panorama_dir, "code.pbin.table")
+    stage_dir = os.path.join(panorama_dir, "panorama")
+
+    for path, label in ((pbin_tool, "pbin.py"), (code_pbin, "code.pbin")):
+        if not os.path.isfile(path):
+            log(f"Panorama repack failed: missing {label}: {path}")
+            sys.exit(3)
+
+    if not os.path.isfile(original_pbin):
+        shutil.copy2(code_pbin, original_pbin)
+        log("saved original Panorama archive as _code.pbin")
+
+    if os.path.isdir(stage_dir):
+        shutil.rmtree(stage_dir)
+    if os.path.isfile(table_file):
+        os.remove(table_file)
+
+    unpack = subprocess.run(
+        [sys.executable, pbin_tool, "unpack", "_code.pbin"],
+        cwd=panorama_dir,
+    )
+    if unpack.returncode:
+        log(f"pbin.py unpack failed with exit code {unpack.returncode}")
+        sys.exit(3)
+
+    # Overlay the Panorama source directly from the downloaded pack into the
+    # freshly unpacked PBIN staging tree. This also preserves nested panorama/
+    # content without relying on the loose install tree.
+    prefix = "csgo/panorama/"
+    for member in zf.infolist():
+        name = member.filename.replace("\\", "/")
+        if member.is_dir() or not name.startswith(prefix):
+            continue
+        rel = name[len(prefix):]
+        if not rel or rel in {"pbin.py", "code.pbin", "_code.pbin", "code.pbin.table"}:
+            continue
+        dest = os.path.abspath(os.path.join(stage_dir, rel))
+        base = os.path.abspath(stage_dir)
+        if not dest.startswith(base + os.sep):
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with zf.open(member) as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+
+    # PBIN slots are fixed-size. Compact only the matchmaking files modified by
+    # this branch so their packed payloads stay below the original slot sizes.
+    xml_path = os.path.join(stage_dir, "layout", "mainmenu_play.xml")
+    js_path = os.path.join(stage_dir, "scripts", "mainmenu_play.js")
+    css_path = os.path.join(stage_dir, "styles", "mainmenu_play.css")
+
+    with open(xml_path, "r", encoding="utf-8-sig") as fh:
+        xml = fh.read()
+    xml = re.sub(r">\s+<", "><", xml)
+    with open(xml_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(xml)
+
+    for path in (js_path, css_path):
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            raw = fh.read()
+        compact = "\n".join(
+            line.rstrip() for line in raw.splitlines() if line.strip()
+        )
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(compact)
+
+    packed = subprocess.run([sys.executable, pbin_tool, "pack"], cwd=panorama_dir)
+    if packed.returncode:
+        log(f"pbin.py pack failed with exit code {packed.returncode}")
+        sys.exit(3)
+
+    patched = subprocess.run(
+        [sys.executable, pbin_tool, "patch_panorama"],
+        cwd=panorama_dir,
+    )
+    if patched.returncode:
+        log(f"pbin.py patch_panorama failed with exit code {patched.returncode}")
+        sys.exit(3)
+
+    with open(code_pbin, "rb") as fh:
+        packed_bytes = fh.read()
+    if (b"RevivalSingleQueuePanel" not in packed_bytes
+            or b"Revival has exactly one official Competitive queue" not in packed_bytes):
+        log("rebuilt code.pbin is missing Revival Competitive queue markers")
+        sys.exit(3)
+
+    log("Panorama code.pbin rebuilt and panorama.dll patch verified")
+
+
 def install_pack(csgo_dir: str) -> None:
     if "CHANGE_ME" in PACK_URL or "CHANGE_ME" in SERVER_URL:
         log("HOST hasn't set SERVER_URL / PACK_URL in install.py yet - ask them.")
@@ -177,7 +272,8 @@ def install_pack(csgo_dir: str) -> None:
                 log(f"skipping unsafe path in pack: {member}")
                 continue
         zf.extractall(csgo_dir)
-    log("pack installed (side-by-side revival launcher + GC/config/items/UI overrides).")
+        repack_panorama(csgo_dir, zf)
+    log("pack installed (runtime + GC/config/items + rebuilt Panorama code.pbin).")
 
 
 def write_launcher_cfg(csgo_dir: str, steam_id: str) -> str:
