@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -165,10 +166,22 @@ def _http_json(method: str, url: str, payload: dict | None = None) -> dict:
 
 
 def _write_mm_state(config: dict, state: dict) -> None:
+    # 9107 carries both a printable server address and a numeric direct UDP IP.
+    # playit normally gives us a hostname, so resolve it here rather than inside
+    # the injected GC DLL.
+    state = dict(state)
+    host = str(state.get("public_host") or "").strip()
+    if host and not state.get("direct_udp_ip"):
+        try:
+            ip = socket.gethostbyname(host)
+            state["direct_udp_ip"] = int.from_bytes(socket.inet_aton(ip), "big")
+        except OSError as exc:
+            print(f"[launcher] matchmaking: could not resolve {host}: {exc}")
+
     fields = [
         "state", "players_searching", "players_required", "server_online",
         "match_id", "reservation_id", "map", "server_address",
-        "public_host", "public_port", "game_type", "error",
+        "public_host", "public_port", "direct_udp_ip", "game_type", "error",
     ]
     lines: list[str] = []
     for key in fields:
