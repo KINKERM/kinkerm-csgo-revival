@@ -148,6 +148,7 @@ mp_autokick 0
 mp_autoteambalance 1
 mp_limitteams 2
 mp_friendlyfire 1
+sv_game_mode_flags 0
 mp_maxrounds 30
 mp_overtime_enable 1
 mp_match_can_clinch 1
