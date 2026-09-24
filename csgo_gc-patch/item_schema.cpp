@@ -481,12 +481,6 @@ const OperationMissionCard *ItemSchema::GetOperationMissionCard(uint32_t cardId)
     return nullptr;
 }
 
-const OperationShopEntry *ItemSchema::GetOperationShopEntry(uint32_t redeemId) const
-{
-    auto it = m_operationShopEntries.find(redeemId);
-    return it == m_operationShopEntries.end() ? nullptr : &it->second;
-}
-
 
 bool ItemSchema::CreateItemFromLootListItem(Random &random,
     const LootListItem &lootListItem,
@@ -910,20 +904,6 @@ void ItemSchema::ParseQuests(const KeyValue *questsKey)
     }
 }
 
-static uint32_t OperationRedeemId(std::string_view name)
-{
-    uint32_t crc = 0xffffffffu;
-    for (unsigned char ch : name)
-    {
-        crc ^= ch;
-        for (int bit = 0; bit < 8; ++bit)
-        {
-            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
-        }
-    }
-    return crc ^ 0xffffffffu;
-}
-
 void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, uint32_t season)
 {
     const KeyValue *seasonKey = seasonalOperationsKey->GetSubkey(std::to_string(season));
@@ -935,26 +915,6 @@ void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, u
 
     for (const KeyValue &entry : *seasonKey)
     {
-        if (entry.Name() == "operational_point_redeemable")
-        {
-            std::string_view itemName = entry.GetString("item_name");
-            const int cost = entry.GetNumber<int>("points", 0);
-            ItemInfo *itemInfo = itemName.empty() ? nullptr : ItemInfoByName(itemName);
-            if (!itemInfo || cost <= 0)
-            {
-                Platform::Print("operation shop: ignored malformed redeemable '%s'\n",
-                    std::string{ itemName }.c_str());
-                continue;
-            }
-
-            OperationShopEntry shopEntry;
-            shopEntry.redeemId = OperationRedeemId(itemName);
-            shopEntry.defIndex = itemInfo->m_defIndex;
-            shopEntry.cost = cost;
-            m_operationShopEntries[shopEntry.redeemId] = shopEntry;
-            continue;
-        }
-
         if (entry.Name() != "quest_mission_card")
         {
             continue;
@@ -998,9 +958,8 @@ void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, u
         }
     }
 
-    Platform::Print("operation: parsed %zu mission cards, %zu quests and %zu native shop rewards for season %u\n",
-        m_operationMissionCards.size(), m_operationMissionCardByQuest.size(),
-        m_operationShopEntries.size(), season);
+    Platform::Print("operation: parsed %zu mission cards and %zu Operation quests for season %u\n",
+        m_operationMissionCards.size(), m_operationMissionCardByQuest.size(), season);
 }
 
 void ItemSchema::ParseAttributes(const KeyValue *attributesKey)
