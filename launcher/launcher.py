@@ -42,7 +42,7 @@ def load_config(path: str) -> dict:
         print(f"[launcher] config file not found: {path}")
         print("[launcher] copy launcher.example.cfg to launcher.cfg and edit it.")
         sys.exit(1)
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, "r", encoding="utf-8-sig") as fh:
         for line in fh:
             line = line.strip()
             if not line or line[0] in "#;" or "=" not in line:
