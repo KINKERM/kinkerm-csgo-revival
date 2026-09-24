@@ -1,14 +1,9 @@
 'use strict';
-
 var OperationUtil = ( function () {
-
 	var m_nSeasonAccess = -1;
 	var m_numTierUnlocked = 0;
 	var m_numMissionsCompleted = 0;
-
-	                         
 	var m_nRedeemableGoodsCount = 0;
-
 	var m_numMissionsRewardThresholds = MissionsAPI.GetSeasonalOperationXpRewardsThresholds( nSeasonAccess );
 	var m_bPremiumUser = false;
 	var m_nCoinRank = 0;
@@ -21,14 +16,11 @@ var OperationUtil = ( function () {
 	var m_aStarDefIndexes = [4763, 4764, 4765]
 	var m_passStoreId = 4758;
 	var m_nOperationSeason = 10; // Operation Riptide season_access (CommunitySeasonEleven2021 item defs)
-
 	var _ValidateOperationInfo = function( nSeasonAccess )
 	{
 		m_nSeasonAccess = nSeasonAccess;
-
 		if ( nSeasonAccess < 0 || nSeasonAccess === null || nSeasonAccess === undefined )
 			return false;
-
 		// The owned Operation coin is the authoritative spendable-star wallet.
 		// Walk all four Riptide coin ranks because mission progression upgrades the
 		// coin definition while preserving the same wallet attribute.
@@ -41,7 +33,6 @@ var OperationUtil = ( function () {
 				InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aCoinDefIndexes[ c ], 0 ) );
 			if ( !defName )
 				continue;
-
 			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
 			var count = InventoryAPI.GetInventoryCount();
 			for ( var i = 0; i < count; i++ )
@@ -54,20 +45,17 @@ var OperationUtil = ( function () {
 					stars = s;
 			}
 		}
-
 		m_nCoinRank = coinRank;
 		m_numRedeemableBalance = stars;
 		m_nRedeemableGoodsCount = m_rewardSchema.length;
 		m_bPrime = true;
 		m_bPremiumUser = bOwnsCoin;
-
 		// The revival GC now publishes the real SeasonalOperations SO (type 41).
 		// Keep the coin scan as a fallback for old inventories, but use the SO for
 		// non-spendable mission progress and active-card state.
 		m_numTierUnlocked = 0;
 		m_numMissionsCompleted = 0;
 		m_nActiveCardIndex = -1;
-
 		var idxOperation = InventoryAPI.GetCacheTypeElementIndexByKey( 'SeasonalOperations', nSeasonAccess );
 		if ( idxOperation !== undefined && idxOperation !== null &&
 			InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_value' ) == nSeasonAccess )
@@ -77,39 +65,32 @@ var OperationUtil = ( function () {
 			var redeemableBalance = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'redeemable_balance' );
 			var seasonPassTime = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'season_pass_time' );
 			var premiumTiers = InventoryAPI.GetCacheTypeElementFieldByIndex( 'SeasonalOperations', idxOperation, 'premium_tiers' );
-
 			m_numTierUnlocked = tierUnlocked === null || tierUnlocked === undefined ? 0 : Number( tierUnlocked );
 			m_numMissionsCompleted = missionsCompleted === null || missionsCompleted === undefined ? 0 : Number( missionsCompleted );
 			if ( redeemableBalance !== null && redeemableBalance !== undefined )
 				m_numRedeemableBalance = Number( redeemableBalance );
 			m_bPremiumUser = m_bPremiumUser || Number( seasonPassTime ) > 0 || Number( premiumTiers ) > 0;
 		}
-
 		// Mission definitions/reward schemas are already bundled in items_game.txt.
 		// These APIs now become useful again because the matching SO exists.
 		m_nRewardsCount = MissionsAPI.GetSeasonalOperationTrackRewardsCount( nSeasonAccess );
 		m_nLoopingRewardsCount = MissionsAPI.GetSeasonalOperationLoopingRewardsCount( nSeasonAccess );
 		m_numMissionsRewardThresholds = 0;
 		m_nActiveCardIndex = MissionsAPI.GetSeasonalOperationMissionCardActiveIdx( nSeasonAccess );
-
 		_AddLoopingRewardsToDisplay();
 		return true;
 	};
-
 	var _AddLoopingRewardsToDisplay = function()
 	{
-		                                    
 		if ( m_nLoopingRewardsCount > 0 )
-		{	                                                
+		{
 			m_nRewardsCount += m_nLoopingRewardsCount;
-			                                                                        
 			while ( m_numTierUnlocked > m_nRewardsCount - m_nLoopingRewardsCount )
 			{
 				m_nRewardsCount += m_nLoopingRewardsCount;
 			}
 		}
 	};
-
 	// revival addition: our own reward schema (mirrors config.txt's
 	// redeemable_for_stars / direct_purchase_for_stars) instead of
 	// MissionsAPI.GetSeasonalOperation*Schema, which this server doesn't
@@ -122,23 +103,19 @@ var OperationUtil = ( function () {
 	var m_rewardSchema = [
 		// Operation Riptide case
 		{ item_name: "crate_community_29", ui_order: 2, points: 2 },
-
 		// 2021 map collections
 		{ item_name: "selfopeningitem_set_mirage_2021", ui_order: 2, points: 4 },
 		{ item_name: "selfopeningitem_set_dust_2_2021", ui_order: 2, points: 4 },
 		{ item_name: "selfopeningitem_set_vertigo_2021", ui_order: 2, points: 4 },
-
 		// 2021 Train fixed-rarity rewards
 		{ item_name: "selfopeningitem_set_train_2021_rare_standalone", ui_order: 2, points: 1 },
 		{ item_name: "selfopeningitem_set_train_2021_mythical_standalone", ui_order: 2, points: 4 },
 		{ item_name: "selfopeningitem_set_train_2021_legendary_standalone", ui_order: 2, points: 20 },
 		{ item_name: "selfopeningitem_set_train_2021_ancient_standalone", ui_order: 2, points: 100 },
-
 		// Stickers / patches
 		{ item_name: "crate_patch_pack03", ui_order: 3, points: 2 },
 		{ item_name: "crate_sticker_pack_op_riptide_capsule", ui_order: 3, points: 1 },
 		{ item_name: "crate_sticker_pack_riptide_surfshop", ui_order: 3, points: 1 },
-
 		// Operation Riptide agent dossiers
 		{ item_name: "character_operator_dossier_op11_ancient1", ui_order: 1, points: 25 },
 		{ item_name: "character_operator_dossier_op11_ancient2", ui_order: 1, points: 25 },
@@ -146,12 +123,10 @@ var OperationUtil = ( function () {
 		{ item_name: "character_operator_dossier_op11_mythical", ui_order: 1, points: 7 },
 		{ item_name: "character_operator_dossier_op11_rare", ui_order: 1, points: 5 },
 	];
-
 	var _GetObjValue= function( bHasStoreItems, rewardIndex, item )
 	{
 		var row = m_rewardSchema[ rewardIndex ];
 		var data = row ? row[ item.value ] : undefined;
-
 		if( item.value === 'ui_order')
 		{
 			return data ? data : '';
@@ -160,15 +135,10 @@ var OperationUtil = ( function () {
 			return data;
 		}
 	};
-
 	var _GetContainerTypeForReward = function( oRewardData )
 	{
 		var rewardId = oRewardData.itempremium.ids[ 0 ];
-		
-		var toolsKey = InventoryAPI.GetRawDefinitionKey( rewardId, "inv_container_and_tools" ); 
-
-		                                  
-
+		var toolsKey = InventoryAPI.GetRawDefinitionKey( rewardId, "inv_container_and_tools" );
 		if( ( toolsKey === "weapon_case" ) )
 		{
 			return 'isWeaponsCase';
@@ -188,21 +158,16 @@ var OperationUtil = ( function () {
 		{
 			return 'isWeaponLootlist';
 		}
-
 		return 'isStickerLootlist';
 	};
-
 	var _GetRewardsData = function()
 	{
-		                                    
 		if ( !m_nSeasonAccess || m_nSeasonAccess === -1 )
 		{
 			return;
 		}
 		var bHasStoreItems = _HasStoreItems();
 		var nRewardsCount  = bHasStoreItems ? m_nRedeemableGoodsCount : m_nRewardsCount;
-		                                                              
-
 		var aRewardDataFields = [
 			{ objHandle:'points', value: 'points'},
 			{ objHandle:'flags', value: 'flags'},
@@ -218,36 +183,25 @@ var OperationUtil = ( function () {
 			{ objHandle:'lootlist', value: []},
 			{ containerType:'' }
 		];
-
 		var _allRewardsData = [];
-
 		for ( var i = 0; i < nRewardsCount; i++ )
 		{
 			var _rewardData = {};
 			_rewardData.idx = i;
-			aRewardDataFields.forEach(function( item, index ) 
+			aRewardDataFields.forEach(function( item, index )
 			{
-				                                              
 				_rewardData[item.objHandle] = _GetObjValue( bHasStoreItems, i, item );
 			});
-
-			                                                                                                                                  
-			                                                                                                                 
-			                                                                             
-			                                                                                                           
-			                                              
 			var rewardTypes = [
 				{ type: 'premium', names: _rewardData.RewardItemsNames },
 				{ type: 'free', names: _rewardData.FreeRewardItemsNames }
 			];
-
 			rewardTypes.forEach( rType =>
 			{
 				if( !rType.names )
 				{
 					rType.names = '';
 				}
-				
 				var items = { type: rType.type, ids: [] };
 				var nameList = rType.names.split( ',' );
 				nameList.forEach( reward =>
@@ -257,7 +211,7 @@ var OperationUtil = ( function () {
 					{
 						var itemidForReward;
 						if ( reward.startsWith( 'lootlist:' ) )
-						{                                               
+						{
 							itemidForReward = InventoryAPI.GetLootListItemIdByIndex( reward, 0 );
 						}
 						else if ( reward.charAt( 0 ) === '[' )
@@ -275,17 +229,15 @@ var OperationUtil = ( function () {
 							itemidForReward = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( weaponDef, paintIndex );
 						}
 						else
-						{	                                                  
+						{
 							var nDefinitionIndex = InventoryAPI.GetItemDefinitionIndexFromDefinitionName( reward );
 							itemidForReward = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( nDefinitionIndex, 0 );
 						}
 						items.ids.push( itemidForReward );
 					}
 				} );
-
 				_rewardData[ 'item' + rType.type ] = items;
 			} );
-			
 			if ( _rewardData.RewardItemGroups )
 			{
 				var posUnderscore = _rewardData.RewardItemGroups.lastIndexOf('_');
@@ -298,7 +250,6 @@ var OperationUtil = ( function () {
 					var idxFistGroupElement = _rewardData.lootlist.length;
 					var strListName = 'lootlist:'+strBaseLootlistName+k;
 					var moreItems = _GetLootListForReward( strListName );
-					                                                                                                     
 					if ( moreItems.length > 0 )
 					{
 						for ( var mm = 0; mm < moreItems.length; ++ mm )
@@ -323,13 +274,10 @@ var OperationUtil = ( function () {
 				}
 			}
 			_rewardData.containerType = _GetContainerTypeForReward( _rewardData );
-
 			_allRewardsData.push( _rewardData );
 		}
-
 		return _allRewardsData;
 	};
-
 	var _GetLootListForReward = function( rewardId )
 	{
 		var count = ItemInfo.GetLootListCount( rewardId );
@@ -342,11 +290,6 @@ var OperationUtil = ( function () {
 		{
 			for ( var i = 0; i < count; i++ )
 			{
-				  
-				                                                                
-				                                                              
-				                            
-				  
 				var itemId = ItemInfo.GetLootListItemByIndex( rewardId, i );
 				if ( InventoryAPI.DoesItemMatchDefinitionByName( itemId, 'spraypaint' ) || InventoryAPI.DoesItemMatchDefinitionByName( itemId, 'spray' ) )
 				{
@@ -355,10 +298,8 @@ var OperationUtil = ( function () {
 				itemsList.push( itemId );
 			}
 		}
-
 		return itemsList;
 	};
-
 	var _GettotalPointsFromAvailableFromMissions = function()
 	{
 		// Operation Riptide awarded 100 mission-earned stars across its 16 weeks.
@@ -366,35 +307,20 @@ var OperationUtil = ( function () {
 		// shop progress bar, so keep this static and deterministic.
 		return 100;
 	};
-
 	var _GetMissionDetails = function( missionId )
 	{
 		var oMissionDetails = _UpdateMissionDetailsObject (Number( missionId ) );
-
-		               
-		                                                                                    
-		                                                                                     
-		                                      
 		oMissionDetails.aSegmentsData = _UpdateSegmentData( oMissionDetails );
-
-		                      
-		                                                                       
-		                                         
 		var numGraphCount = MissionsAPI.GetQuestGraphCount( Number( missionId ));
 		if ( numGraphCount > 0 )
 		{
 			oMissionDetails.aSubQuests = _UpdateSubQuestData( Number( missionId ), numGraphCount, oMissionDetails.missonType === 'checklist' );
 		}
-
-		                                                
 		return oMissionDetails;
 	}
-
 	var _UpdateMissionDetailsObject = function( missionId )
 	{
 		var MissionItemID = InventoryAPI.GetQuestItemIDFromQuestID( missionId);
-
-		                                         
 		var gameMode = InventoryAPI.GetQuestGameMode( MissionItemID );
 		var mapGroup = InventoryAPI.GetQuestMapGroup( MissionItemID );
 		if ( !mapGroup )
@@ -405,11 +331,8 @@ var OperationUtil = ( function () {
 		{
 			gameMode = 'competitive_teams';
 		}
-
 		var numQuestGraphType = MissionsAPI.GetQuestGraphType( missionId );
 		var missionGoal = MissionsAPI.GetQuestPoints( missionId, "goal" );
-
-		                                                                                                           
 		return {
 			missionId: missionId,
 			missionItemId: InventoryAPI.GetQuestItemIDFromQuestID( missionId ),
@@ -431,13 +354,11 @@ var OperationUtil = ( function () {
 							''
 		}
 	};
-
 	var _SetLocalizationStringAndVarsForMission = function( elMissionPanel, nQuestID, strSchemaField )
 	{
 		MissionsAPI.ApplyQuestDialogVarsToPanelJS( nQuestID, elMissionPanel );
 		elMissionPanel.SetLocalizationString( MissionsAPI.GetQuestDefinitionField( nQuestID, strSchemaField ) );
 	};
-
 	var _UpdateSegmentData = function( oMissionDetails )
 	{
 		var aSegmentsData = [];
@@ -453,35 +374,27 @@ var OperationUtil = ( function () {
 			{
 				nSegmentEarned = 0;
 			}
-
-			if ( nSegmentEarned > nSegmentIncrementalGoalDelta ) 
+			if ( nSegmentEarned > nSegmentIncrementalGoalDelta )
 			{
 				nSegmentEarned = nSegmentIncrementalGoalDelta;
 			}
-
 			nGoalsAlreadyDisplayed = nGoal;
-			                                     
 			var progressPercent = ( nSegmentEarned / nSegmentIncrementalGoalDelta ) * 100;
 			var oSegmentData = {};
-
 			oSegmentData.nGoal = nGoal;
 			oSegmentData.nEarned = nEarned;
 			oSegmentData.nPercentComplete = progressPercent;
-			                                                          
 			oSegmentData.isComplete = oMissionDetails.nMissionPointsRemaining === 0 ?
 				true :
 				( nSegmentEarned === nSegmentIncrementalGoalDelta );
 			oSegmentData.nSegmentEarned = nSegmentEarned;
 			oSegmentData.nSegmentIncrementalGoalDelta = nSegmentIncrementalGoalDelta;
 			oSegmentData.nPreviousGoal = nPreviousGoal;
-
 			aSegmentsData.push( oSegmentData );
 			nPreviousGoal = nGoal;
 		}
-
 		return aSegmentsData;
 	};
-
 	var _UpdateSubQuestData = function( missionId, numGraphCount, isChecklist )
 	{
 		var aSubQuests = [];
@@ -505,23 +418,18 @@ var OperationUtil = ( function () {
 			}
 			aSubQuests.push( oData );
 		}
-
 		if( isChecklist )
 		{
-			                                                   
 			return aSubQuests.sort((a, b) => {
 				return ( b.nPercentComplete - a.nPercentComplete ) || ( b.nPercentCompleteUncommitted - a.nPercentCompleteUncommitted ) ;
 			});
 		}
-
 		return aSubQuests;
 	};
-
 	var _GetMissionCardEarnedPoints = function( oCardDetails )
 	{
 		var totalCardPoints = 0;
 		var totalPossilbePoints = 0;
-
 		for ( var iMission = 0; iMission< oCardDetails.quests.length; iMission++ )
 		{
 			var missionID = oCardDetails.quests[ iMission];
@@ -542,22 +450,16 @@ var OperationUtil = ( function () {
 			totalCardPoints += parseInt( MissionsAPI.GetQuestDefinitionField( missionID, 'operational_points' ) ) * numThresholds;
 			totalPossilbePoints += MissionsAPI.GetQuestDefinitionField( missionID, 'operational_points' ) * MissionsAPI.GetQuestPoints( missionID, 'count' );
 		}
-
 		var oPoints = {
 			totalCardPoints: totalCardPoints,
 			totalCardPointsDisplay : totalCardPoints > oCardDetails.operational_points ? oCardDetails.operational_points : totalCardPoints,
 			totalPossilbePoints: totalPossilbePoints
 		};
-
 		return oPoints;
-
-		                                                                                                               
 	}
-
 	function _IfOperationEndedGetExtendedSeasonWithRedeemableBalance( bAlwaysShowOperationEndedMessageBox )
 	{
-		var nActiveSeason = m_nOperationSeason;                                                                                                                   
-		
+		var nActiveSeason = m_nOperationSeason;
 		if ( bAlwaysShowOperationEndedMessageBox )
 		{
 			nActiveSeason = -1;
@@ -568,54 +470,43 @@ var OperationUtil = ( function () {
 			if ( m_numRedeemableBalance <= 0 )
 				nActiveSeason = -1;
 		}
-			
 		if ( nActiveSeason < 0 )
 			UiToolkitAPI.ShowGenericPopup( '#op_stars_shop_title', '#op_stars_shop_operation_over', "" );
-			
 		return nActiveSeason;
 	}
-
 	function _OpenPopupCustomLayoutOperationHub ( rewardIdxToSetWhenOpen )
 	{
 		var nActiveSeason = m_nOperationSeason;
 		if ( nActiveSeason < 0 )
 			return;
-
 		var elPanel = UiToolkitAPI.ShowCustomLayoutPopupParameters(
 			'',
 			'file://{resources}/layout/operation/operation_main.xml',
 			'none'
 		);
 		$.DispatchEvent( 'PlaySoundEffect', 'tab_mainmenu_inventory', 'MOUSE' );
-
 		elPanel.SetAttributeInt( "season_access", nActiveSeason );
 		if ( rewardIdxToSetWhenOpen > -1 )
 		{
 			elPanel.SetAttributeInt( "start_reward", rewardIdxToSetWhenOpen );
 		}
 	}
-
 	function _OpenPopupCustomLayoutOperationStore()
 	{
 		$.DispatchEvent( 'ContextMenuEvent', '' );
-
 		var nActiveSeason = m_nOperationSeason;
 		if ( nActiveSeason < 0 )
 			nActiveSeason = _IfOperationEndedGetExtendedSeasonWithRedeemableBalance();
-
 		if ( nActiveSeason < 0 )
 			return;
-
 		var elPanel = UiToolkitAPI.ShowCustomLayoutPopupParameters(
 			'',
 			'file://{resources}/layout/operation/operation_store.xml',
 			'none'
 		);
-
 		elPanel.SetAttributeInt( "season_access", nActiveSeason );
 		$.DispatchEvent( 'PlaySoundEffect', 'tab_mainmenu_inventory', 'MOUSE' );
 	}
-
 	function _OpenUpSell( starsNeeded = 0, bForceOpenStarsPurchase = false )
 	{
 		function _OpenStarStore()
@@ -626,19 +517,14 @@ var OperationUtil = ( function () {
 				'bluroperationpanel=true',
 				'none'
 			);
-
 			elPopup.SetAttributeInt( "starsneeded", starsNeeded );
-			                                                              
-			
 			var oOldStarsActivate = _UpdateOldStars();
-			                                                                                                                                                            
 			if ( oOldStarsActivate.ids.length > 0 )
 			{
 				elPopup.SetAttributeString( "oldstarstoactivate", oOldStarsActivate.ids.join( ',' ) );
 				elPopup.SetAttributeInt( "oldstarstoactivatevalue", oOldStarsActivate.value );
 			}
 		}
-
 		function _OpenStoreForPass( passId )
 		{
 			if( passId )
@@ -647,13 +533,12 @@ var OperationUtil = ( function () {
 					'',
 					'file://{resources}/layout/popups/popup_inventory_inspect.xml',
 					'itemid=' + passId +
-					'&' + 'asyncworktype=useitem' + 
+					'&' + 'asyncworktype=useitem' +
 					'&' + 'seasonpass=true' +
 					'&' + 'bluroperationpanel=true'
 				);
 				return;
 			}
-			
 			var passDefIndex = _GetPassFauxId();
 			UiToolkitAPI.ShowCustomLayoutPopupParameters(
 				'',
@@ -666,34 +551,26 @@ var OperationUtil = ( function () {
 				'&' + 'overridepurchasemultiple=0',
 				'none'
 			);
-
-			                                                               
-			                                                    
 			var nSourceLayoutId = 0;
 			var strSourceLayoutFile = $.GetContextPanel().layoutfile;
 			if ( strSourceLayoutFile.endsWith( "operation_mainmenu.xml" ) )
 			{
-				nSourceLayoutId = 1; 
+				nSourceLayoutId = 1;
 			}
 			else if ( strSourceLayoutFile.endsWith( "operation_main.xml" ) )
 			{
-				nSourceLayoutId = 2; 
+				nSourceLayoutId = 2;
 			}
 			StoreAPI.RecordUIEvent( "OperationJournal_Purchase", nSourceLayoutId );
 		}
-
 		$.DispatchEvent( 'PlaySoundEffect', 'tab_mainmenu_inventory', 'MOUSE' );
-
-		                                                
 		var nActiveSeason = m_nOperationSeason;
 		if ( nActiveSeason < 0 )
 		{
 			_IfOperationEndedGetExtendedSeasonWithRedeemableBalance( true );
 			return;
 		}
-
 		var passId = _GetOwnedPassItemId();
-
 		if ( m_bPremiumUser || bForceOpenStarsPurchase )
 		{
 			_OpenStarStore();
@@ -703,12 +580,10 @@ var OperationUtil = ( function () {
 			_OpenStoreForPass( passId );
 		}
 	}
-
 	var _GetPassFauxId = function()
 	{
 		return InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_passStoreId, 0 );
 	};
-
 	var _GetOwnedPassItemId = function()
 	{
 		// Do not use GetActiveSeasonPassItemId(): Valve no longer reports Riptide
@@ -717,29 +592,24 @@ var OperationUtil = ( function () {
 		var defName = InventoryAPI.GetItemDefinitionName( passFauxId );
 		if ( !defName )
 			return '';
-
 		InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
 		var count = InventoryAPI.GetInventoryCount();
 		return count > 0 ? InventoryAPI.GetInventoryItemIDByIndex( 0 ) : '';
 	};
-
 	var _GetCoinDefIdxArray = function()
 	{
 		return m_aCoinDefIndexes;
 	}
-
 	var _GetOperationStarDefIdxArray = function()
 	{
 		return m_aStarDefIndexes;
 	}
-
 	var _UpdateOldStars = function()
 	{
 		var oDefNames = [ {},{},{} ];
 		oDefNames[0] = {def:InventoryAPI.GetItemDefinitionName(InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aStarDefIndexes[0], 0 )),value:1};
 		oDefNames[1] = {def:InventoryAPI.GetItemDefinitionName(InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aStarDefIndexes[1], 0 )),value:10};
 		oDefNames[2] = {def:InventoryAPI.GetItemDefinitionName(InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( m_aStarDefIndexes[2], 0 )),value:100};
-
 		var oTotalStars = { ids: [], value: 0 };
 		oDefNames.forEach( element =>
 		{
@@ -751,10 +621,8 @@ var OperationUtil = ( function () {
 				oTotalStars.value += element.value;
 			}
 		} );
-
 		return oTotalStars;
 	};
-	
 	var gameElementDetails = {
 		exojump: {
 			icon: "file://{images}/icons/ui/exojump_hud.svg",
@@ -777,11 +645,8 @@ var OperationUtil = ( function () {
 			tooltip: ""
 		},
 	};
-
 	var _MissionsThatMatchYourMatchMakingSettings = function( SessionGameMode, sessionMaps, nSeasonAccess )
 	{
-		                                                                                              
-
 		var numMissionCards = MissionsAPI.GetSeasonalOperationMissionCardsCount( nSeasonAccess );
 		for ( var i = 0; i < numMissionCards; ++ i )
 		{
@@ -789,7 +654,6 @@ var OperationUtil = ( function () {
 			_GetMatchingMission( i, jsoCardDetails, SessionGameMode, sessionMaps );
 		}
 	};
-
 	var _GetMatchingMission = function( idx, jsoCardDetails, SessionGameMode, sessionMaps )
 	{
 		var oMatchingMissions = {};
@@ -798,12 +662,10 @@ var OperationUtil = ( function () {
 			var MissionItemID = InventoryAPI.GetQuestItemIDFromQuestID( Number( jsoCardDetails.quests[ iMission ] ) );
 			var gameMode = InventoryAPI.GetQuestGameMode( MissionItemID );
 			var mapGroup = InventoryAPI.GetQuestMapGroup( MissionItemID );
-
 			if ( !mapGroup )
-			{	                                                                               
+			{
 				mapGroup = 'mg_' + InventoryAPI.GetQuestMap( MissionItemID );
 			}
-
 			if ( SessionGameMode === gameMode &&
 				_HasMatchtingMapGroup( sessionMaps, mapGroup ) &&
 				jsoCardDetails.isunlocked &&
@@ -814,24 +676,17 @@ var OperationUtil = ( function () {
 					oMatchingMissions[ 'card' + idx ] = idx;
 					oMatchingMissions.missions = [];
 				}
-				
 				oMatchingMissions.missions.push( MissionItemID );
 			}
 		}
-
 		return oMatchingMissions;
 	};
-
 	var _IsMissionLockedBehindPremiumOperationPass = function( missionCardId, MissionItemID, nSeasonAccess )
 	{
-		                                     
 		return false;
-
-		                                                                                          
 		var gameMode = InventoryAPI.GetQuestGameMode( MissionItemID );
 		if ( gameMode !== 'competitive' )
 			return false;
-
 		var mapGroup = InventoryAPI.GetQuestMapGroup( MissionItemID );
 		if ( !mapGroup )
 		{
@@ -839,40 +694,30 @@ var OperationUtil = ( function () {
 		}
 		if ( mapGroup !== 'mg_lobby_mapveto' )
 			return false;
-
-		                                                    
 		if ( _ValidateOperationInfo( nSeasonAccess ) && m_bPremiumUser )
 			return false;
-		
 		return true;
 	}
-
 	var _HasMatchtingMapGroup = function( sessionMaps, mapGroup )
 	{
 		return sessionMaps.filter( element => mapGroup.includes( element ) ).length > 0 ? true : false;
 	};
-
-	                                                                                           
 	var _GetQuestGameElements = function( questID )
 	{
 		return MissionsAPI.GetQuestGameElements( questID ).map( elem => gameElementDetails[ elem ] );
 	};
-
 	var _HasStoreItems = function ( )
 	{
 		return m_nRedeemableGoodsCount > 0 && m_nRedeemableGoodsCount !== null && m_nRedeemableGoodsCount != undefined ? true : false;
 	};
-
 	var _UnblurMenu = function( elPanel )
 	{
 		elPanel.SetHasClass( 'blur', false );
 	};
-
 	var _BlurMenu = function( elPanel)
 	{
 		elPanel.SetHasClass( 'blur', true );
 	};
-
 	var _ValidateCoinAndSeasonIndex = function( nSeasonAccess, nCoinRank )
 	{
 		if ( nSeasonAccess === -1 ||
@@ -883,11 +728,8 @@ var OperationUtil = ( function () {
 		{
 			return false;
 		}
-
 		return true;
 	};
-
-
 	var _GetOperationInfo = function()
 	{
 		return {
@@ -905,7 +747,6 @@ var OperationUtil = ( function () {
 			bPrime: m_bPrime
 		};
 	};
-
 	return {
 		ValidateOperationInfo: _ValidateOperationInfo,
 		ValidateCoinAndSeasonIndex: _ValidateCoinAndSeasonIndex,
@@ -930,5 +771,4 @@ var OperationUtil = ( function () {
 		GetMissionDetails: _GetMissionDetails,
 		GetMissionCardEarnedPoints: _GetMissionCardEarnedPoints,
 	};
-
 })();
