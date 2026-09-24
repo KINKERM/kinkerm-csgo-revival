@@ -512,6 +512,12 @@ def main() -> None:
                 assignment = reply.get("assignment")
                 if isinstance(assignment, dict):
                     slot.start(assignment)
+                elif slot.alive() and not slot.started:
+                    # The coordinator can withdraw an allocation if native 9106
+                    # never arrives. Do not leave a dead warmup server consuming
+                    # RAM/CPU on the 4 GB laptop.
+                    print("[agent] coordinator withdrew unstarted allocation; stopping srcds")
+                    slot.stop()
                 slot.check_accept_timeout()
             except (urllib.error.URLError, ValueError, OSError) as exc:
                 print(f"[agent] heartbeat failed: {exc}")
