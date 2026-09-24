@@ -108,15 +108,7 @@ var OperationUtil = ( function () {
 			}
 		}
 	};
-	// revival addition: our own reward schema (mirrors config.txt's
-	// redeemable_for_stars / direct_purchase_for_stars) instead of
-	// MissionsAPI.GetSeasonalOperation*Schema, which this server doesn't
-	// implement. Add a row here whenever you add a def to either table.
-	// IMPORTANT: item_name here is the item DEFINITION name (the "name" field in
-	// items_game.txt), NOT the display name. The store resolves it via
-	// InventoryAPI.GetItemDefinitionIndexFromDefinitionName(), so it must match a
-	// real def name or the tile falls back to the "Item Name" placeholder.
-	// points = star cost. Add a row for every def you want to sell.
+	var m_nativeRewardIndex = [3,8,9,10,7,6,5,4,0,1,2,11,12,13,14,15];
 	var m_rewardSchema = [
 		// Operation Riptide case
 		{ item_name: "crate_community_29", ui_order: 2, points: 2 },
@@ -204,7 +196,7 @@ var OperationUtil = ( function () {
 		for ( var i = 0; i < nRewardsCount; i++ )
 		{
 			var _rewardData = {};
-			_rewardData.idx = i;
+			_rewardData.idx = m_nativeRewardIndex[i];
 			aRewardDataFields.forEach(function( item, index )
 			{
 				_rewardData[item.objHandle] = _GetObjValue( bHasStoreItems, i, item );
