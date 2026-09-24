@@ -505,6 +505,30 @@ void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
 }
 
 
+static ShopReward RiptideNativeReward(uint32_t redeemId)
+{
+    switch (redeemId)
+    {
+    case 3161140792u: return { 4795, 2 };   // crate_patch_pack03
+    case 486239559u:  return { 4783, 1 };   // crate_sticker_pack_op_riptide_capsule
+    case 3394577585u: return { 4779, 1 };   // crate_sticker_pack_riptide_surfshop
+    case 766835476u:  return { 4790, 2 };   // crate_community_29
+    case 4262277037u: return { 4788, 100 }; // Train Covert
+    case 2179775250u: return { 4787, 20 };  // Train Classified
+    case 1690286011u: return { 4786, 4 };   // Train Restricted
+    case 3750698461u: return { 4785, 1 };   // Train Mil-Spec
+    case 3820610303u: return { 4794, 4 };   // Mirage 2021
+    case 205604202u:  return { 4793, 4 };   // Dust II 2021
+    case 1519885759u: return { 4792, 4 };   // Vertigo 2021
+    case 3278305639u: return { 4769, 25 };  // CT Master Agents
+    case 1517267165u: return { 4770, 25 };  // T Master Agents
+    case 3736209238u: return { 4768, 10 };  // Superior Agents
+    case 1969402445u: return { 4767, 7 };   // Exceptional Agents
+    case 2249793569u: return { 4766, 5 };   // Distinguished Agents
+    default:          return { 0, 0 };
+    }
+}
+
 void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
 {
     Platform::Print("operation shop: received native redeem request\n");
@@ -538,48 +562,49 @@ void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
         message.has_redeemable_balance() ? message.redeemable_balance() : 0,
         message.has_expected_cost() ? message.expected_cost() : 0);
 
-    const ShopReward *reward = GetConfig().OperationShopReward(message.redeem_id());
-    if (!reward)
+    const ShopReward reward = RiptideNativeReward(message.redeem_id());
+    if (!reward.defIndex || reward.cost <= 0)
     {
-        Platform::Print("operation shop: refused unknown redeem id %u\n", message.redeem_id());
+        Platform::Print("operation shop: refused unknown redeem id %u [native-map-v3]\n",
+            message.redeem_id());
         return;
     }
 
-    Platform::Print("operation shop: resolved native redeem id %u -> def %u cost %d\n",
-        message.redeem_id(), reward->defIndex, reward->cost);
+    Platform::Print("operation shop: native-map-v3 resolved %u -> def %u cost %d\n",
+        message.redeem_id(), reward.defIndex, reward.cost);
 
     // The Legacy client derives expected_cost from its bundled Operation schema.
     // The revival UI/shop table is server-owned, so never trust or require that
     // client hint to match. The configured reward cost below is authoritative.
     if (message.has_expected_cost()
-        && message.expected_cost() != static_cast<uint32_t>(reward->cost))
+        && message.expected_cost() != static_cast<uint32_t>(reward.cost))
     {
         Platform::Print("operation shop: client expected cost %u for redeem id %u; using server cost %d\n",
-            message.expected_cost(), message.redeem_id(), reward->cost);
+            message.expected_cost(), message.redeem_id(), reward.cost);
     }
 
-    if (!m_inventory.CanSpendStars(reward->cost))
+    if (!m_inventory.CanSpendStars(reward.cost))
     {
         Platform::Print("operation shop: refused redeem id %u - not enough stars (need %d)\n",
-            message.redeem_id(), reward->cost);
+            message.redeem_id(), reward.cost);
         return;
     }
 
     std::vector<CMsgSOSingleObject> created;
-    const uint64_t itemId = m_inventory.PurchaseOperationReward(reward->defIndex, created);
+    const uint64_t itemId = m_inventory.PurchaseOperationReward(reward.defIndex, created);
     if (!itemId || created.empty())
     {
-        Platform::Print("operation shop: native redeem failed for def %u\n", reward->defIndex);
+        Platform::Print("operation shop: native redeem failed for def %u\n", reward.defIndex);
         return;
     }
 
     CMsgSOMultipleObjects coinUpdate;
-    if (!m_inventory.SpendStars(reward->cost, coinUpdate))
+    if (!m_inventory.SpendStars(reward.cost, coinUpdate))
     {
         CMsgSOSingleObject rollback;
         m_inventory.RemoveItem(itemId, rollback);
         Platform::Print("operation shop: native redeem rolled back def %u - wallet changed\n",
-            reward->defIndex);
+            reward.defIndex);
         return;
     }
 
@@ -595,7 +620,7 @@ void ClientGC::ClientRedeemMissionReward(GCMessageRead &messageRead)
     SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
 
     Platform::Print("operation shop: redeemed id %u -> def %u item %llu for %d stars\n",
-        message.redeem_id(), reward->defIndex, itemId, reward->cost);
+        message.redeem_id(), reward.defIndex, itemId, reward.cost);
 }
 
 
