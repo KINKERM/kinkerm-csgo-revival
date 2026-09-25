@@ -102,32 +102,25 @@ Write-Host "    HEAD = $head"
 Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 
 # Keep steam_hook.cpp from the exact csgo_gc revision this revival targets.
-# Do NOT probe the local object database first: Windows PowerShell can promote
-# git's stderr from a missing-object probe to a terminating NativeCommandError
-# before our fallback logic runs. Fetch canonical master first so the pinned
-# commit is guaranteed to be present, then restore the one compatible file.
-Write-Host "    Syncing canonical pinned csgo_gc history..." -ForegroundColor DarkGray
-$oldErrorPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& git -C $CsgoGcSource fetch --no-tags "https://github.com/mikkokko/csgo_gc.git" master
-$fetchExit = $LASTEXITCODE
-$ErrorActionPreference = $oldErrorPreference
-if ($fetchExit -ne 0) {
-    throw "Could not fetch canonical csgo_gc master history."
+# Download the exact raw file by commit SHA instead of depending on whatever
+# commits/branches happen to exist in the user's local csgo_gc_clean checkout.
+$steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
+$pinnedSteamHookUrl = "https://raw.githubusercontent.com/mikkokko/csgo_gc/$PinnedCsgoGcCommit/csgo_gc/steam_hook.cpp"
+$tempSteamHook = "$steamHook.revival-pinned.tmp"
+Write-Host "    Downloading pinned steam_hook.cpp from $PinnedCsgoGcCommit..." -ForegroundColor DarkGray
+Remove-Item $tempSteamHook -Force -ErrorAction SilentlyContinue
+Invoke-WebRequest -Uri $pinnedSteamHookUrl -OutFile $tempSteamHook -UseBasicParsing
+if (-not (Test-Path $tempSteamHook)) {
+    throw "Pinned steam_hook.cpp download did not create a file."
 }
-
-$oldErrorPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& git -C $CsgoGcSource checkout $PinnedCsgoGcCommit -- "csgo_gc/steam_hook.cpp"
-$checkoutExit = $LASTEXITCODE
-$ErrorActionPreference = $oldErrorPreference
-if ($checkoutExit -ne 0) {
-    throw "Could not restore steam_hook.cpp from pinned csgo_gc commit $PinnedCsgoGcCommit."
+if ((Get-Item $tempSteamHook).Length -lt 10000) {
+    Remove-Item $tempSteamHook -Force -ErrorAction SilentlyContinue
+    throw "Pinned steam_hook.cpp download is unexpectedly small/corrupt."
 }
+Move-Item $tempSteamHook $steamHook -Force
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
 
-$steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to patch the pinned steam_hook.cpp."
