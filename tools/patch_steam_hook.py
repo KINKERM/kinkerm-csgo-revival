@@ -261,6 +261,8 @@ void *FindModulePattern(const char *moduleName, const unsigned char *pattern, co
         bridge = r'''
 #ifdef _WIN32
 static bool RevivalInstallNativeDropRevealHooks();
+static bool RevivalRecordPlayerItemDrop(
+    const std::vector<uint8_t> &payload);
 
 static bool RevivalDispatchReserveServerForQueuedGame(
     uint64_t matchId, const std::vector<uint8_t> &payload)
