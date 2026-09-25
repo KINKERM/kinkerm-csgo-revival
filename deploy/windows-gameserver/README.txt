@@ -7,7 +7,10 @@ This folder turns one low-end Windows laptop into the single dedicated match
 server for the revival.
 
 Target:
-- one 5v5 ranked Competitive match at a time
+- one ranked Competitive server at a time
+- the FIRST queued human starts it immediately
+- bots fill empty slots up to 10 total players
+- later queued humans join that SAME live match and replace bots
 - one shared queue; the server chooses a map from the large installed map pool
 - 64 tick
 - no router port forwarding
@@ -180,10 +183,11 @@ At idle you should see:
 The agent DOES NOT keep srcds running while nobody has a match. That saves RAM
 and CPU.
 
-WHAT HAPPENS WHEN TEN PLAYERS QUEUE
------------------------------------
-1. All players press GO in the single Competitive queue.
-2. The central coordinator collects 10 accounts.
+WHAT HAPPENS WHEN PLAYERS QUEUE
+-------------------------------
+1. The first player presses GO in the single Competitive queue.
+2. The coordinator immediately allocates the laptop server; it does NOT wait
+   for ten humans.
 3. It chooses one map that is both:
        - in the revival's large map pool
        - physically installed on the laptop
@@ -197,20 +201,20 @@ WHAT HAPPENS WHEN TEN PLAYERS QUEUE
        <csgo_dir>\csgo_gc\server_reservation_response.txt
    containing the REAL reservation id generated/accepted by srcds.
 10. The laptop heartbeats that exact reservation id to the coordinator.
-11. Each client receives native 9107 with:
+11. The queued client receives native 9107 with:
        reservation id
        map
        playit hostname
        numeric UDP IP
        public UDP port
-       account list
+       current human account list
 12. The normal CS:GO MATCH FOUND / ACCEPT flow should appear.
-13. Accepted players enter the paused warmup.
-14. agent.py reads the Source log Steam IDs.
-15. When all 10 assigned accounts have entered:
-       mp_warmup_pausetimer 0
-       mp_warmup_end
-    and the Competitive match begins.
+13. The first accepted human enters the paused warmup.
+14. agent.py sees that human in the Source log and ends warmup immediately.
+15. Bots fill every remaining slot. When another human later presses GO, the
+    backend sends that SAME live server/reservation to them; CS:GO joins them
+    into the running match and a bot vacates the slot. This continues until
+    all 10 human slots are occupied.
 
 IMPORTANT CONSOLE LINES
 -----------------------
@@ -220,10 +224,9 @@ On the LAPTOP srcds console, a healthy reservation should include:
 
 In the LAPTOP agent console:
     [agent] native 9106 accepted match ... reservation=...
-    [agent] accepted player entered: ... (1/10)
-    ...
-    [agent] accepted player entered: ... (10/10)
-    [agent] all 10 players entered; match ... started
+    [agent] accepted player entered: ...
+    [agent] first human entered; bot-filled match ... started
+    [agent] drop-in player(s) added to live match ...
 
 On a PLAYER console:
     matchmaking: queued Competitive search through revival bridge ...
@@ -233,15 +236,18 @@ On a PLAYER console:
 The reservation number printed by the laptop 9106 line and the player MATCH
 FOUND line MUST be identical.
 
-FAILED ACCEPT
--------------
-The server waits in paused warmup. If the full ten do not enter before
-accept_timeout_seconds:
+FAILED FIRST JOIN
+-----------------
+The freshly-created server waits in paused warmup for its first human. If nobody
+enters before accept_timeout_seconds:
 - the reservation is cancelled,
 - srcds stops,
-- players who actually entered are put back into the queue,
-- missing players return to idle,
+- still-interested queued players are retried,
 - the laptop returns to its one free server slot.
+
+Once the first human has entered and the bot-filled match has started, there is
+no "wait for all 10" timeout. Later humans may drop in by queueing while the
+match is live.
 
 END OF MATCH / XP / RANKS / DROPS
 ---------------------------------
