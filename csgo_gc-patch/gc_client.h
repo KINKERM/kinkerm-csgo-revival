@@ -33,6 +33,7 @@ private:
     void MatchmakingPing(GCMessageRead &messageRead);
     void MatchmakingHello(GCMessageRead &messageRead);
     void PollMatchmakingBridge();
+    void PollRewardBridge();
     void ProcessBridgeMatchEnd(const std::unordered_map<std::string, std::string> &state);
     void SendMatchmakingConnectReserve();
     void ClientRequestNewMission(GCMessageRead &messageRead);
