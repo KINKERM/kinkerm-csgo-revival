@@ -131,9 +131,12 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     $gcDllBytes = [IO.File]::ReadAllBytes($gcDll)
     $gcDllText = [Text.Encoding]::ASCII.GetString($gcDllBytes)
     if (-not $gcDllText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
-        throw "Built csgo_gc.dll does not contain the current matchmaking source. Stale object files are still being used."
+        throw "Built csgo_gc.dll does not contain the current client matchmaking source. Stale object files are still being used."
     }
-    Write-Host "    Verified current matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V2")) {
+        throw "Built csgo_gc.dll does not contain the current server reservation handshake fix."
+    }
+    Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
         $buildStamp,
@@ -222,7 +225,10 @@ if (-not $SkipInstall) {
     $installedGcBytes = [IO.File]::ReadAllBytes($installedGc)
     $installedGcText = [Text.Encoding]::ASCII.GetString($installedGcBytes)
     if (-not $installedGcText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
-        throw "Installed csgo_gc.dll is missing the current matchmaking build marker."
+        throw "Installed csgo_gc.dll is missing the current client matchmaking build marker."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V2")) {
+        throw "Installed csgo_gc.dll is missing the current server reservation handshake fix."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
