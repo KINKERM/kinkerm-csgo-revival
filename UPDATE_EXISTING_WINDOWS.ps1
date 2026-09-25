@@ -190,6 +190,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1")) {
         throw "Built csgo_gc.dll does not contain local SOCache auth trigger."
     }
+    if (-not $gcDllText.Contains("REVIVAL_MATCH_END_BRIDGE_V1")) {
+        throw "Built csgo_gc.dll does not contain direct-UDP match-end rewards."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
@@ -316,6 +319,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1")) {
         throw "Installed csgo_gc.dll is missing local SOCache auth trigger."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_MATCH_END_BRIDGE_V1")) {
+        throw "Installed csgo_gc.dll is missing direct-UDP match-end rewards."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
