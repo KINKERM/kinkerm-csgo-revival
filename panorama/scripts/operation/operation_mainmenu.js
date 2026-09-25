@@ -225,7 +225,7 @@ var OperationMainMenu = ( function()
 		}
 		var numPreviousMissionsCompletedForReward = 0;
 		var numNextMissionsCompletedNeededForReward = null;
-		var allThresholds = oStatus.nMissionsRewardThresholds.split( ',' );
+		var allThresholds = String( oStatus.nMissionsRewardThresholds || '' ).split( ',' );
 		for ( var j = 0; j < allThresholds.length; ++j )
 		{
 			var numericThreshold = parseInt( allThresholds[ j ] );
