@@ -21,7 +21,7 @@ class DropInMatchmakingTests(unittest.TestCase):
     def test_first_human_starts_and_late_humans_join_same_match(self) -> None:
         first = steamid(1)
         first_state = self.mm.start(first)
-        self.assertEqual(first_state["state"], "allocating")
+        self.assertEqual(first_state["state"], "searching")
 
         snap = self.mm.snapshot()
         assignment = snap["assignment"]
@@ -69,7 +69,7 @@ class DropInMatchmakingTests(unittest.TestCase):
         # the next bot-filled match without waiting for nine more people.
         self.mm.server_match_ended(match_id, {"reason": "game_over"})
         next_state = self.mm.state(waiting)
-        self.assertEqual(next_state["state"], "allocating")
+        self.assertEqual(next_state["state"], "searching")
         self.assertNotEqual(next_state["match_id"], match_id)
 
 
