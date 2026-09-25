@@ -56,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           git clone https://github.com/mikkokko/csgo_gc.git upstream
-          git -C upstream checkout 8651467b6bcffaa6e90f56a4d9cce31708deb348
+          git -C upstream checkout 06301e7173329723a3506f8345fe23b147bc0881
       - name: Apply complete revival overlay
         shell: pwsh
         run: Copy-Item -Path 'csgo_gc-patch\*' -Destination 'upstream\csgo_gc\' -Force
