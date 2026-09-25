@@ -54,7 +54,7 @@ def main() -> int:
             f"{i}static bool s_revAllowOfflineGcPrinted = false;",
             f"{i}if (!s_revAllowOfflineGcPrinted)",
             i + "{",
-            i + f'    Platform::Print("{MARKER} active\\n");',
+            i + f'    Platform::Print("{MARKER} active\n");',
             i + "    s_revAllowOfflineGcPrinted = true;",
             i + "}",
         ])
@@ -98,7 +98,7 @@ uint64_t RevivalGameServerSteamId()
     static uint64_t s_lastPrinted = 0;
     if (value && value != s_lastPrinted)
     {
-        Platform::Print("REVIVAL_SERVER_ID_EXPORT_V1 serverid=%llu\\n", value);
+        Platform::Print("REVIVAL_SERVER_ID_EXPORT_V1 serverid=%llu\n", value);
         s_lastPrinted = value;
     }
     return value;
@@ -153,7 +153,7 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
 
     void *result = createInterface(version, nullptr);
     if (result)
-        Print("REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1 %s/%s\\n", moduleName, version);
+        Print("REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1 %s/%s\n", moduleName, version);
     return result;
 }
 
@@ -180,7 +180,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(const std::vector<uint8_t>
         s_engineServer = Platform::ResolveModuleInterface("engine.dll", "VEngineServer023");
         if (!s_engineServer)
         {
-            Platform::Print("REVIVAL_ENGINE_QUEUE_RESERVE_V1 VEngineServer023 not found\\n");
+            Platform::Print("REVIVAL_ENGINE_QUEUE_RESERVE_V1 VEngineServer023 not found\n");
             return false;
         }
     }
@@ -195,7 +195,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(const std::vector<uint8_t>
     auto reserve = reinterpret_cast<ReserveFn>(vtable[149]);
     const bool ok = reserve(s_engineServer, payloadString.c_str());
     Platform::Print(
-        "REVIVAL_ENGINE_QUEUE_RESERVE_V1 result=%d payload=%s\\n",
+        "REVIVAL_ENGINE_QUEUE_RESERVE_V1 result=%d payload=%s\n",
         ok ? 1 : 0, payloadString.c_str());
     return ok;
 }
