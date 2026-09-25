@@ -34,7 +34,6 @@ private:
     void MatchmakingHello(GCMessageRead &messageRead);
     void PollMatchmakingBridge();
     void PollRewardBridge();
-    void ProcessBridgeMatchEnd(const std::unordered_map<std::string, std::string> &state);
     void SendMatchmakingConnectReserve();
     void ClientRequestNewMission(GCMessageRead &messageRead);
     void ClientRedeemMissionReward(GCMessageRead &messageRead);
@@ -76,7 +75,7 @@ private:
     uint32_t m_matchmakingClientVersion{};
     uint64_t m_lastMatchmakingReservation{};
     uint64_t m_lastRewardedReservation{};
-    uint64_t m_lastBridgeRewardedMatch{};
+    uint64_t m_lastRewardedMatchId{};
     uint32_t m_matchmakingIdleTicks{};
     uint64_t m_matchmakingServerId{};
     uint32_t m_matchmakingDirectUdpIp{};
