@@ -37,8 +37,8 @@ Runs:
 - patched `srcds.exe`
 - patched server-side `csgo_gc.dll`
 
-The laptop can remain idle between matches. The agent starts srcds only when the
-coordinator allocates a full 10-player match.
+The laptop can remain idle between matches. The agent starts srcds as soon as
+the first human queues; bots fill the empty slots until more humans join.
 
 ## Existing installation: safe update
 
