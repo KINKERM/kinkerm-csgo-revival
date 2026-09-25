@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_ACCEPT_FLOW_V5"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_ACCEPT_FLOW_V6"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -84,7 +84,8 @@ def load_config() -> dict:
     cfg.setdefault("playit_exe", "")
     cfg.setdefault("steam_account_token", "")
     cfg.setdefault("extra_srcds_args", "")
-    cfg.setdefault("accept_timeout_seconds", 90)
+    cfg.setdefault("accept_timeout_seconds", 300)
+    cfg["accept_timeout_seconds"] = max(300.0, float(cfg.get("accept_timeout_seconds", 300)))
     cfg.setdefault("post_match_grace_seconds", 25)
     return cfg
 
