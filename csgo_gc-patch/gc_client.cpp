@@ -296,12 +296,9 @@ void ClientGC::HandleIdle()
         SendMatchmakingConnectReserve();
 #endif
 
-    if (!m_matchmakingActive)
-        return;
-
-    // SharedGC wakes every 250 ms. Poll twice per second while searching so
-    // launcher/backend state changes reach Panorama even if CS:GO sends no
-    // additional matchmaking request after 9101.
+    // SharedGC wakes every 250 ms. Keep polling the tiny local state file
+    // twice per second even after the stock client stops the SEARCH phase.
+    // MatchEnd results arrive after Accept, when m_matchmakingActive is false.
     if ((++m_matchmakingIdleTicks & 1u) == 0)
         PollMatchmakingBridge();
 }
@@ -1165,6 +1162,136 @@ void ClientGC::PollRewardBridge()
     HandleNetMessage(payload.data(), static_cast<uint32_t>(payload.size()));
 }
 
+void ClientGC::ProcessCompletedMatchBridge(
+    const std::unordered_map<std::string, std::string> &state)
+{
+    const uint64_t matchId = BridgeU64(state, "last_match_id", 0);
+    if (!matchId || matchId == m_lastRewardedMatchId)
+        return;
+
+    auto reasonIt = state.find("result_reason");
+    if (reasonIt == state.end() || reasonIt->second != "game_over")
+        return;
+
+    const uint32_t roundsWon = static_cast<uint32_t>(
+        std::min<uint64_t>(BridgeU64(state, "result_rounds_won", 0), 30));
+    const uint32_t timePlayed = static_cast<uint32_t>(
+        std::min<uint64_t>(BridgeU64(state, "result_time_played", 0), UINT32_MAX));
+    const bool won = BridgeU64(state, "result_won", 0) != 0;
+    const bool tied = BridgeU64(state, "result_tied", 0) != 0;
+
+    Platform::Print(
+        "REVIVAL_SYNTHETIC_MATCH_END_V1 match=%llu rounds=%u time=%u won=%u tied=%u\n",
+        matchId, roundsWon, timePlayed, won ? 1u : 0u, tied ? 1u : 0u);
+
+    // Legacy Competitive XP is driven primarily by rounds won. Use the same
+    // 30-XP-per-round base that the real 9136 handler derives.
+    const uint32_t baseXp = roundsWon * 30u;
+    uint32_t levelsGained = 0;
+    const uint32_t awardedXp =
+        m_inventory.ApplyWeeklyProfileXp(baseXp, &levelsGained);
+
+    if (awardedXp)
+    {
+        CMsgSOMultipleObjects profileUpdate;
+        m_inventory.BuildProfilePersonaUpdate(profileUpdate);
+        SendMessageToGame(false, k_ESOMsg_UpdateMultiple, profileUpdate);
+
+        CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
+        BuildMatchmakingHello(profileHello);
+        SendMessageToGame(false,
+            k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
+    }
+
+    auto sendDrop = [this](
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &drop)
+    {
+        // Local client delivery is sufficient at intermission. Sending these
+        // back to the direct-UDP game server would re-enter the broken P2P path.
+        SendMessageToGame(false, k_ESOMsg_Create, create);
+        SendMessageToGame(false,
+            k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+    };
+
+    if (levelsGained)
+    {
+        CMsgSOSingleObject create;
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+        if (m_inventory.CreateWeeklyLevelReward(create, drop))
+            sendDrop(create, drop);
+    }
+
+    // Revival policy: exactly two regular cases are attempted every completed
+    // Competitive match.
+    for (int i = 0; i < 2; ++i)
+    {
+        CMsgSOSingleObject create;
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+        if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
+            sendDrop(create, drop);
+    }
+
+    // Guaranteed Dust II 2021 and Cache collection rolls.
+    static const std::vector<std::string_view> Dust2021{ "set_dust_2_2021" };
+    static const std::vector<std::string_view> DustLegacy{ "set_dust_2" };
+    static const std::vector<std::string_view> Cache{ "set_cache" };
+
+    {
+        CMsgSOSingleObject create;
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+        if (m_inventory.CreateRandomCollectionMatchDrop(Dust2021, create, drop)
+            || m_inventory.CreateRandomCollectionMatchDrop(DustLegacy, create, drop))
+        {
+            sendDrop(create, drop);
+        }
+    }
+
+    {
+        CMsgSOSingleObject create;
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+        if (m_inventory.CreateRandomCollectionMatchDrop(Cache, create, drop))
+            sendDrop(create, drop);
+    }
+
+    // Dragon Lore is a Cobblestone item. Keep it as a rare extra collection
+    // roll rather than falsely treating it as Cache.
+    {
+        static const std::vector<std::string_view> Cobblestone{ "set_cobblestone" };
+        CMsgSOSingleObject create;
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+        if (m_inventory.CreateRareCollectionBonusMatchDrop(
+            Cobblestone, 20, create, drop))
+        {
+            sendDrop(create, drop);
+        }
+    }
+
+    // Preserve legacy timed-case accounting as an extra weekly bonus.
+    if (timePlayed)
+    {
+        CMsgSOSingleObject create;
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+        if (m_inventory.AddMatchPlaytimeAndCreateCaseDrop(
+            timePlayed, create, drop))
+        {
+            sendDrop(create, drop);
+        }
+    }
+
+    if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
+        SendRankUpdate();
+
+    // Mark the backend-completed match as consumed before the next 500 ms poll.
+    // A late genuine 9136 carrying the same match id will then be deduplicated.
+    m_lastRewardedMatchId = matchId;
+
+    Platform::Print(
+        "REVIVAL_SYNTHETIC_MATCH_END_V1 complete match=%llu xp=%u\n",
+        matchId, awardedXp);
+}
+
+
 void ClientGC::PollMatchmakingBridge()
 {
     const auto state = ReadMatchmakingBridgeFile(MatchmakingStatePath);
@@ -1280,6 +1407,7 @@ void ClientGC::PollMatchmakingBridge()
 
     if (phase == "idle")
     {
+        ProcessCompletedMatchBridge(state);
         if (m_matchmakingActive)
         {
             CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
