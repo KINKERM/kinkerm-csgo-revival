@@ -133,6 +133,12 @@ foreach ($marker in @(
 }
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
+$agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
+if (-not $agentText.Contains("REVIVAL_AGENT_ACCEPT_FLOW_V5")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_ACCEPT_FLOW_V5"
+}
+Write-Host "    Verified current Accept-flow laptop agent." -ForegroundColor Green
+
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
 Write-Host ""
