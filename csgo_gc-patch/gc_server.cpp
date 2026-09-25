@@ -4,6 +4,7 @@
 #include "gc_const.h"
 #include "gc_const_csgo.h"
 #include "graffiti.h"
+#include "inventory.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -23,7 +24,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -46,6 +47,10 @@ void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
 
     case GCEvent::ClientSOCacheUnsubscribe:
         HandleClientSOCacheUnsubscribe(id);
+        break;
+
+    case GCEvent::ClientLocalInventoryRequest:
+        HandleClientLocalInventoryRequest(id);
         break;
 
     default:
@@ -149,6 +154,33 @@ void ServerGC::HandleClientSOCacheUnsubscribe(uint64_t steamId)
 
     GCMessageWrite write{ k_ESOMsg_CacheUnsubscribed, message };
     PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
+}
+
+void ServerGC::HandleClientLocalInventoryRequest(uint64_t steamId)
+{
+    const std::string path =
+        "csgo_gc/server_players/" + std::to_string(steamId) + ".txt";
+
+    std::ifstream probe(path, std::ios::binary);
+    if (!probe.is_open())
+    {
+        Platform::Print(
+            "REVIVAL_SERVER_LOCAL_SOCACHE_V1 missing inventory for %llu at %s\n",
+            steamId, path.c_str());
+        return;
+    }
+    probe.close();
+
+    Inventory inventory{ steamId, path };
+    CMsgSOCacheSubscribed message;
+    inventory.BuildCacheSubscription(message, inventory.ProfileLevel(), true);
+
+    GCMessageWrite write{ k_ESOMsg_CacheSubscribed, message };
+    PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
+
+    Platform::Print(
+        "REVIVAL_SERVER_LOCAL_SOCACHE_V1 injected equipped SOCache for %llu from %s\n",
+        steamId, path.c_str());
 }
 
 template<typename T>
