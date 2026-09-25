@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V15"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V16"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -539,6 +539,7 @@ class ServerSlot:
         self.source_match_started_at = 0.0
         self.using_cookie_fallback = False
         self.started = False
+        self.runtime_applied = False
         self.human_presence_seen = False
         self._lock = threading.RLock()
         self._ended = False
@@ -661,6 +662,7 @@ class ServerSlot:
             self.source_match_started_at = 0.0
             self.using_cookie_fallback = False
             self.started = False
+            self.runtime_applied = False
             self.human_presence_seen = False
             self._ended = False
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
@@ -883,7 +885,7 @@ class ServerSlot:
 
     def _begin_match(self) -> None:
         with self._lock:
-            if self.started or self._ended or not self.match_id:
+            if self.runtime_applied or self._ended or not self.match_id:
                 return
             match_id = self.match_id
             proc = self.proc
@@ -923,10 +925,12 @@ class ServerSlot:
             return
 
         with self._lock:
-            if self._ended or self.match_id != match_id or self.started:
+            if self._ended or self.match_id != match_id or self.runtime_applied:
                 return
-            self.started = True
-            self.match_play_started_at = time.monotonic()
+            self.runtime_applied = True
+            if not self.started:
+                self.started = True
+                self.match_play_started_at = time.monotonic()
 
         print("[agent] Competitive runtime applied; warmup ended; 5v5 bot fill enabled")
         if proof.strip():
@@ -997,11 +1001,29 @@ class ServerSlot:
             with self._lock:
                 first = not self.human_presence_seen
                 self.human_presence_seen = True
+                should_mark_started = not self.started
+                match_id = self.match_id
+                if should_mark_started:
+                    self.started = True
+                    self.match_play_started_at = time.monotonic()
 
             if first:
                 print(
                     f"[agent] authoritative Source auth detected for reserved "
                     f"account {account_id}; pre-join timeout disabled"
+                )
+
+            if should_mark_started:
+                try:
+                    post_json(
+                        self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/started",
+                        {"match_id": match_id},
+                    )
+                except Exception as exc:
+                    print(f"[agent] start notification retry via heartbeat: {exc}")
+                print(
+                    f"[agent] Source authenticated reserved human; match "
+                    f"{match_id} marked active"
                 )
 
     def refresh_connected_players_via_rcon(self) -> None:
@@ -1136,6 +1158,7 @@ class ServerSlot:
         self.source_match_started_at = 0.0
         self.using_cookie_fallback = False
         self.started = False
+        self.runtime_applied = False
         self.human_presence_seen = False
         self.expected_account_ids.clear()
         self.connected_account_ids.clear()
@@ -1191,7 +1214,6 @@ def main() -> None:
         while True:
             slot.refresh_native_reservation_response()
             slot.refresh_authenticated_players()
-            slot.refresh_connected_players_via_rcon()
             flush_server_reward_bridge(cfg)
             body = {
                 "agent_id": cfg["agent_id"],
