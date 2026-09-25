@@ -563,7 +563,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
-    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
@@ -764,11 +764,27 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
         return;
     }
 
+    const int abandon = message.has_abandon() ? message.abandon() : 0;
+
+    // After 9107 the stock client can stop the SEARCH phase with abandon=0.
+    // That must not cancel the already-reserved match. Only an explicit
+    // abandon=1 (or a stop before any reservation exists) leaves the revival
+    // coordinator queue/reservation.
+    if (m_lastMatchmakingReservation && abandon != 1)
+    {
+        m_matchmakingActive = false;
+        m_matchmakingIdleTicks = 0;
+        Platform::Print(
+            "matchmaking: search phase stopped after reserve; preserving reservation=%llu\n",
+            m_lastMatchmakingReservation);
+        return;
+    }
+
     std::ostringstream request;
     request << "action=stop\n"
             << "steamid=" << m_steamId << "\n"
             << "account_id=" << AccountId() << "\n"
-            << "abandon=" << (message.has_abandon() ? message.abandon() : 0) << "\n";
+            << "abandon=" << abandon << "\n";
     WriteMatchmakingBridgeFile(MatchmakingRequestPath, request.str());
 
     m_matchmakingActive = false;
@@ -783,7 +799,7 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
     update.set_matchmaking(0);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
-    Platform::Print("matchmaking: search stopped\n");
+    Platform::Print("matchmaking: search stopped abandon=%d\n", abandon);
 }
 
 void ClientGC::MatchmakingPing(GCMessageRead &messageRead)
@@ -863,11 +879,16 @@ void ClientGC::PollMatchmakingBridge()
         if (serverAddress.empty())
             return;
 
-        const uint64_t serverId = BridgeU64(state, "server_id", 0);
+        const uint64_t reportedServerId = BridgeU64(state, "server_id", 0);
+        // The legacy client expects a nonzero server key for its reservation
+        // cookie/session bookkeeping even when transport is direct UDP. If the
+        // community server has no Steam master identity, use the reservation
+        // cookie as a stable synthetic key; routing still uses direct_udp_* and
+        // server_address.
+        const uint64_t serverId = reportedServerId ? reportedServerId : reservationId;
 
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
-        if (serverId)
-            reserve.set_serverid(serverId);
+        reserve.set_serverid(serverId);
         const uint32_t directUdpIp = static_cast<uint32_t>(
             BridgeU64(state, "direct_udp_ip", 0));
         if (directUdpIp)
@@ -891,17 +912,11 @@ void ClientGC::PollMatchmakingBridge()
         if (serverVersion)
             details->set_server_version(serverVersion);
 
+        // 9107 itself is the transition into the stock match-ready flow.
+        // Do NOT immediately follow it with 9104 matchmaking=0: that cancels
+        // the UI/search state in the same tick and suppresses the green ACCEPT
+        // panel before the client can create its game/mmqueue session.
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
-
-        CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
-        update.set_matchmaking(0);
-        for (uint32_t accountId : accountIds)
-            update.add_ongoingmatch_account_id_sessions(accountId);
-        update.mutable_global_stats()->set_players_searching(0);
-        update.mutable_global_stats()->set_servers_online(1);
-        update.mutable_global_stats()->set_servers_available(0);
-        update.mutable_global_stats()->set_ongoing_matches(1);
-        SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 
         m_lastMatchmakingReservation = reservationId;
         m_matchmakingServerId = serverId;
@@ -911,7 +926,7 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingMap = mapName;
         Platform::Print(
             "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu route=%s map=%s server=%s game_type=%u version=%u\n",
-            reservationId, serverId, serverId ? "steamid+direct" : "direct-udp",
+            reservationId, serverId, reportedServerId ? "steamid+direct" : "synthetic-id+direct-udp",
             mapName.c_str(), serverAddress.c_str(), gameType, serverVersion);
         return;
     }
