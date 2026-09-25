@@ -347,7 +347,6 @@ class MatchmakingCoordinator:
 
             ready_match_id = int(body.get("ready_match_id") or 0)
             native_reservation_id = int(body.get("reservation_id") or 0)
-            game_server_id = int(body.get("server_id") or 0)
             if ready_match_id and native_reservation_id:
                 self._server["ready_match_id"] = ready_match_id
                 match = self._matches.get(ready_match_id)
