@@ -1,6 +1,6 @@
 import unittest
 
-from matchmaking import MAX_HUMANS, MatchmakingCoordinator
+from matchmaking import MAX_HUMANS, MatchmakingCoordinator, account_id_from_steamid64
 
 
 def steamid(n: int) -> str:
@@ -37,6 +37,7 @@ class DropInMatchmakingTests(unittest.TestCase):
             "maps": ["de_dust2"],
             "ready_match_id": match_id,
             "reservation_id": 987654321,
+            "reserved_account_ids": [account_id_from_steamid64(first)],
         })
         self.assertEqual(self.mm.state(first)["state"], "reserved")
 
@@ -46,13 +47,47 @@ class DropInMatchmakingTests(unittest.TestCase):
 
         second = steamid(2)
         second_state = self.mm.start(second)
-        self.assertEqual(second_state["state"], "in_match")
+        # Do not publish 9107 until srcds has acknowledged the new account in
+        # its native reservation.
+        self.assertEqual(second_state["state"], "searching")
         self.assertEqual(second_state["match_id"], match_id)
+
+        acknowledged = [
+            account_id_from_steamid64(first),
+            account_id_from_steamid64(second),
+        ]
+        self.mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2"],
+            "ready_match_id": match_id,
+            "reservation_id": 987654321,
+            "reserved_account_ids": acknowledged,
+            "started_match_id": match_id,
+        })
+        second_state = self.mm.state(second)
+        self.assertEqual(second_state["state"], "in_match")
         self.assertEqual(second_state["reservation_id"], 987654321)
 
-        # Fill all ten human slots by queueing later.
+        # Fill all ten human slots by queueing later. Each new human stays in
+        # searching until the native reservation acknowledges that account.
         for i in range(3, MAX_HUMANS + 1):
-            state = self.mm.start(steamid(i))
+            sid = steamid(i)
+            state = self.mm.start(sid)
+            self.assertEqual(state["state"], "searching")
+            acknowledged.append(account_id_from_steamid64(sid))
+            self.mm.server_heartbeat({
+                "agent_id": "test-laptop",
+                "public_host": "test.example",
+                "public_port": 30123,
+                "maps": ["de_dust2"],
+                "ready_match_id": match_id,
+                "reservation_id": 987654321,
+                "reserved_account_ids": acknowledged,
+                "started_match_id": match_id,
+            })
+            state = self.mm.state(sid)
             self.assertEqual(state["state"], "in_match")
             self.assertEqual(state["match_id"], match_id)
 
