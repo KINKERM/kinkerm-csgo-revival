@@ -15,6 +15,9 @@ import ctypes
 import json
 import os
 import re
+import secrets
+import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -230,6 +233,53 @@ def read_native_reservation_response(csgo_dir: str) -> dict[str, int | str]:
     return out
 
 
+
+def _rcon_packet(request_id: int, packet_type: int, text: str) -> bytes:
+    body = struct.pack("<ii", request_id, packet_type)
+    body += text.encode("utf-8", errors="replace") + b"\x00\x00"
+    return struct.pack("<i", len(body)) + body
+
+
+def _recv_exact(sock: socket.socket, size: int) -> bytes:
+    chunks = bytearray()
+    while len(chunks) < size:
+        chunk = sock.recv(size - len(chunks))
+        if not chunk:
+            raise ConnectionError("RCON socket closed")
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+def _recv_rcon(sock: socket.socket) -> tuple[int, int, str]:
+    size = struct.unpack("<i", _recv_exact(sock, 4))[0]
+    if size < 10 or size > 1024 * 1024:
+        raise ValueError(f"invalid RCON packet size {size}")
+    data = _recv_exact(sock, size)
+    request_id, packet_type = struct.unpack("<ii", data[:8])
+    text = data[8:-2].decode("utf-8", errors="replace")
+    return request_id, packet_type, text
+
+
+def send_local_rcon(port: int, password: str, command: str) -> None:
+    """Send one command to the local Source server without touching its stdin."""
+    with socket.create_connection(("127.0.0.1", int(port)), timeout=3.0) as sock:
+        sock.settimeout(3.0)
+        sock.sendall(_rcon_packet(101, 3, password))  # SERVERDATA_AUTH
+
+        authed = False
+        for _ in range(3):
+            request_id, packet_type, _ = _recv_rcon(sock)
+            if packet_type == 2:  # SERVERDATA_AUTH_RESPONSE
+                if request_id == -1:
+                    raise PermissionError("RCON authentication failed")
+                authed = True
+                break
+        if not authed:
+            raise ConnectionError("RCON authentication response not received")
+
+        sock.sendall(_rcon_packet(102, 2, command))  # SERVERDATA_EXECCOMMAND
+
+
 def set_above_normal(proc: subprocess.Popen) -> None:
     if os.name != "nt":
         return
@@ -256,6 +306,7 @@ class ServerSlot:
         self.started = False
         self._lock = threading.RLock()
         self._ended = False
+        self.rcon_password = secrets.token_hex(16)
 
     def alive(self) -> bool:
         with self._lock:
@@ -289,7 +340,10 @@ class ServerSlot:
 
             map_name = str(assignment.get("map") or "de_dust2")
             srcds = find_srcds(self.cfg["csgo_dir"])
-            ensure_match_cfg(self.cfg["csgo_dir"])
+            ensure_match_cfg(
+                self.cfg["csgo_dir"],
+                self.cfg.get("steam_account_token", ""),
+            )
             write_native_reservation(self.cfg["csgo_dir"], assignment)
             cmd = [
                 srcds,
@@ -304,6 +358,7 @@ class ServerSlot:
                 "+game_mode", "1",
                 "+map", map_name,
                 "+exec", "revival_competitive.cfg",
+                "+rcon_password", self.rcon_password,
             ]
             extra = str(self.cfg.get("extra_srcds_args") or "").strip()
             if extra:
@@ -316,7 +371,10 @@ class ServerSlot:
                 cwd=self.cfg["csgo_dir"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                stdin=subprocess.PIPE,
+                # Do NOT redirect stdin. CTextConsoleWin32 calls
+                # GetNumberOfConsoleInputEvents() on STD_INPUT_HANDLE and
+                # hard-errors if it is a Python pipe.
+                stdin=None,
                 text=True,
                 errors="replace",
                 bufsize=1,
@@ -435,12 +493,15 @@ class ServerSlot:
             self.started = True
             match_id = self.match_id
             proc = self.proc
-            if proc and proc.stdin:
+            if proc and proc.poll() is None:
                 try:
-                    proc.stdin.write("mp_warmup_pausetimer 0\nmp_warmup_end\n")
-                    proc.stdin.flush()
-                except OSError as exc:
-                    print(f"[agent] failed to end warmup: {exc}")
+                    send_local_rcon(
+                        int(self.cfg["local_port"]),
+                        self.rcon_password,
+                        "mp_warmup_pausetimer 0; mp_warmup_end",
+                    )
+                except Exception as exc:
+                    print(f"[agent] failed to end warmup via RCON: {exc}")
 
         try:
             post_json(
@@ -545,9 +606,11 @@ class ServerSlot:
         if proc is None or proc.poll() is not None:
             return
         try:
-            if proc.stdin:
-                proc.stdin.write("quit\n")
-                proc.stdin.flush()
+            send_local_rcon(
+                int(self.cfg["local_port"]),
+                self.rcon_password,
+                "quit",
+            )
             proc.wait(timeout=5)
         except Exception:
             try:
