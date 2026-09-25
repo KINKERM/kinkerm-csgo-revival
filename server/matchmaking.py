@@ -125,8 +125,13 @@ class MatchmakingCoordinator:
             }
 
     def _state_for_match_player_locked(self, match: Match, player: QueueEntry) -> dict[str, Any]:
+        # Keep Panorama in its normal "searching" presentation while srcds is
+        # booting. Exposing the internal "allocating" phase makes legacy CS:GO
+        # display "Matchmaking unavailable, retrying..." even though the laptop
+        # is online and actively starting the server.
+        client_state = "searching" if match.state == "allocating" else match.state
         state: dict[str, Any] = {
-            "state": match.state,
+            "state": client_state,
             "match_id": match.match_id,
             "reservation_id": match.reservation_id,
             "map": match.map_name,
@@ -135,6 +140,13 @@ class MatchmakingCoordinator:
             "server_available": len(match.players) < MAX_HUMANS,
             "game_type": 8,
         }
+        if match.state == "allocating":
+            ids = self._match_account_ids(match)
+            state.update({
+                "waiting_account_ids": ids,
+                "players_searching": len(ids),
+                "players_required": 1,
+            })
         if match.server_address:
             host = str(self._server.get("public_host") or "")
             port = int(self._server.get("public_port") or 27015)
