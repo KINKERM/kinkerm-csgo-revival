@@ -27,5 +27,7 @@ private:
     bool m_sentWelcome{};
     bool m_sentReservation{};
     uint32_t m_reservationIdleTicks{};
+    uint32_t m_queueReservationRefreshTicks{};
     std::string m_lastReservationSignature;
+    std::string m_lastQueueReservationPayload;
 };
