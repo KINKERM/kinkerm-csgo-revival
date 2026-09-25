@@ -213,6 +213,9 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     xml_path = os.path.join(stage_dir, "layout", "mainmenu_play.xml")
     js_path = os.path.join(stage_dir, "scripts", "mainmenu_play.js")
     css_path = os.path.join(stage_dir, "styles", "mainmenu_play.css")
+    operation_js_path = os.path.join(
+        stage_dir, "scripts", "operation", "operation_mainmenu.js"
+    )
 
     with open(xml_path, "r", encoding="utf-8-sig") as fh:
         xml = fh.read()
@@ -220,7 +223,7 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     with open(xml_path, "w", encoding="utf-8", newline="") as fh:
         fh.write(xml)
 
-    for path in (js_path, css_path):
+    for path in (js_path, css_path, operation_js_path):
         with open(path, "r", encoding="utf-8-sig") as fh:
             raw = fh.read()
         compact = "\n".join(
