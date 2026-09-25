@@ -10,6 +10,8 @@ SERVER_ID_MARKER = "REVIVAL_SERVER_ID_EXPORT_V1"
 QUEUE_RESERVE_MARKER = "REVIVAL_ENGINE_QUEUE_RESERVE_V1"
 PLATFORM_INTERFACE_MARKER = "REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1"
 LOCAL_SOCACHE_AUTH_MARKER = "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1"
+NATIVE_DROP_REVEAL_MARKER = "REVIVAL_NATIVE_DROP_REVEAL_V1"
+PLATFORM_PATTERN_MARKER = "REVIVAL_PLATFORM_FIND_PATTERN_V1"
 
 
 def main() -> int:
@@ -134,6 +136,20 @@ uint64_t RevivalGameServerSteamId()
         )
         platform_h.write_text(ph, encoding="utf-8", newline="\n")
 
+    ph = platform_h.read_text(encoding="utf-8")
+    if "FindModulePattern" not in ph:
+        ph_anchor = "void *ResolveModuleInterface(const char *moduleName, const char *version);"
+        if ph_anchor not in ph:
+            print("[patch_steam_hook] ERROR: ResolveModuleInterface declaration missing")
+            return 12
+        ph = ph.replace(
+            ph_anchor,
+            ph_anchor + "\nvoid *FindModulePattern(const char *moduleName, "
+            + "const unsigned char *pattern, const char *mask);",
+            1,
+        )
+        platform_h.write_text(ph, encoding="utf-8", newline="\n")
+
     if PLATFORM_INTERFACE_MARKER not in pc:
         close_anchor = "} // namespace Platform"
         if close_anchor not in pc:
@@ -156,6 +172,57 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
     if (result)
         Print("REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1 %s/%s\n", moduleName, version);
     return result;
+}
+
+'''
+        pc = pc.replace(close_anchor, helper + close_anchor, 1)
+        platform_cpp.write_text(pc, encoding="utf-8", newline="\n")
+
+    pc = platform_cpp.read_text(encoding="utf-8")
+    if PLATFORM_PATTERN_MARKER not in pc:
+        close_anchor = "} // namespace Platform"
+        if close_anchor not in pc:
+            print("[patch_steam_hook] ERROR: platform_windows.cpp namespace anchor missing for pattern scanner")
+            return 13
+        helper = r'''
+void *FindModulePattern(const char *moduleName, const unsigned char *pattern, const char *mask)
+{
+    HMODULE module = GetModuleHandleA(moduleName);
+    if (!module || !pattern || !mask)
+        return nullptr;
+
+    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(module);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+        return nullptr;
+    const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(
+        reinterpret_cast<const unsigned char *>(module) + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE)
+        return nullptr;
+
+    const size_t imageSize = static_cast<size_t>(nt->OptionalHeader.SizeOfImage);
+    const size_t patternSize = strlen(mask);
+    if (!patternSize || patternSize > imageSize)
+        return nullptr;
+
+    const auto *base = reinterpret_cast<const unsigned char *>(module);
+    for (size_t i = 0; i + patternSize <= imageSize; ++i)
+    {
+        bool match = true;
+        for (size_t j = 0; j < patternSize; ++j)
+        {
+            if (mask[j] == 'x' && base[i + j] != pattern[j])
+            {
+                match = false;
+                break;
+            }
+        }
+        if (match)
+        {
+            Print("REVIVAL_PLATFORM_FIND_PATTERN_V1 %s +0x%zx\\n", moduleName, i);
+            return const_cast<unsigned char *>(base + i);
+        }
+    }
+    return nullptr;
 }
 
 '''
@@ -254,6 +321,145 @@ static bool RevivalDispatchReserveServerForQueuedGame(
 '''
         patched = patched[:m.start()] + server_case_new + patched[m.end():]
 
+    if NATIVE_DROP_REVEAL_MARKER not in patched:
+        init_anchor = "static bool InitializeSteamAPI(void *steamApi, bool dedicated)"
+        if init_anchor not in patched:
+            print("[patch_steam_hook] ERROR: InitializeSteamAPI anchor missing for native drop hook")
+            return 14
+
+        hook_code = r'''
+#ifdef _WIN32
+using RevivalRewardMatchEndDropsFn = void (__thiscall *)(void *, bool);
+using RevivalRecordPlayerItemDropFn =
+    void (__thiscall *)(void *, const CEconItemPreviewDataBlock *);
+
+static RevivalRewardMatchEndDropsFn s_revOriginalRewardMatchEndDrops = nullptr;
+static RevivalRecordPlayerItemDropFn s_revRecordPlayerItemDrop = nullptr;
+static void *s_revGameRules = nullptr;
+
+static void __fastcall Hk_RevivalRewardMatchEndDrops(
+    void *gameRules, void *, bool aborted)
+{
+    s_revGameRules = gameRules;
+    Platform::Print(
+        "REVIVAL_NATIVE_DROP_REVEAL_V1 captured CCSGameRules=%p aborted=%d\n",
+        gameRules, aborted ? 1 : 0);
+
+    if (s_revOriginalRewardMatchEndDrops)
+        s_revOriginalRewardMatchEndDrops(gameRules, aborted);
+}
+
+static void RevivalInstallNativeDropRevealHooks()
+{
+    static bool attempted = false;
+    if (attempted)
+        return;
+    attempted = true;
+
+    static const unsigned char RewardPattern[] = {
+        0x55,0x8B,0xEC,0x83,0xE4,0xF8,0xA1,0,0,0,0,0x83,0xEC,0x1C,0xB9
+    };
+    static const unsigned char RecordPattern[] = {
+        0x55,0x8B,0xEC,0x53,0x8B,0xD9,0x33,0xD2,0x56,0x57,0x8B,0x7D,0x08
+    };
+
+    void *reward = Platform::FindModulePattern(
+        "server.dll", RewardPattern, "xxxxxxx????xxxx");
+    void *record = Platform::FindModulePattern(
+        "server.dll", RecordPattern, "xxxxxxxxxxxxx");
+
+    if (!reward || !record)
+    {
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 signature failure reward=%p record=%p\n",
+            reward, record);
+        return;
+    }
+
+    s_revRecordPlayerItemDrop =
+        reinterpret_cast<RevivalRecordPlayerItemDropFn>(record);
+    HookCreate(
+        "CCSGameRules::RewardMatchEndDrops",
+        reward,
+        reinterpret_cast<void *>(&Hk_RevivalRewardMatchEndDrops),
+        reinterpret_cast<void **>(&s_revOriginalRewardMatchEndDrops));
+
+    Platform::Print(
+        "REVIVAL_NATIVE_DROP_REVEAL_V1 hooks installed reward=%p record=%p\n",
+        reward, record);
+}
+
+static bool RevivalRecordPlayerItemDrop(
+    const std::vector<uint8_t> &payload)
+{
+    if (!s_revGameRules || !s_revRecordPlayerItemDrop)
+    {
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 record skipped gamerules=%p fn=%p\n",
+            s_revGameRules, reinterpret_cast<void *>(s_revRecordPlayerItemDrop));
+        return false;
+    }
+
+    CEconItemPreviewDataBlock item;
+    if (!item.ParseFromArray(payload.data(), static_cast<int>(payload.size())))
+    {
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 preview parse failed (%zu bytes)\n",
+            payload.size());
+        return false;
+    }
+
+    s_revRecordPlayerItemDrop(s_revGameRules, &item);
+    Platform::Print(
+        "REVIVAL_NATIVE_DROP_REVEAL_V1 recorded account=%u item=%llu def=%u\n",
+        item.accountid(), static_cast<unsigned long long>(item.itemid()),
+        item.defindex());
+    return true;
+}
+#endif
+
+'''
+        patched = patched.replace(init_anchor, hook_code + init_anchor, 1)
+
+        install_anchor = "    INLINE_HOOK(SteamGameServer_RunCallbacks);"
+        if install_anchor not in patched:
+            print("[patch_steam_hook] ERROR: SteamGameServer_RunCallbacks install anchor missing")
+            return 15
+        patched = patched.replace(
+            install_anchor,
+            install_anchor
+            + "\n#ifdef _WIN32\n"
+            + "    if (dedicated)\n"
+            + "        RevivalInstallNativeDropRevealHooks();\n"
+            + "#endif",
+            1,
+        )
+
+        reserve_case_anchor = '''            case HostEvent::ReserveServerForQueuedGame:
+#ifdef _WIN32
+                RevivalDispatchReserveServerForQueuedGame(event.id, event.buffer);
+#else
+                Platform::Print("REVIVAL_ENGINE_QUEUE_RESERVE_V1 unsupported platform\\n");
+#endif
+                break;
+'''
+        if reserve_case_anchor not in patched:
+            print("[patch_steam_hook] ERROR: reserve HostEvent case missing for native drop bridge")
+            return 16
+        patched = patched.replace(
+            reserve_case_anchor,
+            reserve_case_anchor + r'''
+            case HostEvent::RecordPlayerItemDrop:
+#ifdef _WIN32
+                RevivalRecordPlayerItemDrop(event.buffer);
+#else
+                Platform::Print("REVIVAL_NATIVE_DROP_REVEAL_V1 unsupported platform\n");
+#endif
+                break;
+''',
+            1,
+        )
+
     if LOCAL_SOCACHE_AUTH_MARKER not in patched:
         auth_anchor = (
             "            s_serverGC->m_networking.ClientConnected("
@@ -279,9 +485,12 @@ static bool RevivalDispatchReserveServerForQueuedGame(
     if (MARKER not in verify or SERVER_ID_MARKER not in verify
             or QUEUE_RESERVE_MARKER not in verify
             or LOCAL_SOCACHE_AUTH_MARKER not in verify
+            or NATIVE_DROP_REVEAL_MARKER not in verify
             or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
-            or PLATFORM_INTERFACE_MARKER not in pc_verify):
+            or "FindModulePattern" not in ph_verify
+            or PLATFORM_INTERFACE_MARKER not in pc_verify
+            or PLATFORM_PATTERN_MARKER not in pc_verify):
         print("[patch_steam_hook] ERROR: marker verification failed after write")
         return 4
 
