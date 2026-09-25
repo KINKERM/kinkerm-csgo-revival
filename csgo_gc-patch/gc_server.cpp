@@ -21,6 +21,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
+    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V2 active\n");
 }
 
 ServerGC::~ServerGC()
@@ -53,11 +54,21 @@ void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
 
 void ServerGC::HandleIdle()
 {
-    // SharedGC idles at ~250 ms. Re-read the tiny local reservation request
-    // twice per second so later humans can be appended to the SAME live match.
-    // Never emit 9105 before the normal server hello/welcome handshake.
-    if (m_sentWelcome && (++m_reservationIdleTicks & 1u) == 0)
-        SendMatchmakingReservation();
+    // Some Legacy dedicated-server builds never emit k_EMsgGCServerHello after
+    // the injected GC comes up. If we wait for that hello, 9105 is never queued
+    // and the agent waits forever for 9106. Proactively establish the local GC
+    // welcome once, then retry 9105 every ~2 seconds until Source answers.
+    ++m_reservationIdleTicks;
+    if ((m_reservationIdleTicks & 7u) != 0)
+        return;
+
+    if (!m_sentWelcome)
+    {
+        SendServerWelcome();
+        Platform::Print("matchmaking server: proactive GCServerWelcome queued\n");
+    }
+
+    SendMatchmakingReservation();
 }
 
 void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
@@ -74,7 +85,8 @@ void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         switch (messageRead.TypeUnmasked())
         {
         case k_EMsgGCServerHello:
-            SendServerWelcome();
+            if (!m_sentWelcome)
+                SendServerWelcome();
             SendMatchmakingReservation();
             break;
 
@@ -357,7 +369,34 @@ void ServerGC::SendMatchmakingReservation()
         std::to_string(ReservationNumber(kv, "server_version", 0)) + "|" +
         accountText;
     if (m_sentReservation && signature == m_lastReservationSignature)
-        return;
+    {
+        // Stop retrying only after our own 9106 handler has persisted a real
+        // reservation id for this exact match. Until then, retrying is required
+        // because early 9105 messages can be consumed before server.dll is ready.
+        std::ifstream response(ServerReservationResponsePath, std::ios::binary);
+        uint64_t responseMatch = 0;
+        uint64_t responseReservation = 0;
+        std::string line;
+        while (std::getline(response, line))
+        {
+            const size_t eq = line.find('=');
+            if (eq == std::string::npos)
+                continue;
+            const std::string key = line.substr(0, eq);
+            const std::string value = line.substr(eq + 1);
+            char *end = nullptr;
+            const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
+            if (!end || *end != '\0')
+                continue;
+            if (key == "match_id")
+                responseMatch = static_cast<uint64_t>(parsed);
+            else if (key == "reservation_id")
+                responseReservation = static_cast<uint64_t>(parsed);
+        }
+
+        if (responseMatch == matchId && responseReservation)
+            return;
+    }
 
     if (accounts != kv.end())
     {
