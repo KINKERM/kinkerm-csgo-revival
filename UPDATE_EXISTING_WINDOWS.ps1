@@ -175,6 +175,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_CLIENT_ACCEPT_WATCH_V1")) {
         throw "Built csgo_gc.dll does not contain the stock Accept stage watcher."
     }
+    if (-not $gcDllText.Contains("REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2")) {
+        throw "Built csgo_gc.dll does not contain the direct Accept routing fix."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SERVER_ACCEPT_ROSTER_V1")) {
         throw "Built csgo_gc.dll does not contain the server Accept roster path."
     }
@@ -292,6 +295,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_CLIENT_ACCEPT_WATCH_V1")) {
         throw "Installed csgo_gc.dll is missing the stock Accept stage watcher."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2")) {
+        throw "Installed csgo_gc.dll is missing the direct Accept routing fix."
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_ACCEPT_ROSTER_V1")) {
         throw "Installed csgo_gc.dll is missing the server Accept roster path."
