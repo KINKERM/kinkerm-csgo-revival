@@ -17,7 +17,7 @@ struct OperationQuestProgressState
 class Inventory
 {
 public:
-    Inventory(uint64_t steamId);
+    Inventory(uint64_t steamId, std::string filePath = "csgo_gc/inventory.txt");
     ~Inventory();
 
     void BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level, bool server);
@@ -229,6 +229,7 @@ private:
     }
 
     const uint64_t m_steamId;
+    std::string m_filePath;
     ItemSchema m_itemSchema;
     Random m_random;
     uint32_t m_lastHighItemId{};
