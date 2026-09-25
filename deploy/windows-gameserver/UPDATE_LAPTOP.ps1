@@ -155,8 +155,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_COMP_RUNTIME_V15")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_COMP_RUNTIME_V15"
+if (-not $agentText.Contains("REVIVAL_AGENT_COMP_RUNTIME_V16")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_COMP_RUNTIME_V16"
 }
 Write-Host "    Verified current Competitive/match-result laptop agent." -ForegroundColor Green
 
