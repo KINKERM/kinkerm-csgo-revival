@@ -9,7 +9,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Branch = "operation-revival-finish"
-$PinnedCsgoGcCommit = "06301e7173329723a3506f8345fe23b147bc0881"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $backup = Join-Path "$env:USERPROFILE\Documents\CSGO_Revival_Backups" $stamp
 
@@ -111,6 +110,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
 
+$steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to patch the pinned steam_hook.cpp."
