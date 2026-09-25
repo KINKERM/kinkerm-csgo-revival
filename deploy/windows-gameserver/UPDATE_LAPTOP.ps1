@@ -118,7 +118,8 @@ $installedGcText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($ins
 foreach ($marker in @(
     "REVIVAL_MM_BRIDGE_CLEAN_V1",
     "REVIVAL_SERVER_RESERVATION_RETRY_V2",
-    "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1"
+    "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1",
+    "REVIVAL_CLIENT_COOKIE_RESERVE_V2"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
