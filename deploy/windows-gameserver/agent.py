@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_REWARDS_V10"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V11"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -54,6 +54,7 @@ GAME_OVER_PATTERNS = (
 TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
 STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
+STEAM64_RE = re.compile(r'\b(7656119\d{10})\b')
 PLAYER_TEAM_RE = re.compile(r'<(CT|TERRORIST)>', re.I)
 
 
@@ -64,6 +65,9 @@ def account_id_from_text(text: str) -> int:
     m = STEAM2_RE.search(text)
     if m:
         return int(m.group(2)) * 2 + int(m.group(1))
+    m = STEAM64_RE.search(text)
+    if m:
+        return int(m.group(1)) & 0xFFFFFFFF
     return 0
 
 
@@ -726,9 +730,10 @@ class ServerSlot:
                     with self._lock:
                         self.player_teams[seen_account_id] = team
 
-        account_id = account_id_from_log_line(line)
-        if account_id:
-            self._player_entered(account_id)
+            # Do not depend on one exact "entered the game" log phrase. Any
+            # Source log event containing the reserved account proves the human
+            # is on this server and must cancel the pre-join timeout.
+            self._player_entered(seen_account_id)
 
         if any(p.search(line) for p in GAME_OVER_PATTERNS):
             self._report_end_once(
@@ -819,29 +824,52 @@ class ServerSlot:
         with self._lock:
             if self.started or self._ended or not self.match_id:
                 return
-            self.started = True
-            self.match_play_started_at = time.monotonic()
             match_id = self.match_id
             proc = self.proc
-            if proc and proc.poll() is None:
-                try:
-                    send_local_rcon(
-                        int(self.cfg["local_port"]),
-                        self.rcon_password,
-                        (
-                            "bot_quota_mode fill; bot_quota 10; "
-                            "bot_join_after_player 0; bot_auto_vacate 1; bot_join_team any; "
-                            "mp_autokick 0; mp_autoteambalance 1; mp_limitteams 2; "
-                            "mp_friendlyfire 1; mp_maxrounds 30; mp_overtime_enable 1; "
-                            "mp_match_can_clinch 1; mp_freezetime 15; "
-                            "mp_roundtime 1.92; mp_roundtime_defuse 1.92; "
-                            "mp_match_restart_delay 15; mp_endmatch_votenextmap 0; "
-                            "mp_match_end_restart 0; "
-                            "mp_warmup_pausetimer 0; mp_warmup_end"
-                        ),
-                    )
-                except Exception as exc:
-                    print(f"[agent] failed to end warmup via RCON: {exc}")
+            if proc is None or proc.poll() is not None:
+                return
+            port = int(self.cfg["local_port"])
+            password = self.rcon_password
+
+        try:
+            send_local_rcon(
+                port,
+                password,
+                (
+                    "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
+                    "bot_join_after_player 0; bot_auto_vacate 1; bot_join_team any; "
+                    "bot_quota_mode fill; bot_quota 10; "
+                    "mp_autokick 0; mp_autoteambalance 1; mp_limitteams 2; "
+                    "mp_friendlyfire 1; mp_maxrounds 30; mp_overtime_enable 1; "
+                    "mp_match_can_clinch 1; mp_freezetime 15; "
+                    "mp_roundtime 1.92; mp_roundtime_defuse 1.92; "
+                    "mp_match_restart_delay 15; mp_endmatch_votenextmap 0; "
+                    "mp_match_end_restart 0; mp_do_warmup_period 1; "
+                    "mp_warmup_pausetimer 0; mp_warmup_end"
+                ),
+            )
+            proof = send_local_rcon(
+                port,
+                password,
+                "bot_quota; bot_quota_mode; bot_stop; bot_freeze; mp_warmup_pausetimer",
+            )
+        except Exception as exc:
+            # Critical: do NOT set started here. Human detection will retry this
+            # on the next heartbeat/log event until Source accepts the commands.
+            print(f"[agent] Competitive RCON apply failed; retrying: {exc}")
+            return
+
+        with self._lock:
+            if self._ended or self.match_id != match_id:
+                return
+            if self.started:
+                return
+            self.started = True
+            self.match_play_started_at = time.monotonic()
+
+        print("[agent] Competitive runtime applied; warmup ended; bot fill enabled")
+        if proof.strip():
+            print("[agent] Competitive cvar proof: " + proof.replace("\n", " | ").strip())
 
         try:
             post_json(
@@ -850,7 +878,7 @@ class ServerSlot:
             )
         except Exception as exc:
             print(f"[agent] start notification will retry via heartbeat: {exc}")
-        print(f"[agent] first human entered; bot-filled match {match_id} started")
+        print(f"[agent] first human present; bot-filled match {match_id} started")
 
     def refresh_native_reservation_response(self) -> None:
         with self._lock:
@@ -909,7 +937,12 @@ class ServerSlot:
             return
 
         found: set[int] = set()
+        saw_any_human = False
         for raw in status.splitlines():
+            upper = raw.upper()
+            if "STEAM_" in upper or "[U:1:" in upper or "7656119" in raw:
+                if "BOT" not in upper and "HLTV" not in upper:
+                    saw_any_human = True
             account_id = account_id_from_text(raw)
             if account_id and account_id in expected:
                 found.add(account_id)
@@ -917,11 +950,21 @@ class ServerSlot:
         for account_id in sorted(found):
             self._player_entered(account_id)
 
+        # This server is private to the active reservation. If Source reports a
+        # real Steam player but formats the ID in an unexpected way, preserve
+        # the server and retry Competitive setup instead of killing a live match.
+        if saw_any_human and not found:
+            with self._lock:
+                already_connected = bool(self.connected_account_ids)
+            if not already_connected:
+                print("[agent] RCON status shows a human player; preserving active reservation")
+
     def check_accept_timeout(self) -> None:
         with self._lock:
             if (
                 self._ended
                 or self.started
+                or bool(self.connected_account_ids)
                 or not self.ready_at
                 or not self.match_id
             ):
