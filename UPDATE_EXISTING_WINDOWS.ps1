@@ -151,13 +151,16 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
         throw "Built csgo_gc.dll does not contain the current client matchmaking source. Stale object files are still being used."
     }
-    if (-not $gcDllText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V3")) {
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V4")) {
         throw "Built csgo_gc.dll does not contain the current server reservation handshake fix."
     }
     if (-not $gcDllText.Contains("REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1")) {
         throw "Built csgo_gc.dll does not contain the local server-GC delivery fix."
     }
-    if (-not $gcDllText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V2")) {
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_ID_EXPORT_V1")) {
+        throw "Built csgo_gc.dll does not contain the real game-server SteamID export."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V3")) {
         throw "Built csgo_gc.dll does not contain the current client cookie-reservation fix."
     }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
@@ -251,13 +254,16 @@ if (-not $SkipInstall) {
     if (-not $installedGcText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
         throw "Installed csgo_gc.dll is missing the current client matchmaking build marker."
     }
-    if (-not $installedGcText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V3")) {
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V4")) {
         throw "Installed csgo_gc.dll is missing the current server reservation handshake fix."
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1")) {
         throw "Installed csgo_gc.dll is missing the local server-GC delivery fix."
     }
-    if (-not $installedGcText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V2")) {
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_ID_EXPORT_V1")) {
+        throw "Installed csgo_gc.dll is missing the real game-server SteamID export."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V3")) {
         throw "Installed csgo_gc.dll is missing the current client cookie-reservation fix."
     }
 
