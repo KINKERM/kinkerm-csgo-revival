@@ -189,9 +189,20 @@ var OperationMainMenu = ( function()
 	};
 	var _UpdateSelectedMissionCard = function( cardIndex )
 	{
-		var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( _m_nSeasonIndex, Number( cardIndex ));
+		cardIndex = Number( cardIndex ) || 0;
+		var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( _m_nSeasonIndex, cardIndex );
 		var elLabel = $.GetContextPanel().FindChildInLayoutFile( 'id-missions-selected-card-name' );
 		var nWeek = cardIndex + 1;
+
+		if ( !jsoCardDetails )
+		{
+			// Some revived accounts can reference a mission-card index not present
+			// in this Legacy client's bundled operation data. Keep the Operation
+			// panel alive instead of aborting all remaining Panorama script.
+			elLabel.text = $.Localize( "#op_mainmenu_mission_week_prefix") + " " + nWeek;
+			return;
+		}
+
 		elLabel.text = $.Localize( "#op_mainmenu_mission_week_prefix") + " " + nWeek + ": " + $.Localize( jsoCardDetails.name );
 		_UpdateMissionCard( cardIndex );
 	};
