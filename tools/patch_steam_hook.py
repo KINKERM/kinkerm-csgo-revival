@@ -23,32 +23,36 @@ def main() -> int:
         print("[patch_steam_hook] already patched")
         return 0
 
+    # Match the dedicated-server callback guard without assuming the exact
+    # surrounding source revision/formatting. We only remove an if (!...BLoggedOn())
+    # whose entire body is an immediate return.
     pattern = re.compile(
-        r'(?P<indent>^[ \t]*)assert\(s_steamGameServer\);[ \t]*\r?\n'
-        r'(?P=indent)if[ \t]*\(!s_steamGameServer->BLoggedOn\(\)\)[ \t]*\r?\n'
-        r'(?P=indent)\{[ \t]*\r?\n'
-        r'(?P=indent)[ \t]+return;[ \t]*\r?\n'
-        r'(?P=indent)\}',
+        r'(?P<indent>^[ \\t]*)'
+        r'if[ \\t]*\\([ \\t]*![^\\r\\n]*?BLoggedOn[ \\t]*\\([ \\t]*\\)[ \\t]*\\)[ \\t]*'
+        r'(?:\\r?\\n)?'
+        r'(?:(?:[ \\t]*\\{[ \\t]*(?:\\r?\\n)?[ \\t]*return[ \\t]*;[ \\t]*(?:\\r?\\n)?[ \\t]*\\})'
+        r'|(?:return[ \\t]*;))',
         re.MULTILINE,
     )
 
     def repl(m: re.Match[str]) -> str:
         i = m.group("indent")
         return (
-            f"{i}assert(s_steamGameServer);\n"
-            f"{i}// Revival's local fake GC must keep delivering queued messages even\n"
-            f"{i}// when Steam master-server login is temporarily unavailable.\n"
-            f"{i}static bool s_revAllowOfflineGcPrinted = false;\n"
-            f"{i}if (!s_revAllowOfflineGcPrinted)\n"
-            f"{i}{{\n"
-            f'{i}    Platform::Print("{MARKER} active\\n");\n'
-            f"{i}    s_revAllowOfflineGcPrinted = true;\n"
-            f"{i}}}"
+            f"{i}// Revival local GC delivery must not depend on Steam master login.\\n"
+            f"{i}static bool s_revAllowOfflineGcPrinted = false;\\n"
+            f"{i}if (!s_revAllowOfflineGcPrinted)\\n"
+            f"{i}{{{{\\n"
+            f'{i}    Platform::Print("{MARKER} active\\\\n");\\n'
+            f"{i}    s_revAllowOfflineGcPrinted = true;\\n"
+            f"{i}}}}}"
         )
 
     patched, count = pattern.subn(repl, text, count=1)
     if count != 1:
-        print("[patch_steam_hook] ERROR: could not find the BLoggedOn early-return block")
+        print("[patch_steam_hook] ERROR: could not patch the BLoggedOn early-return block")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if "BLoggedOn" in line:
+                print(f"[patch_steam_hook] BLoggedOn at line {lineno}: {line.strip()}")
         return 3
 
     path.write_text(patched, encoding="utf-8", newline="\n")
