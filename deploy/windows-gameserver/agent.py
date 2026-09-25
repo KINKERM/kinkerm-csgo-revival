@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V17"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_REWARDS_V18"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -1127,18 +1127,22 @@ class ServerSlot:
                 },
             }
 
+        # Publish the completed result immediately so the launcher/client GC can
+        # populate the native end-match reward lane while the scoreboard is still
+        # visible. Keep srcds alive afterwards for normal intermission cleanup.
+        try:
+            post_json(
+                self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
+                {"match_id": match_id, "result": result},
+            )
+            print(f"[agent] reported match {match_id} end immediately: {result}")
+        except Exception as exc:
+            print(f"[agent] failed to report match end: {exc}")
+
         def finish() -> None:
             if grace > 0:
-                print(f"[agent] keeping srcds alive {grace:.0f}s for end-match GC/drop delivery")
+                print(f"[agent] keeping srcds alive {grace:.0f}s for end-match delivery")
                 time.sleep(grace)
-            try:
-                post_json(
-                    self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
-                    {"match_id": match_id, "result": result},
-                )
-                print(f"[agent] reported match {match_id} end: {result}")
-            except Exception as exc:
-                print(f"[agent] failed to report match end: {exc}")
             self.stop()
 
         if grace > 0:
