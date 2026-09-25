@@ -179,6 +179,12 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
         platform_cpp.write_text(pc, encoding="utf-8", newline="\n")
 
     pc = platform_cpp.read_text(encoding="utf-8")
+    if "#include <cstring>" not in pc:
+        first_include = pc.find("#include")
+        if first_include >= 0:
+            line_end = pc.find("\n", first_include)
+            pc = pc[:line_end + 1] + "#include <cstring>\n" + pc[line_end + 1:]
+            platform_cpp.write_text(pc, encoding="utf-8", newline="\n")
     if PLATFORM_PATTERN_MARKER not in pc:
         close_anchor = "} // namespace Platform"
         if close_anchor not in pc:
