@@ -9,18 +9,29 @@ import struct
 COOKIE = 0x293A206F6C6C6548
 
 
-def read_client_version(csgo_dir: str) -> int:
+def read_host_version(csgo_dir: str) -> int:
+    # A2S_RESERVE_CHECK compares this against CBaseServer::GetHostVersion(),
+    # which is the protocol derived from PatchVersion, NOT steam.inf's
+    # ClientVersion/ServerVersion build number. Example:
+    #   PatchVersion=1.38.8.1 -> HostVersion 13881
     for path in (
         os.path.join(csgo_dir, "csgo", "steam.inf"),
         os.path.join(csgo_dir, "steam.inf"),
     ):
         try:
+            patch = ""
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 for raw in fh:
                     line = raw.strip()
-                    if line.lower().startswith("clientversion="):
-                        return int(line.split("=", 1)[1].strip())
-        except (OSError, ValueError):
+                    if line.lower().startswith("patchversion="):
+                        patch = line.split("=", 1)[1].strip()
+                        break
+            if patch:
+                parts = patch.split(".")
+                if len(parts) == 4 and all(p.isdigit() for p in parts):
+                    # CS:GO Source protocol form: 1.38.8.1 -> 13881
+                    return int(parts[0] + parts[1] + parts[2] + parts[3])
+        except OSError:
             pass
     return 0
 
@@ -38,15 +49,20 @@ def main() -> int:
         "--csgo-dir",
         default=r"C:\Program Files (x86)\Steam\steamapps\common\csgo legacy",
     )
-    ap.add_argument("--client-version", type=int, default=0)
+    ap.add_argument(
+        "--host-version",
+        type=int,
+        default=0,
+        help="Source protocol/GetHostVersion value, e.g. 13881",
+    )
     ap.add_argument("--stage", type=int, default=1)
     ap.add_argument("--timeout", type=float, default=3.0)
     args = ap.parse_args()
 
     account_id = int(args.account_id, 0)
-    host_version = args.client_version or read_client_version(args.csgo_dir)
+    host_version = args.host_version or read_host_version(args.csgo_dir)
     if not host_version:
-        print("[probe] ERROR: could not determine ClientVersion from steam.inf; pass --client-version")
+        print("[probe] ERROR: could not derive HostVersion from PatchVersion; pass --host-version")
         return 2
 
     resolved = socket.gethostbyname(args.host)
@@ -67,7 +83,7 @@ def main() -> int:
 
     print(
         f"[probe] -> {args.host}:{args.port} ({resolved}) "
-        f"stage={args.stage} ClientVersion={host_version} "
+        f"stage={args.stage} HostVersion={host_version} "
         f"account={account_id} cookie=0x{COOKIE:016x}"
     )
 
