@@ -7,6 +7,9 @@ enum class HostEvent
     Message, // id contains the message type, buffer contains the payload
     NetMessage, // id contains the recipient steam id, buffer contains the payload
     MicroTransactionResponse, // runs MicroTxnAuthorizationResponse_t, no arguments
+    // srcds only: buffer is a NUL-free IVEngineServer::ReserveServerForQueuedGame payload.
+    // steam_hook drains this on the engine/main callback thread.
+    ReserveServerForQueuedGame,
 };
 
 enum class GCEvent
