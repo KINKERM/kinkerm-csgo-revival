@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_REWARDS_V18"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_NATIVE_DROPS_V19"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -1127,9 +1127,28 @@ class ServerSlot:
                 },
             }
 
-        # Publish the completed result immediately so the launcher/client GC can
-        # populate the native end-match reward lane while the scoreboard is still
-        # visible. Keep srcds alive afterwards for normal intermission cleanup.
+        # Tell the injected server GC to create the actual reward items and add
+        # their preview blocks to CCSGameRules::RecordPlayerItemDrop. Source's
+        # own intermission code then broadcasts SendPlayerItemDrops and fires
+        # endmatch_cmm_start_reveal_items, which is the real scoreboard reveal.
+        trigger_path = os.path.join(
+            self.cfg["csgo_dir"], "csgo_gc", "server_match_end_trigger.txt"
+        )
+        trigger_tmp = trigger_path + ".tmp"
+        try:
+            with open(trigger_tmp, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(f"match_id={match_id}\n")
+                fh.write(f"time_played={elapsed}\n")
+                fh.write(f"ct_score={self.ct_score}\n")
+                fh.write(f"t_score={self.t_score}\n")
+            os.replace(trigger_tmp, trigger_path)
+            print(f"[agent] native drop reveal trigger written for match {match_id}")
+        except OSError as exc:
+            print(f"[agent] failed to write native drop reveal trigger: {exc}")
+
+        # Publish the completed result immediately so XP/rank state reaches the
+        # client while intermission is still visible. Item drops themselves are
+        # generated exactly once by the server GC trigger above.
         try:
             post_json(
                 self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
