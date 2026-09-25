@@ -157,6 +157,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1")) {
         throw "Built csgo_gc.dll does not contain the local server-GC delivery fix."
     }
+    if (-not $gcDllText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V2")) {
+        throw "Built csgo_gc.dll does not contain the current client cookie-reservation fix."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
@@ -253,6 +256,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1")) {
         throw "Installed csgo_gc.dll is missing the local server-GC delivery fix."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V2")) {
+        throw "Installed csgo_gc.dll is missing the current client cookie-reservation fix."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
