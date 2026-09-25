@@ -231,11 +231,11 @@ static bool RevivalDispatchReserveServerForQueuedGame(
         # uint32_t. Accept both instead of pinning the patcher to one spelling.
         server_case_pattern = re.compile(
             r'(?P<block>'
-            r'            case HostEvent::NetMessage:\\r?\\n'
-            r'                s_serverGC->m_networking\\.SendMessage\\('
-            r'(?:\\(uint32_t\\))?event\\.id, event\\.buffer\\.data\\(\\), '
-            r'static_cast<uint32_t>\\(event\\.buffer\\.size\\(\\)\\)\\);\\r?\\n'
-            r'                break;\\r?\\n'
+            r'            case HostEvent::NetMessage:\r?\n'
+            r'                s_serverGC->m_networking\.SendMessage\('
+            r'(?:\(uint32_t\))?event\.id, event\.buffer\.data\(\), '
+            r'static_cast<uint32_t>\(event\.buffer\.size\(\)\)\);\r?\n'
+            r'                break;\r?\n'
             r')'
         )
         m = server_case_pattern.search(patched)
