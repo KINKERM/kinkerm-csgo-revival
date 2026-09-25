@@ -21,7 +21,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V2 active\n");
+    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V3 active\n");
 }
 
 ServerGC::~ServerGC()
@@ -448,8 +448,38 @@ void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
 
     if (!matchId || !reservationId)
     {
+        // Public/community Legacy DS builds can answer our valid 9105 with an
+        // otherwise empty 9106. Source already received GameServerCookieId in
+        // GCServerWelcome, so persist that exact engine cookie as the local
+        // reservation response instead of waiting for the Python agent to infer
+        // readiness later from Match_Start. This keeps one authoritative cookie
+        // end-to-end: server welcome -> coordinator -> client 9107.
+        const auto current = ReadServerReservationFile();
+        const uint64_t requestedMatchId = ReservationNumber(current, "match_id");
+        if (requestedMatchId)
+        {
+            std::ofstream out(ServerReservationResponsePath,
+                std::ios::binary | std::ios::trunc);
+            if (out.is_open())
+            {
+                out << "match_id=" << requestedMatchId << "\n";
+                out << "reservation_id=" << GameServerCookieId << "\n";
+                out << "account_ids=";
+                auto accounts = current.find("account_ids");
+                if (accounts != current.end())
+                    out << accounts->second;
+                out << "\n";
+                out.flush();
+            }
+
+            Platform::Print(
+                "matchmaking server: native 9106 empty; using GC welcome cookie fallback match=%llu reservation=%llu\n",
+                requestedMatchId, GameServerCookieId);
+            return;
+        }
+
         Platform::Print(
-            "matchmaking server: native 9106 missing match/reservation id (match=%llu reservation=%llu)\n",
+            "matchmaking server: native 9106 missing match/reservation id (match=%llu reservation=%llu) and no local request\n",
             matchId, reservationId);
         return;
     }
