@@ -115,8 +115,8 @@ finally {
 # shell quoting problems with Python -c on Windows.
 $packedBytes = [IO.File]::ReadAllBytes($codePbin)
 $packedText = [Text.Encoding]::UTF8.GetString($packedBytes)
-if (-not $packedText.Contains("mg_revival_pool")) {
-    throw "Packed code.pbin is missing the stock Revival mapgroup marker"
+if (-not $packedText.Contains("m_revivalValidationMapGroup")) {
+    throw "Packed code.pbin is missing the real stock-mapgroup Revival marker"
 }
 if (-not $packedText.Contains("_GetRevivalValidationMapGroup")) {
     throw "Packed code.pbin is missing the Revival queue validation logic"
