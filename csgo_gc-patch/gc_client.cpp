@@ -89,6 +89,18 @@ std::vector<uint32_t> BridgeU32List(
     return out;
 }
 
+std::string RevivalNumericServerAddress(uint32_t ip, uint32_t port)
+{
+    char buffer[64];
+    snprintf(buffer, sizeof(buffer), "%u.%u.%u.%u:%u",
+        (ip >> 24) & 0xff,
+        (ip >> 16) & 0xff,
+        (ip >> 8) & 0xff,
+        ip & 0xff,
+        port);
+    return buffer;
+}
+
 #ifdef _WIN32
 constexpr uint32_t RevivalConnectionlessHeader = 0xFFFFFFFFu;
 constexpr uint8_t RevivalReserveCheckResponseOpcode = 0x25;
@@ -1088,23 +1100,27 @@ void ClientGC::PollMatchmakingBridge()
             return;
 
         const uint64_t reportedServerId = BridgeU64(state, "server_id", 0);
-        // The legacy client expects a nonzero server key for its reservation
-        // cookie/session bookkeeping even when transport is direct UDP. If the
-        // community server has no Steam master identity, use the reservation
-        // cookie as a stable synthetic key; routing still uses direct_udp_* and
-        // server_address.
-        const uint64_t serverId = reportedServerId ? reportedServerId : reservationId;
+        const uint32_t directUdpIp = static_cast<uint32_t>(
+            BridgeU64(state, "direct_udp_ip", 0));
+
+        // Match the retail-tested Accept flow: if the community server has no
+        // real Steam gameserver identity, use the intentionally inert serverid
+        // 1 and let direct_udp_ip/direct_udp_port own transport. Using the
+        // reservation cookie as serverid can make the retail client attempt a
+        // Steam-server route and never emit its 0x21 reserve check to Playit.
+        const uint64_t serverId = reportedServerId ? reportedServerId : 1;
+        const std::string numericServerAddress =
+            directUdpIp ? RevivalNumericServerAddress(directUdpIp, port)
+                        : serverAddress;
 
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
         reserve.set_serverid(serverId);
-        const uint32_t directUdpIp = static_cast<uint32_t>(
-            BridgeU64(state, "direct_udp_ip", 0));
         if (directUdpIp)
             reserve.set_direct_udp_ip(directUdpIp);
         reserve.set_direct_udp_port(port);
         reserve.set_reservationid(reservationId);
         reserve.set_map(mapName);
-        reserve.set_server_address(serverAddress);
+        reserve.set_server_address(numericServerAddress);
 
         CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *details =
             reserve.mutable_reservation();
@@ -1130,7 +1146,7 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingServerId = serverId;
         m_matchmakingDirectUdpIp = directUdpIp;
         m_matchmakingDirectUdpPort = port;
-        m_matchmakingServerAddress = serverAddress;
+        m_matchmakingServerAddress = numericServerAddress;
         m_matchmakingMap = mapName;
         m_matchmakingFinalReserveSent = false;
         RevivalArmAcceptWatcher(
@@ -1138,8 +1154,8 @@ void ClientGC::PollMatchmakingBridge()
             static_cast<uint32_t>(accountIds.size()));
         Platform::Print(
             "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu route=%s map=%s server=%s game_type=%u version=%u\n",
-            reservationId, serverId, reportedServerId ? "steamid+direct" : "synthetic-id+direct-udp",
-            mapName.c_str(), serverAddress.c_str(), gameType, serverVersion);
+            reservationId, serverId, reportedServerId ? "steamid+direct" : "serverid-1+direct-udp",
+            mapName.c_str(), numericServerAddress.c_str(), gameType, serverVersion);
         return;
     }
 
