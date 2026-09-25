@@ -119,6 +119,19 @@ def main() -> None:
             print("[build_pack] aborting; re-run with --force to pack anyway.")
             sys.exit(3)
 
+    if "csgo_gc.dll" in runtime:
+        with open(runtime["csgo_gc.dll"], "rb") as fh:
+            dll_blob = fh.read()
+        for marker in (
+            b"REVIVAL_MM_BRIDGE_CLEAN_V1",
+            b"REVIVAL_SERVER_RESERVATION_RETRY_V2",
+            b"REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1",
+        ):
+            if marker not in dll_blob:
+                print(f"[build_pack] ERROR: stale csgo_gc.dll, missing {marker.decode()}")
+                sys.exit(5)
+        print("[build_pack] verified current matchmaking DLL markers")
+
     with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, path in runtime.items():
             # The Win32 launcher loads the GC from <root>\\csgo_gc\\csgo_gc.dll.
@@ -131,7 +144,7 @@ def main() -> None:
             else:
                 pack_name = name
             zf.write(path, pack_name)
-        print(f"[build_pack] added {len(runtime)} runtime file(s) at root")
+        print(f"[build_pack] added {len(runtime)} runtime file(s) in launcher layout")
         zf.write(args.config, "csgo_gc/config.txt")
         print("[build_pack] added csgo_gc/config.txt")
         zf.write(args.items_game, "csgo/scripts/items/items_game.txt")
