@@ -203,7 +203,16 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
         throw "Built csgo_gc.dll does not contain guaranteed Competitive match drops."
     }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
-        throw "Built csgo_gc.dll does not contain completed-match end-screen reward fallback."
+        throw "Built csgo_gc.dll does not contain completed-match result fallback."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_REVEAL_V1")) {
+        throw "Built csgo_gc.dll does not contain native CCSGameRules drop reveal."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_BUNDLE_V1")) {
+        throw "Built csgo_gc.dll does not contain exact server drop bundle delivery."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_DROP_IMPORT_V1")) {
+        throw "Built csgo_gc.dll does not contain exact server item persistence."
     }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
@@ -345,7 +354,16 @@ if (-not $SkipInstall) {
         throw "Installed csgo_gc.dll is missing guaranteed Competitive match drops."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
-        throw "Installed csgo_gc.dll is missing completed-match end-screen reward fallback."
+        throw "Installed csgo_gc.dll is missing completed-match result fallback."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_REVEAL_V1")) {
+        throw "Installed csgo_gc.dll is missing native CCSGameRules drop reveal."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_BUNDLE_V1")) {
+        throw "Installed csgo_gc.dll is missing exact server drop bundle delivery."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_DROP_IMPORT_V1")) {
+        throw "Installed csgo_gc.dll is missing exact server item persistence."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
