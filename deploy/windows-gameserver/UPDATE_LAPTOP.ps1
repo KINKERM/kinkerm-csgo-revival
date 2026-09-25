@@ -97,7 +97,7 @@ Invoke-WebRequest "$RawBase/deploy/windows-gameserver/start-agent.bat" -OutFile 
 Write-Host "[4/4] Validating..." -ForegroundColor Yellow
 foreach ($path in @(
     (Join-Path $CsgoDir "srcds.exe"),
-    (Join-Path $CsgoDir "csgo_gc.dll"),
+    (Join-Path $CsgoDir "csgo_gc\\csgo_gc.dll"),
     (Join-Path $CsgoDir "csgo_gc\\config.txt"),
     (Join-Path $CsgoDir "csgo\\scripts\\items\\items_game.txt"),
     (Join-Path $AgentDir "agent.py"),
