@@ -113,6 +113,19 @@ foreach ($path in @(
 }
 
 Write-Host ""
+$installedGc = Join-Path $CsgoDir "csgo_gc\csgo_gc.dll"
+$installedGcText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($installedGc))
+foreach ($marker in @(
+    "REVIVAL_MM_BRIDGE_CLEAN_V1",
+    "REVIVAL_SERVER_RESERVATION_RETRY_V2",
+    "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1"
+)) {
+    if (-not $installedGcText.Contains($marker)) {
+        throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
+    }
+}
+Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
+
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
 Write-Host ""
