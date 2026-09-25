@@ -101,23 +101,13 @@ Write-Host "    HEAD = $head"
 
 Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 
-# Keep steam_hook.cpp from the exact csgo_gc revision this revival targets.
-# Download the exact raw file by commit SHA instead of depending on whatever
-# commits/branches happen to exist in the user's local csgo_gc_clean checkout.
-$steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
-$pinnedSteamHookUrl = "https://raw.githubusercontent.com/mikkokko/csgo_gc/$PinnedCsgoGcCommit/csgo_gc/steam_hook.cpp"
-$tempSteamHook = "$steamHook.revival-pinned.tmp"
-Write-Host "    Downloading pinned steam_hook.cpp from $PinnedCsgoGcCommit..." -ForegroundColor DarkGray
-Remove-Item $tempSteamHook -Force -ErrorAction SilentlyContinue
-Invoke-WebRequest -Uri $pinnedSteamHookUrl -OutFile $tempSteamHook -UseBasicParsing
-if (-not (Test-Path $tempSteamHook)) {
-    throw "Pinned steam_hook.cpp download did not create a file."
+# Restore steam_hook.cpp from THIS csgo_gc source tree's own commit.
+# This keeps it ABI/compiler-compatible with the existing CMake project. The
+# revival patcher below makes only the two small required edits in-place.
+& git -C $CsgoGcSource checkout -- "csgo_gc/steam_hook.cpp"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not restore the local csgo_gc steam_hook.cpp."
 }
-if ((Get-Item $tempSteamHook).Length -lt 10000) {
-    Remove-Item $tempSteamHook -Force -ErrorAction SilentlyContinue
-    throw "Pinned steam_hook.cpp download is unexpectedly small/corrupt."
-}
-Move-Item $tempSteamHook $steamHook -Force
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
 
