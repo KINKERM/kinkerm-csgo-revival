@@ -51,6 +51,15 @@ void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
     }
 }
 
+void ServerGC::HandleIdle()
+{
+    // SharedGC idles at ~250 ms. Re-read the tiny local reservation request
+    // twice per second so later humans can be appended to the SAME live match.
+    // SendMatchmakingReservation itself suppresses unchanged requests.
+    if ((++m_reservationIdleTicks & 1u) == 0)
+        SendMatchmakingReservation();
+}
+
 void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 {
     GCMessageRead messageRead{ type, data, size };
@@ -320,9 +329,6 @@ uint64_t ReservationNumber(
 
 void ServerGC::SendMatchmakingReservation()
 {
-    if (m_sentReservation)
-        return;
-
     const auto kv = ReadServerReservationFile();
     const uint64_t matchId = ReservationNumber(kv, "match_id");
     if (!matchId)
@@ -338,6 +344,21 @@ void ServerGC::SendMatchmakingReservation()
         static_cast<uint32_t>(ReservationNumber(kv, "server_version", 0)));
 
     auto accounts = kv.find("account_ids");
+
+    // The initial 9105 creates the native reservation. If the laptop agent
+    // later expands account_ids for a drop-in human, resend 9105 with the same
+    // match so Source refreshes sv_mmqueue_reservation's allowed account list.
+    // Do not spam the game server when the file has not changed.
+    const std::string accountText =
+        accounts != kv.end() ? accounts->second : std::string{};
+    const std::string signature =
+        std::to_string(matchId) + "|" +
+        std::to_string(ReservationNumber(kv, "game_type", 8)) + "|" +
+        std::to_string(ReservationNumber(kv, "server_version", 0)) + "|" +
+        accountText;
+    if (m_sentReservation && signature == m_lastReservationSignature)
+        return;
+
     if (accounts != kv.end())
     {
         std::istringstream stream(accounts->second);
@@ -360,10 +381,14 @@ void ServerGC::SendMatchmakingReservation()
 
     GCMessageWrite write{ RevivalMsgMatchmakingGC2ServerReserve, reserve };
     PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
+    const bool refresh = m_sentReservation;
     m_sentReservation = true;
+    m_lastReservationSignature = signature;
 
     Platform::Print(
-        "matchmaking server: sent native 9105 match=%llu accounts=%d game_type=%u version=%u\n",
+        refresh
+            ? "matchmaking server: refreshed native 9105 match=%llu accounts=%d game_type=%u version=%u\n"
+            : "matchmaking server: sent native 9105 match=%llu accounts=%d game_type=%u version=%u\n",
         matchId, reserve.account_ids_size(), reserve.game_type(), reserve.server_version());
 }
 
