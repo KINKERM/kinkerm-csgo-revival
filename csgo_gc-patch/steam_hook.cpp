@@ -228,6 +228,8 @@ public:
     {
         if (m_server)
         {
+            if ((unMsgType & 0x7fffffffu) == 9106u)
+                Platform::Print("matchmaking hook: Source emitted native 9106\\n");
             assert(s_serverGC);
             s_serverGC->m_gc.PostToGC(GCEvent::Message, unMsgType, pubData, cubData);
         }
@@ -274,6 +276,9 @@ public:
 
             return k_EGCResultNoMessage;
         }
+
+        if (m_server && ((*punMsgType & 0x7fffffffu) == 9105u))
+            Platform::Print("matchmaking hook: Source retrieved native 9105\\n");
 
         return k_EGCResultOK;
     }
