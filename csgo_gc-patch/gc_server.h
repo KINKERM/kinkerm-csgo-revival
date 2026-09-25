@@ -24,7 +24,7 @@ private:
     void MatchmakingReservationResponse(GCMessageRead &messageRead);
     void IncrementKillCountAttribute(GCMessageRead &messageRead);
     void MatchEndRunRewardDrops(GCMessageRead &messageRead);
-    void ProcessRevivalMatchEndTrigger();
+    void ProcessRevivalMatchEndTrigger(bool nativeIntermission = false);
 
     bool m_sentWelcome{};
     bool m_sentReservation{};
