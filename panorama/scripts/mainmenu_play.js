@@ -836,9 +836,6 @@ var PlayMenu = ( function()
 			m_arrGameModeRadios[ revivalModeIndex ].visible =
 				( m_arrGameModeRadios[ revivalModeIndex ].id === 'competitive' );
 		}
-		var revivalLegacyMapPicker = $( '#RevivalLegacyMapPicker' );
-		if ( revivalLegacyMapPicker )
-			revivalLegacyMapPicker.visible = false;
 		var revivalWorkshopSearch = $( '#WorkshopSearchBar' );
 		if ( revivalWorkshopSearch ) revivalWorkshopSearch.visible = false;
 		var revivalWorkshopVisit = $( '#WorkshopVisitButton' );
