@@ -6,9 +6,11 @@ This document is the source of truth for the current revival on the
 The old Steam-P2P-only instructions are obsolete. The current revival has:
 
 - one shared **ranked Competitive 5v5 queue**
-- 10-player match allocation
+- one-human minimum: the first queued player allocates the match immediately
+- bots fill empty slots up to 10 total players
+- later queued humans join the same live server and replace bots
 - native-style MATCH FOUND / ACCEPT / reserve flow through the patched GC
-- one lightweight dedicated match server, started only when a match is allocated
+- one lightweight dedicated match server, started only when somebody queues
 - 64-tick Competitive matches
 - a large rotating map pool chosen by the coordinator, not by individual clients
 - persistent profile XP/levels and Competitive rank/wins
@@ -290,29 +292,31 @@ are not selected.
 ## Match flow
 
 ```text
-player presses GO
+first player presses GO
     ↓
 patched client GC sends matchmaking start
     ↓
 launcher forwards queue request to backend
     ↓
-backend waits for 10 players
-    ↓
-backend chooses an installed map
+backend immediately chooses an installed map
     ↓
 laptop agent receives assignment
     ↓
-srcds starts at 64 tick
+srcds starts at 64 tick with bots filling empty slots
     ↓
 native reservation / GC reserve flow
     ↓
 MATCH FOUND
     ↓
-all players ACCEPT
+first human connects
     ↓
-players connect
+warmup ends and Competitive starts with bots
     ↓
-Competitive match starts
+later humans press GO
+    ↓
+backend sends them the SAME live server/reservation
+    ↓
+they join the running match and bots vacate their slots
 ```
 
 The laptop does not need to be running for the Play screen to render correctly,
@@ -375,7 +379,7 @@ After updating, verify:
 3. `csgo\panorama\code.pbin` contains the Revival queue markers and `panorama.dll` is patched
 4. Play shows only the Revival Competitive queue card
 5. laptop agent prints the expected large installed map list
-6. queue reaches MATCH FOUND when 10 players are present
+6. one player can reach MATCH FOUND and start a bot-filled match
 7. reservation id reported by server/client matches
 8. after a completed match, profile XP/rank state is still present after restart
 
