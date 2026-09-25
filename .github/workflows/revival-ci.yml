@@ -45,6 +45,8 @@ jobs:
           }
 
   csgo-gc-win32:
+    # Full Win32 build is expensive; run it only when manually requested.
+    if: github.event_name == 'workflow_dispatch'
     # Pin VS2022 because the csgo_gc Win32 CMake generator targets VS17.
     runs-on: windows-2022
     steps:
