@@ -142,6 +142,11 @@ public:
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
 
+    // Import an exact SO Create produced by the dedicated server. This keeps
+    // the local persistent inventory identical to the item shown by the native
+    // server-side end-match reveal.
+    bool ImportServerCreatedItem(const CMsgSOSingleObject &create);
+
     // operation shop (revival): query/spend stars from the player's Operation coin.
     // CanSpendStars never mutates inventory. SpendStars persists and emits the
     // modified coin so Panorama live-refreshes the displayed balance.
