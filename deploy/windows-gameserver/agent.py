@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_SOCACHE_V9"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_REWARDS_V10"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -107,6 +107,45 @@ def post_json(url: str, body: dict) -> dict:
     with urllib.request.urlopen(req, timeout=8) as resp:
         raw = resp.read()
     return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def flush_server_reward_bridge(cfg: dict) -> None:
+    reward_dir = os.path.join(cfg["csgo_dir"], "csgo_gc", "server_rewards")
+    os.makedirs(reward_dir, exist_ok=True)
+    try:
+        names = list(os.listdir(reward_dir))
+    except OSError:
+        return
+
+    base = cfg["backend_url"].rstrip("/")
+    for name in names:
+        if not name.lower().endswith(".bin"):
+            continue
+        steamid = name[:-4]
+        if not steamid.isdigit():
+            continue
+        path = os.path.join(reward_dir, name)
+        try:
+            with open(path, "rb") as fh:
+                payload = fh.read()
+            if not payload:
+                os.remove(path)
+                continue
+            response = post_json(
+                base + "/matchmaking/server/reward",
+                {
+                    "steamid": steamid,
+                    "payload_b64": base64.b64encode(payload).decode("ascii"),
+                },
+            )
+            if response.get("ok"):
+                os.remove(path)
+                print(
+                    f"[agent] relayed match-end 9136 for {steamid} "
+                    f"({len(payload)} bytes)"
+                )
+        except Exception as exc:
+            print(f"[agent] reward relay retry for {steamid}: {exc}")
 
 
 def sync_server_player_inventories(
@@ -489,6 +528,10 @@ class ServerSlot:
             )
             sync_server_player_inventories(
                 self.cfg, assignment, clear_existing=True
+            )
+            os.makedirs(
+                os.path.join(self.cfg["csgo_dir"], "csgo_gc", "server_rewards"),
+                exist_ok=True,
             )
             write_native_reservation(self.cfg["csgo_dir"], assignment)
             server_version = read_csgo_server_version(self.cfg["csgo_dir"])
@@ -979,6 +1022,7 @@ def main() -> None:
         while True:
             slot.refresh_native_reservation_response()
             slot.refresh_connected_players_via_rcon()
+            flush_server_reward_bridge(cfg)
             body = {
                 "agent_id": cfg["agent_id"],
                 "public_host": cfg["public_host"],
