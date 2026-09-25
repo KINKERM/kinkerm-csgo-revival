@@ -202,6 +202,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_GUARANTEED_MATCH_DROPS_V1")) {
         throw "Built csgo_gc.dll does not contain guaranteed Competitive match drops."
     }
+    if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
+        throw "Built csgo_gc.dll does not contain completed-match end-screen reward fallback."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
@@ -340,6 +343,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_GUARANTEED_MATCH_DROPS_V1")) {
         throw "Installed csgo_gc.dll is missing guaranteed Competitive match drops."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
+        throw "Installed csgo_gc.dll is missing completed-match end-screen reward fallback."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
