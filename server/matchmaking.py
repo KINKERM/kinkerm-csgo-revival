@@ -1,25 +1,20 @@
-"""Single-queue CS:GO Revival matchmaking coordinator.
+"""Single-server drop-in CS:GO Revival matchmaking coordinator.
 
-The revival intentionally exposes one 5v5 Competitive queue. Clients enqueue via
-revival_server.py; one lightweight Windows server agent registers the single
-available srcds slot. When ten players are waiting, the coordinator allocates a
-map, asks the agent to start srcds, then publishes the reservation to all ten
-clients once the agent reports the server ready.
+The revival exposes one ranked Competitive queue backed by one Windows srcds.
+The first queued human starts a match immediately. Empty player slots are filled
+by bots on the game server; later humans who queue are attached to the same live
+match (up to 10 humans) and replace bots as they connect.
 """
 
 from __future__ import annotations
 
 import random
-import secrets
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 
-# Deliberately broad: the Windows agent reports which BSPs actually exist, and
-# the coordinator chooses only from the intersection. This lets an old install
-# keep removed maps without creating dead reservations for maps it does not have.
 DEFAULT_MAP_POOL = (
     "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_overpass",
     "de_vertigo", "de_train", "de_cache", "de_cbble", "de_ancient",
@@ -31,7 +26,7 @@ DEFAULT_MAP_POOL = (
     "cs_office", "cs_agency", "cs_italy", "cs_insertion", "cs_insertion2",
 )
 
-PLAYERS_PER_MATCH = 10
+MAX_HUMANS = 10
 SERVER_STALE_SECONDS = 12.0
 ALLOCATE_TIMEOUT_SECONDS = 90.0
 
@@ -85,18 +80,36 @@ class MatchmakingCoordinator:
     def _server_online_locked(self) -> bool:
         return (
             bool(self._server.get("agent_id"))
-            and time.time() - float(self._server.get("last_seen", 0.0)) <= SERVER_STALE_SECONDS
+            and time.time() - float(self._server.get("last_seen", 0.0))
+            <= SERVER_STALE_SECONDS
         )
 
+    def _active_match_locked(self) -> Match | None:
+        for match in self._matches.values():
+            if match.state in ("allocating", "reserved", "in_match"):
+                return match
+        return None
+
     def _server_idle_locked(self) -> bool:
+        return (
+            self._server_online_locked()
+            and self._assignment is None
+            and self._active_match_locked() is None
+        )
+
+    def _server_joinable_locked(self) -> bool:
         if not self._server_online_locked():
             return False
-        if self._assignment is not None:
-            return False
-        return not any(m.state in ("allocating", "reserved", "in_match") for m in self._matches.values())
+        match = self._active_match_locked()
+        if match is None:
+            return True
+        return len(match.players) < MAX_HUMANS
 
     def _waiting_ids_locked(self) -> list[int]:
         return [q.account_id for q in self._queue]
+
+    def _match_account_ids(self, match: Match) -> list[int]:
+        return [p.account_id for p in match.players]
 
     def _publish_search_states_locked(self) -> None:
         waiting = self._waiting_ids_locked()
@@ -105,14 +118,44 @@ class MatchmakingCoordinator:
                 "state": "searching",
                 "waiting_account_ids": waiting,
                 "players_searching": len(waiting),
-                "players_required": PLAYERS_PER_MATCH,
+                # One human is enough to boot a server. Ten is only the human cap.
+                "players_required": 1,
                 "server_online": self._server_online_locked(),
+                "server_available": self._server_joinable_locked(),
             }
 
+    def _state_for_match_player_locked(self, match: Match, player: QueueEntry) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "state": match.state,
+            "match_id": match.match_id,
+            "reservation_id": match.reservation_id,
+            "map": match.map_name,
+            "account_ids": self._match_account_ids(match),
+            "server_online": self._server_online_locked(),
+            "server_available": len(match.players) < MAX_HUMANS,
+            "game_type": 8,
+        }
+        if match.server_address:
+            host = str(self._server.get("public_host") or "")
+            port = int(self._server.get("public_port") or 27015)
+            state.update({
+                "server_address": match.server_address,
+                "public_host": host,
+                "public_port": port,
+            })
+        return state
+
+    def _refresh_match_player_states_locked(self, match: Match) -> None:
+        for player in match.players:
+            current = self._states.get(player.steamid, {})
+            # Do not resurrect someone who explicitly cancelled/abandoned.
+            if current.get("state") == "idle" and current.get("previous_state"):
+                continue
+            self._states[player.steamid] = self._state_for_match_player_locked(
+                match, player
+            )
+
     def _choose_map_locked(self) -> str:
-        # The laptop reports every installed de_/cs_ BSP. Treat that installed
-        # set as the real single-queue pool so preserved/removed CS:GO maps are
-        # automatically eligible without needing a client-side map picker.
         available = [
             str(x) for x in self._server.get("maps", [])
             if str(x).startswith(("de_", "cs_"))
@@ -121,29 +164,64 @@ class MatchmakingCoordinator:
             return random.choice(available)
         return random.choice(self._map_pool)
 
-    def _try_form_locked(self) -> None:
-        if len(self._queue) < PLAYERS_PER_MATCH or not self._server_idle_locked():
-            self._publish_search_states_locked()
+    def _sync_assignment_locked(self, match: Match) -> None:
+        if self._assignment is None:
+            return
+        if int(self._assignment.get("match_id") or 0) != match.match_id:
+            return
+        self._assignment["reservation_id"] = match.reservation_id
+        self._assignment["account_ids"] = self._match_account_ids(match)
+        self._assignment["steamids"] = [p.steamid for p in match.players]
+        self._assignment["human_slots"] = len(match.players)
+        self._assignment["max_humans"] = MAX_HUMANS
+
+    def _attach_waiting_to_active_match_locked(self) -> None:
+        match = self._active_match_locked()
+        if match is None:
             return
 
-        players = self._queue[:PLAYERS_PER_MATCH]
-        del self._queue[:PLAYERS_PER_MATCH]
+        existing = {p.steamid for p in match.players}
+        changed = False
+        while self._queue and len(match.players) < MAX_HUMANS:
+            player = self._queue.pop(0)
+            if player.steamid in existing:
+                continue
+            match.players.append(player)
+            existing.add(player.steamid)
+            changed = True
+            self._states[player.steamid] = self._state_for_match_player_locked(
+                match, player
+            )
+
+        if changed:
+            self._sync_assignment_locked(match)
+            self._refresh_match_player_states_locked(match)
+
+    def _allocate_from_first_human_locked(self) -> None:
+        if not self._queue or not self._server_idle_locked():
+            return
+
+        # Take everyone currently waiting, up to the 10-human server cap. The
+        # important difference from Valve-style 5v5 formation is that ONE player
+        # is enough to allocate the server.
+        players = self._queue[:MAX_HUMANS]
+        del self._queue[:len(players)]
 
         self._next_match_id += 1
         match_id = self._next_match_id
-        # The real reservation id is generated/acknowledged by srcds in its
-        # native 9106 response. Do not invent one in the coordinator.
-        reservation_id = 0
         map_name = self._choose_map_locked()
-        match = Match(match_id, reservation_id, players, map_name)
+        match = Match(match_id, 0, players, map_name)
         self._matches[match_id] = match
 
         self._assignment = {
             "match_id": match_id,
-            "reservation_id": reservation_id,
+            "reservation_id": 0,
             "map": map_name,
-            "account_ids": [p.account_id for p in players],
+            "account_ids": self._match_account_ids(match),
             "steamids": [p.steamid for p in players],
+            "human_slots": len(players),
+            "max_humans": MAX_HUMANS,
+            "fill_with_bots": True,
             "tickrate": 64,
             "game_type": players[0].game_type if players else 8,
             "client_version": players[0].client_version if players else 0,
@@ -151,14 +229,15 @@ class MatchmakingCoordinator:
             "srcds_game_mode": 1,
         }
 
-        for p in players:
-            self._states[p.steamid] = {
-                "state": "allocating",
-                "match_id": match_id,
-                "reservation_id": reservation_id,
-                "map": map_name,
-                "account_ids": [x.account_id for x in players],
-            }
+        self._refresh_match_player_states_locked(match)
+
+    def _try_form_locked(self) -> None:
+        # If a bot-filled match already exists, new humans go straight into it.
+        self._attach_waiting_to_active_match_locked()
+
+        # If no match exists, the first waiting human boots the server.
+        if self._active_match_locked() is None:
+            self._allocate_from_first_human_locked()
 
         self._publish_search_states_locked()
 
@@ -168,9 +247,10 @@ class MatchmakingCoordinator:
             if not account_id:
                 return {"state": "error", "error": "invalid steamid"}
 
-            # Do not duplicate an active queue/match entry.
             existing = self._states.get(steamid, {})
-            if existing.get("state") in ("searching", "allocating", "reserved", "in_match"):
+            if existing.get("state") in (
+                "searching", "allocating", "reserved", "in_match"
+            ):
                 return dict(existing)
 
             self._queue = [q for q in self._queue if q.steamid != steamid]
@@ -180,7 +260,11 @@ class MatchmakingCoordinator:
                 game_type=int(game_type or 8),
                 client_version=int(client_version or 0),
             ))
-            self._states[steamid] = {"state": "searching"}
+            self._states[steamid] = {
+                "state": "searching",
+                "server_online": self._server_online_locked(),
+                "server_available": self._server_joinable_locked(),
+            }
             self._try_form_locked()
             return dict(self._states[steamid])
 
@@ -188,9 +272,10 @@ class MatchmakingCoordinator:
         with self._lock:
             self._queue = [q for q in self._queue if q.steamid != steamid]
             old = self._states.get(steamid, {})
-            # Searching can always be cancelled. Reserved/in-match is treated as
-            # an abandon request by later result/rank handling.
-            self._states[steamid] = {"state": "idle", "previous_state": old.get("state", "")}
+            self._states[steamid] = {
+                "state": "idle",
+                "previous_state": old.get("state", ""),
+            }
             self._publish_search_states_locked()
             return dict(self._states[steamid])
 
@@ -198,17 +283,22 @@ class MatchmakingCoordinator:
         with self._lock:
             state = dict(self._states.get(steamid, {"state": "idle"}))
             state.setdefault("server_online", self._server_online_locked())
+            state.setdefault("server_available", self._server_joinable_locked())
             return state
 
     def server_heartbeat(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            self._server["agent_id"] = str(body.get("agent_id") or "windows-laptop")
+            self._server["agent_id"] = str(
+                body.get("agent_id") or "windows-laptop"
+            )
             self._server["public_host"] = str(body.get("public_host") or "")
             self._server["public_port"] = int(body.get("public_port") or 27015)
             self._server["last_seen"] = time.time()
             maps = body.get("maps")
             if isinstance(maps, list):
-                self._server["maps"] = [str(m) for m in maps if str(m).strip()]
+                self._server["maps"] = [
+                    str(m) for m in maps if str(m).strip()
+                ]
 
             started_match_id = int(body.get("started_match_id") or 0)
             if started_match_id:
@@ -221,56 +311,52 @@ class MatchmakingCoordinator:
                 match = self._matches.get(ready_match_id)
                 if match and match.state == "allocating" and self._assignment:
                     match.reservation_id = native_reservation_id
-                    self._assignment["reservation_id"] = native_reservation_id
-                    host = self._server.get("public_host", "")
+                    host = str(self._server.get("public_host") or "")
                     port = int(self._server.get("public_port") or 27015)
                     if host:
                         match.server_address = f"{host}:{port}"
                         match.state = "reserved"
-                        ids = [p.account_id for p in match.players]
-                        for p in match.players:
-                            self._states[p.steamid] = {
-                                "state": "reserved",
-                                "match_id": match.match_id,
-                                "reservation_id": match.reservation_id,
-                                "map": match.map_name,
-                                "server_address": match.server_address,
-                                "public_host": host,
-                                "public_port": port,
-                                "account_ids": ids,
-                                "game_type": 8,  # legacy client Competitive search type
-                            }
+                        self._sync_assignment_locked(match)
+                        self._refresh_match_player_states_locked(match)
 
-            # If allocation died before the server became ready, put players back.
             if self._assignment:
                 mid = int(self._assignment.get("match_id") or 0)
                 match = self._matches.get(mid)
-                if match and match.state == "allocating" and time.time() - match.created_at > ALLOCATE_TIMEOUT_SECONDS:
-                    for p in reversed(match.players):
-                        self._queue.insert(0, p)
+                if (
+                    match
+                    and match.state == "allocating"
+                    and time.time() - match.created_at > ALLOCATE_TIMEOUT_SECONDS
+                ):
+                    # Server failed to boot. Put still-interested players back in
+                    # line and let the next heartbeat retry from a clean slot.
+                    for player in reversed(match.players):
+                        if self._states.get(player.steamid, {}).get("state") != "idle":
+                            self._queue.insert(0, player)
                     match.state = "complete"
                     self._assignment = None
-                    self._publish_search_states_locked()
+                    self._server["ready_match_id"] = 0
 
             self._try_form_locked()
             return {
                 "ok": True,
-                "assignment": dict(self._assignment) if self._assignment else None,
+                "assignment": dict(self._assignment)
+                if self._assignment else None,
                 "server_online": True,
+                "server_available": self._server_joinable_locked(),
             }
 
     def server_match_started(self, match_id: int) -> None:
         with self._lock:
             match = self._matches.get(int(match_id))
-            if not match:
+            if not match or match.state == "complete":
                 return
             match.state = "in_match"
-            for p in match.players:
-                state = dict(self._states.get(p.steamid, {}))
-                state["state"] = "in_match"
-                self._states[p.steamid] = state
+            self._sync_assignment_locked(match)
+            self._refresh_match_player_states_locked(match)
 
-    def server_match_ended(self, match_id: int, result: dict[str, Any] | None = None) -> list[str]:
+    def server_match_ended(
+        self, match_id: int, result: dict[str, Any] | None = None
+    ) -> list[str]:
         with self._lock:
             match = self._matches.get(int(match_id))
             if not match:
@@ -281,36 +367,28 @@ class MatchmakingCoordinator:
             steamids = [p.steamid for p in match.players]
 
             if result.get("reason") == "accept_timeout":
-                connected = {
-                    int(x) for x in result.get("connected_account_ids", [])
-                    if str(x).isdigit()
-                }
-                # Players who actually accepted/entered go straight back into the
-                # single Competitive queue. Missing players return idle; this is
-                # the revival equivalent of Valve cancelling a failed accept.
-                for p in match.players:
-                    if p.account_id in connected:
-                        self._queue.append(p)
-                        self._states[p.steamid] = {"state": "searching"}
-                    else:
-                        self._states[p.steamid] = {
-                            "state": "idle",
-                            "error": "match_accept_timeout",
-                            "last_match_id": match.match_id,
-                        }
+                # This now means nobody entered the freshly-created server.
+                # Keep players who were still interested in the queue so the
+                # server can be retried; explicit cancellations remain idle.
+                for player in match.players:
+                    if self._states.get(player.steamid, {}).get("state") != "idle":
+                        self._queue.append(player)
+                        self._states[player.steamid] = {"state": "searching"}
             else:
-                for p in match.players:
-                    self._states[p.steamid] = {
+                for player in match.players:
+                    self._states[player.steamid] = {
                         "state": "idle",
                         "last_match_id": match.match_id,
                         "last_map": match.map_name,
                         "result": result,
                     }
 
-            if self._assignment and int(self._assignment.get("match_id") or 0) == match.match_id:
+            if (
+                self._assignment
+                and int(self._assignment.get("match_id") or 0) == match.match_id
+            ):
                 self._assignment = None
             self._server["ready_match_id"] = 0
-            self._publish_search_states_locked()
             self._try_form_locked()
             return steamids
 
@@ -319,15 +397,19 @@ class MatchmakingCoordinator:
             return {
                 "waiting": len(self._queue),
                 "server_online": self._server_online_locked(),
+                "server_available": self._server_joinable_locked(),
                 "server": dict(self._server),
-                "assignment": dict(self._assignment) if self._assignment else None,
+                "assignment": dict(self._assignment)
+                if self._assignment else None,
                 "matches": {
                     str(mid): {
-                        "state": m.state,
-                        "map": m.map_name,
-                        "server_address": m.server_address,
-                        "players": [p.steamid for p in m.players],
+                        "state": match.state,
+                        "map": match.map_name,
+                        "server_address": match.server_address,
+                        "players": [p.steamid for p in match.players],
+                        "human_count": len(match.players),
+                        "max_humans": MAX_HUMANS,
                     }
-                    for mid, m in self._matches.items()
+                    for mid, match in self._matches.items()
                 },
             }
