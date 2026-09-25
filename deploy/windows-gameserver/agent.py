@@ -504,14 +504,28 @@ class ServerSlot:
                     )
                 return
 
-            # The injected server GC owns the empty-9106 cookie fallback.
-            # A Steam gameserver ID is optional for our direct-UDP/Playit route;
-            # community servers may have no master connection and therefore no
-            # valid Steam server identity. The reservation cookie is the
-            # readiness barrier here.
+            # Public/community Legacy DS can log the empty-9106 cookie
+            # fallback in the SRCDS console without leaving a response file
+            # visible to this Python process. The server has already received
+            # this exact cookie through GCServerWelcome, so once Source has
+            # reached Match_Start we can safely mirror the same authoritative
+            # cookie into the HTTP coordinator and continue over direct UDP.
             if source_started_at and time.monotonic() - source_started_at >= 2.5:
-                if not response:
-                    continue
+                with self._lock:
+                    if not self.alive() or self.match_id != match_id:
+                        return
+                    self.reservation_id = REVIVAL_GAME_SERVER_COOKIE_ID
+                    self.server_id = 0
+                    self.reserved_account_ids = set(self.expected_account_ids)
+                    self.ready_match_id = match_id
+                    self.ready_at = time.monotonic()
+                    self.using_cookie_fallback = True
+                    print(
+                        f"[agent] GC welcome cookie fallback accepted match {match_id}; "
+                        f"reservation={self.reservation_id}; server_id=direct-udp; waiting for "
+                        "first human to enter (bots fill empty slots)"
+                    )
+                return
 
         if self.alive():
             print("[agent] srcds never reached a usable matchmaking-ready state")
