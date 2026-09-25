@@ -226,16 +226,23 @@ static bool RevivalDispatchReserveServerForQueuedGame(
 '''
         patched = patched.replace(run_anchor, bridge + run_anchor, 1)
 
-        # Target only the server-side HostEvent switch. The NetMessage line is
-        # unique in that block because server networking takes recipient id.
-        server_case_anchor = r'''            case HostEvent::NetMessage:
-                s_serverGC->m_networking.SendMessage((uint32_t)event.id, event.buffer.data(), static_cast<uint32_t>(event.buffer.size()));
-                break;
-'''
-        if server_case_anchor not in patched:
+        # Target only the server-side HostEvent switch. Older compatible
+        # csgo_gc revisions pass event.id directly; newer ones cast it to
+        # uint32_t. Accept both instead of pinning the patcher to one spelling.
+        server_case_pattern = re.compile(
+            r'(?P<block>'
+            r'            case HostEvent::NetMessage:\\r?\\n'
+            r'                s_serverGC->m_networking\\.SendMessage\\('
+            r'(?:\\(uint32_t\\))?event\\.id, event\\.buffer\\.data\\(\\), '
+            r'static_cast<uint32_t>\\(event\\.buffer\\.size\\(\\)\\)\\);\\r?\\n'
+            r'                break;\\r?\\n'
+            r')'
+        )
+        m = server_case_pattern.search(patched)
+        if not m:
             print("[patch_steam_hook] ERROR: server HostEvent switch anchor missing")
             return 10
-        server_case_new = server_case_anchor + r'''
+        server_case_new = m.group("block") + r'''
             case HostEvent::ReserveServerForQueuedGame:
 #ifdef _WIN32
                 RevivalDispatchReserveServerForQueuedGame(event.id, event.buffer);
@@ -244,7 +251,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(
 #endif
                 break;
 '''
-        patched = patched.replace(server_case_anchor, server_case_new, 1)
+        patched = patched[:m.start()] + server_case_new + patched[m.end():]
 
     path.write_text(patched, encoding="utf-8", newline="\n")
 
