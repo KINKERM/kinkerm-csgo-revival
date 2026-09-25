@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_ACCEPT_FLOW_V6"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_ACTIVE_MATCH_V7"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -56,16 +56,20 @@ STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
 
 
-def account_id_from_log_line(line: str) -> int:
-    if "entered the game" not in line.lower():
-        return 0
-    m = STEAM3_RE.search(line)
+def account_id_from_text(text: str) -> int:
+    m = STEAM3_RE.search(text)
     if m:
         return int(m.group(1))
-    m = STEAM2_RE.search(line)
+    m = STEAM2_RE.search(text)
     if m:
         return int(m.group(2)) * 2 + int(m.group(1))
     return 0
+
+
+def account_id_from_log_line(line: str) -> int:
+    if "entered the game" not in line.lower():
+        return 0
+    return account_id_from_text(line)
 
 
 def load_config() -> dict:
@@ -334,8 +338,8 @@ def _recv_rcon(sock: socket.socket) -> tuple[int, int, str]:
     return request_id, packet_type, text
 
 
-def send_local_rcon(port: int, password: str, command: str) -> None:
-    """Send one command to the local Source server without touching its stdin."""
+def send_local_rcon(port: int, password: str, command: str) -> str:
+    """Send one command to the local Source server and return its first reply."""
     with socket.create_connection(("127.0.0.1", int(port)), timeout=3.0) as sock:
         sock.settimeout(3.0)
         sock.sendall(_rcon_packet(101, 3, password))  # SERVERDATA_AUTH
@@ -352,6 +356,13 @@ def send_local_rcon(port: int, password: str, command: str) -> None:
             raise ConnectionError("RCON authentication response not received")
 
         sock.sendall(_rcon_packet(102, 2, command))  # SERVERDATA_EXECCOMMAND
+        try:
+            request_id, packet_type, text = _recv_rcon(sock)
+            if request_id == 102:
+                return text
+        except (socket.timeout, ConnectionError):
+            pass
+        return ""
 
 
 def set_above_normal(proc: subprocess.Popen) -> None:
@@ -745,6 +756,32 @@ class ServerSlot:
                     f"accounts={','.join(str(x) for x in sorted(acknowledged))}"
                 )
 
+    def refresh_connected_players_via_rcon(self) -> None:
+        with self._lock:
+            if self._ended or self.started or not self.match_id or not self.alive():
+                return
+            expected = set(self.expected_account_ids)
+        if not expected:
+            return
+
+        try:
+            status = send_local_rcon(
+                int(self.cfg["local_port"]),
+                self.rcon_password,
+                "status",
+            )
+        except Exception:
+            return
+
+        found: set[int] = set()
+        for raw in status.splitlines():
+            account_id = account_id_from_text(raw)
+            if account_id and account_id in expected:
+                found.add(account_id)
+
+        for account_id in sorted(found):
+            self._player_entered(account_id)
+
     def check_accept_timeout(self) -> None:
         with self._lock:
             if (
@@ -853,6 +890,7 @@ def main() -> None:
     try:
         while True:
             slot.refresh_native_reservation_response()
+            slot.refresh_connected_players_via_rcon()
             body = {
                 "agent_id": cfg["agent_id"],
                 "public_host": cfg["public_host"],
