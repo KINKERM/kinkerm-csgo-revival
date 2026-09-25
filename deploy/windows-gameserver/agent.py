@@ -186,6 +186,33 @@ def reservation_paths(csgo_dir: str) -> tuple[str, str]:
     )
 
 
+def read_csgo_server_version(csgo_dir: str) -> int:
+    """Read Source's dedicated ServerVersion from steam.inf.
+
+    This is NOT the same number as the client/build version reported by the
+    matchmaking request. Source compares reservations against GetServerVersion(),
+    which is populated from ServerVersion= in steam.inf.
+    """
+    candidates = (
+        os.path.join(csgo_dir, "csgo", "steam.inf"),
+        os.path.join(csgo_dir, "steam.inf"),
+    )
+    for path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line.lower().startswith("serverversion="):
+                        continue
+                    value = line.split("=", 1)[1].strip()
+                    version = int(value)
+                    if version > 0:
+                        return version
+        except (OSError, ValueError):
+            continue
+    return 0
+
+
 def write_native_reservation(
     csgo_dir: str, assignment: dict, *, clear_response: bool = True
 ) -> None:
@@ -203,10 +230,18 @@ def write_native_reservation(
     # client-search mode value. CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve
     # expects the dedicated server's official reservation game type instead.
     # Legacy CS:GO's CServerGameDLL initializes that value to 0.
+    server_version = read_csgo_server_version(csgo_dir)
+    if not server_version:
+        # Zero is safer than copying client_version: Source treats these as
+        # different version domains. A nonzero wrong value causes reservation
+        # rejection.
+        print("[agent] WARNING: could not read ServerVersion from steam.inf; "
+              "writing server_version=0")
+
     lines = [
         f"match_id={int(assignment.get('match_id') or 0)}",
         "game_type=0",
-        f"server_version={int(assignment.get('client_version') or 0)}",
+        f"server_version={server_version}",
         "account_ids=" + ",".join(str(x) for x in account_ids),
     ]
     tmp = request_path + ".tmp"
@@ -351,6 +386,8 @@ class ServerSlot:
                 self.cfg.get("steam_account_token", ""),
             )
             write_native_reservation(self.cfg["csgo_dir"], assignment)
+            server_version = read_csgo_server_version(self.cfg["csgo_dir"])
+            print(f"[agent] reservation ServerVersion={server_version or 0}")
             cmd = [
                 srcds,
                 "-game", "csgo",
