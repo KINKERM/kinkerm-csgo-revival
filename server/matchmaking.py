@@ -69,6 +69,7 @@ class MatchmakingCoordinator:
 
         self._server: dict[str, Any] = {
             "agent_id": "",
+            "agent_session_id": "",
             "public_host": "",
             "public_port": 27015,
             "server_version": 0,
@@ -413,9 +414,44 @@ class MatchmakingCoordinator:
 
     def server_heartbeat(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            self._server["agent_id"] = str(
+            incoming_agent_id = str(
                 body.get("agent_id") or "windows-laptop"
             )
+            incoming_session = str(body.get("agent_session_id") or "").strip()
+            previous_session = str(
+                self._server.get("agent_session_id") or ""
+            ).strip()
+
+            # A new agent process means the old srcds process/assignment cannot
+            # be assumed to exist anymore. Never resurrect an old Office/etc.
+            # allocation just because the Python coordinator is still alive.
+            if (
+                incoming_session
+                and previous_session
+                and incoming_session != previous_session
+            ):
+                stale = self._active_match_locked()
+                if stale is not None:
+                    for player in stale.players:
+                        self._queue = [
+                            q for q in self._queue
+                            if q.steamid != player.steamid
+                        ]
+                        self._states[player.steamid] = {
+                            "state": "idle",
+                            "previous_state": stale.state,
+                            "error": "game server restarted; queue again",
+                        }
+                    stale.state = "complete"
+
+                self._assignment = None
+                self._server["ready_match_id"] = 0
+                self._server["reserved_account_ids"] = []
+                self._server["server_id"] = 0
+
+            self._server["agent_id"] = incoming_agent_id
+            if incoming_session:
+                self._server["agent_session_id"] = incoming_session
             self._server["public_host"] = str(body.get("public_host") or "")
             self._server["public_port"] = int(body.get("public_port") or 27015)
             self._server["server_version"] = int(body.get("server_version") or 0)
