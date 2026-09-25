@@ -307,6 +307,8 @@ class ServerSlot:
         self._lock = threading.RLock()
         self._ended = False
         self.rcon_password = secrets.token_hex(16)
+        self.log_started_at = 0.0
+        self.log_files_before: set[str] = set()
 
     def alive(self) -> bool:
         with self._lock:
@@ -364,20 +366,31 @@ class ServerSlot:
             if extra:
                 cmd.extend(extra.split())
 
+            logs_dir = os.path.join(self.cfg["csgo_dir"], "csgo", "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            try:
+                self.log_files_before = set(os.listdir(logs_dir))
+            except OSError:
+                self.log_files_before = set()
+            self.log_started_at = time.time()
+
             print(f"[agent] starting match {match_id} on {map_name} @ 64 tick")
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+            if os.name == "nt":
+                creationflags = (
+                    subprocess.CREATE_NEW_CONSOLE
+                    | subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                creationflags = 0
             self.proc = subprocess.Popen(
                 cmd,
                 cwd=self.cfg["csgo_dir"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                # Do NOT redirect stdin. CTextConsoleWin32 calls
-                # GetNumberOfConsoleInputEvents() on STD_INPUT_HANDLE and
-                # hard-errors if it is a Python pipe.
+                # Source's CTextConsoleWin32 requires genuine console handles.
+                # CREATE_NEW_CONSOLE + no stdio redirection avoids the
+                # GetNumberOfConsoleInputEvents crash.
                 stdin=None,
-                text=True,
-                errors="replace",
-                bufsize=1,
+                stdout=None,
+                stderr=None,
                 creationflags=creationflags,
             )
             set_above_normal(self.proc)
@@ -438,31 +451,86 @@ class ServerSlot:
         print("[agent] srcds never produced native 9106 reservation response; "
               "coordinator will cancel/requeue this allocation")
 
-    def _reader(self) -> None:
-        proc = self.proc
-        if proc is None or proc.stdout is None:
+    def _handle_server_log_line(self, line: str) -> None:
+        line = line.rstrip()
+        if not line:
             return
-        for raw in proc.stdout:
-            line = raw.rstrip()
-            if line:
-                print("[srcds] " + line)
-            m = TEAM_SCORE_RE.search(line)
-            if m:
-                score = int(m.group(2))
-                if m.group(1).upper() == "CT":
-                    self.ct_score = score
-                else:
-                    self.t_score = score
+        print("[srcds-log] " + line)
 
-            account_id = account_id_from_log_line(line)
-            if account_id:
-                self._player_entered(account_id)
+        m = TEAM_SCORE_RE.search(line)
+        if m:
+            score = int(m.group(2))
+            if m.group(1).upper() == "CT":
+                self.ct_score = score
+            else:
+                self.t_score = score
 
-            if any(p.search(line) for p in GAME_OVER_PATTERNS):
-                self._report_end_once(
-                    "game_over",
-                    grace=float(self.cfg.get("post_match_grace_seconds", 25)),
-                )
+        account_id = account_id_from_log_line(line)
+        if account_id:
+            self._player_entered(account_id)
+
+        if any(p.search(line) for p in GAME_OVER_PATTERNS):
+            self._report_end_once(
+                "game_over",
+                grace=float(self.cfg.get("post_match_grace_seconds", 25)),
+            )
+
+    def _reader(self) -> None:
+        """Tail Source's normal L*.log files; srcds owns a real Win32 console."""
+        proc = self.proc
+        if proc is None:
+            return
+
+        logs_dir = os.path.join(self.cfg["csgo_dir"], "csgo", "logs")
+        current_path = ""
+        position = 0
+
+        def newest_match_log() -> str:
+            try:
+                candidates = []
+                for name in os.listdir(logs_dir):
+                    if not re.match(r"^L.*\.log$", name, re.I):
+                        continue
+                    path = os.path.join(logs_dir, name)
+                    try:
+                        mtime = os.path.getmtime(path)
+                    except OSError:
+                        continue
+                    if (
+                        name not in self.log_files_before
+                        or mtime >= self.log_started_at - 2.0
+                    ):
+                        candidates.append((mtime, path))
+                if not candidates:
+                    return ""
+                candidates.sort()
+                return candidates[-1][1]
+            except OSError:
+                return ""
+
+        def drain() -> None:
+            nonlocal current_path, position
+            path = newest_match_log()
+            if not path:
+                return
+            if path != current_path:
+                current_path = path
+                position = 0
+                print(f"[agent] reading Source match log: {os.path.basename(path)}")
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    fh.seek(position)
+                    for raw in fh:
+                        self._handle_server_log_line(raw)
+                    position = fh.tell()
+            except OSError:
+                pass
+
+        while proc.poll() is None:
+            drain()
+            time.sleep(0.20)
+
+        drain()
         code = proc.wait()
         if not self._ended and self.match_id:
             self._report_end_once(f"srcds_exit_{code}")
