@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V11"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V12"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -1082,6 +1082,8 @@ def main() -> None:
     playit = maybe_start_playit(cfg)
     slot = ServerSlot(cfg)
     base = cfg["backend_url"].rstrip("/")
+    agent_session_id = secrets.token_hex(8)
+    print(f"[agent] session id: {agent_session_id}")
 
     try:
         while True:
@@ -1090,6 +1092,7 @@ def main() -> None:
             flush_server_reward_bridge(cfg)
             body = {
                 "agent_id": cfg["agent_id"],
+                "agent_session_id": agent_session_id,
                 "public_host": cfg["public_host"],
                 "public_port": int(cfg["public_port"]),
                 "server_version": read_csgo_server_version(cfg["csgo_dir"]),
