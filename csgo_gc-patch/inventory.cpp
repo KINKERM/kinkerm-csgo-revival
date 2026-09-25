@@ -698,7 +698,10 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
     if (slotId == SlotUneqip)
     {
         // unequipping a specific item from all slots
-        return UnequipItem(itemId, update);
+        const bool changed = UnequipItem(itemId, update);
+        if (changed)
+            WriteToFile();
+        return changed;
     }
 
     // mikkotodo cleanup, old junk
