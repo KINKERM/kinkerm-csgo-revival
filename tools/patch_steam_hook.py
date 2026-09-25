@@ -206,7 +206,7 @@ void *FindModulePattern(const char *moduleName, const unsigned char *pattern, co
         return nullptr;
 
     const size_t imageSize = static_cast<size_t>(nt->OptionalHeader.SizeOfImage);
-    const size_t patternSize = strlen(mask);
+    const size_t patternSize = std::strlen(mask);
     if (!patternSize || patternSize > imageSize)
         return nullptr;
 
@@ -224,7 +224,7 @@ void *FindModulePattern(const char *moduleName, const unsigned char *pattern, co
         }
         if (match)
         {
-            Print("REVIVAL_PLATFORM_FIND_PATTERN_V1 %s +0x%zx\\n", moduleName, i);
+            Print("REVIVAL_PLATFORM_FIND_PATTERN_V1 %s +0x%zx\n", moduleName, i);
             return const_cast<unsigned char *>(base + i);
         }
     }
