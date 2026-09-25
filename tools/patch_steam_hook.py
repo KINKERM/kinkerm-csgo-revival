@@ -6,6 +6,7 @@ import pathlib
 import re
 
 MARKER = "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1"
+SERVER_ID_MARKER = "REVIVAL_SERVER_ID_EXPORT_V1"
 
 
 def main() -> int:
@@ -20,7 +21,9 @@ def main() -> int:
 
     text = path.read_text(encoding="utf-8")
 
-    if MARKER in text:
+    already_offline = MARKER in text
+    already_server_id = SERVER_ID_MARKER in text
+    if already_offline and already_server_id:
         print("[patch_steam_hook] already patched")
         return 0
 
@@ -56,7 +59,7 @@ def main() -> int:
             i + "}",
         ])
 
-    patched, count = pattern.subn(repl, text, count=1)
+    patched, count = pattern.subn(repl, text, count=1) if not already_offline else (text, 1)
 
     if count != 1:
         print("[patch_steam_hook] ERROR: could not patch the BLoggedOn early-return block")
@@ -69,10 +72,17 @@ def main() -> int:
             print("[patch_steam_hook] No BLoggedOn() occurrence exists in this source file.")
         return 3
 
+    if not already_server_id:
+        anchor = "static ISteamGameServer *s_steamGameServer;"
+        if anchor not in patched:
+            print("[patch_steam_hook] ERROR: could not locate s_steamGameServer declaration")
+            return 5
+        patched = patched.replace(anchor, "static ISteamGameServer *s_steamGameServer;\n\nuint64_t RevivalGameServerSteamId()\n{\n    if (!s_steamGameServer)\n        return 0;\n\n    const CSteamID steamId = s_steamGameServer->GetSteamID();\n    if (!steamId.IsValid())\n        return 0;\n\n    const uint64_t value = steamId.ConvertToUint64();\n    static uint64_t s_lastPrinted = 0;\n    if (value && value != s_lastPrinted)\n    {\n        Platform::Print(\"${SERVER_ID_MARKER} serverid=%llu\\\\n\", value);\n        s_lastPrinted = value;\n    }\n    return value;\n}", 1)
+
     path.write_text(patched, encoding="utf-8", newline="\n")
 
     verify = path.read_text(encoding="utf-8")
-    if MARKER not in verify:
+    if MARKER not in verify or SERVER_ID_MARKER not in verify:
         print("[patch_steam_hook] ERROR: marker verification failed after write")
         return 4
 
