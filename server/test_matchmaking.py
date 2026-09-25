@@ -15,12 +15,13 @@ class DropInMatchmakingTests(unittest.TestCase):
             "agent_id": "test-laptop",
             "public_host": "test.example",
             "public_port": 30123,
+            "server_id": 90123456789012345,
             "maps": ["de_dust2"],
         })
 
     def test_first_human_starts_and_late_humans_join_same_match(self) -> None:
         first = steamid(1)
-        first_state = self.mm.start(first)
+        first_state = self.mm.start(first, game_type=0x02000008, client_version=13881)
         self.assertEqual(first_state["state"], "searching")
 
         snap = self.mm.snapshot()
@@ -34,12 +35,15 @@ class DropInMatchmakingTests(unittest.TestCase):
             "agent_id": "test-laptop",
             "public_host": "test.example",
             "public_port": 30123,
+            "server_id": 90123456789012345,
             "maps": ["de_dust2"],
             "ready_match_id": match_id,
             "reservation_id": 987654321,
             "reserved_account_ids": [account_id_from_steamid64(first)],
         })
         self.assertEqual(self.mm.state(first)["state"], "reserved")
+        self.assertEqual(self.mm.state(first)["server_id"], 90123456789012345)
+        self.assertEqual(self.mm.state(first)["game_type"], 0x02000008)
 
         # First human enters; the bot-filled game begins.
         self.mm.server_match_started(match_id)
@@ -60,6 +64,7 @@ class DropInMatchmakingTests(unittest.TestCase):
             "agent_id": "test-laptop",
             "public_host": "test.example",
             "public_port": 30123,
+            "server_id": 90123456789012345,
             "maps": ["de_dust2"],
             "ready_match_id": match_id,
             "reservation_id": 987654321,
