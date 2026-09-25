@@ -321,13 +321,18 @@ class MatchmakingCoordinator:
             if ready_match_id and native_reservation_id:
                 self._server["ready_match_id"] = ready_match_id
                 match = self._matches.get(ready_match_id)
-                if match and match.state == "allocating" and self._assignment:
+                if (
+                    match
+                    and match.state in ("allocating", "reserved", "in_match")
+                    and self._assignment
+                ):
                     match.reservation_id = native_reservation_id
                     host = str(self._server.get("public_host") or "")
                     port = int(self._server.get("public_port") or 27015)
                     if host:
                         match.server_address = f"{host}:{port}"
-                        match.state = "reserved"
+                        if match.state == "allocating":
+                            match.state = "reserved"
                         self._sync_assignment_locked(match)
                         self._refresh_match_player_states_locked(match)
 
