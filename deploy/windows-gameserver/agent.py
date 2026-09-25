@@ -591,6 +591,12 @@ class ServerSlot:
                 self.cfg, assignment, clear_existing=True
             )
             clear_server_auth_markers(self.cfg["csgo_dir"])
+            try:
+                os.remove(os.path.join(
+                    self.cfg["csgo_dir"], "csgo_gc", "server_match_end_trigger.txt"
+                ))
+            except OSError:
+                pass
             os.makedirs(
                 os.path.join(self.cfg["csgo_dir"], "csgo_gc", "server_rewards"),
                 exist_ok=True,
