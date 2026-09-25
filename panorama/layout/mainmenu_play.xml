@@ -317,7 +317,7 @@
 							</TooltipPanel>
 						</Panel>
 					</Panel>
-				<Panel id="RevivalLegacyMapPicker" class="left-right-flow full-width fill-parent-flow-height">
+				<Panel class="left-right-flow full-width fill-parent-flow-height">
 					<Panel id="JsQuickSelectParent" class="top-bottom-flow map-selection-list__quick-selection-sets" visible="false">
 						<Label text="#presets_title" class="map-selection__quick-selection-set-title" />
 						<Panel class="game-mode-selection-radios-spacer"/>
