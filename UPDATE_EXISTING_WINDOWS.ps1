@@ -105,9 +105,12 @@ Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 # Restore steam_hook.cpp from THIS csgo_gc source tree's own commit.
 # This keeps it ABI/compiler-compatible with the existing CMake project. The
 # revival patcher below makes only the two small required edits in-place.
-& git -C $CsgoGcSource checkout -- "csgo_gc/steam_hook.cpp"
+& git -C $CsgoGcSource checkout -- `
+    "csgo_gc/steam_hook.cpp" `
+    "csgo_gc/platform.h" `
+    "csgo_gc/platform_windows.cpp"
 if ($LASTEXITCODE -ne 0) {
-    throw "Could not restore the local csgo_gc steam_hook.cpp."
+    throw "Could not restore local csgo_gc steam_hook/platform files."
 }
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
