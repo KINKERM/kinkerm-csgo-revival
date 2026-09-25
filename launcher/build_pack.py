@@ -124,7 +124,7 @@ def main() -> None:
             dll_blob = fh.read()
         for marker in (
             b"REVIVAL_MM_BRIDGE_CLEAN_V1",
-            b"REVIVAL_SERVER_RESERVATION_RETRY_V2",
+            b"REVIVAL_SERVER_RESERVATION_RETRY_V3",
             b"REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1",
             b"REVIVAL_CLIENT_COOKIE_RESERVE_V2",
         ):
