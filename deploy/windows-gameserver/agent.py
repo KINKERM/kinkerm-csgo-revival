@@ -276,7 +276,7 @@ mp_limitteams 0
 mp_friendlyfire 1
 mp_maxrounds 30
 mp_halftime 1
-mp_overtime_enable 1
+mp_overtime_enable 0
 mp_overtime_maxrounds 6
 mp_match_can_clinch 1
 mp_ignore_round_win_conditions 0
@@ -299,6 +299,7 @@ mp_do_warmup_period 1
 mp_warmuptime 300
 mp_warmuptime_all_players_connected 0
 mp_warmup_pausetimer 1
+mp_warmup_start
 """
     with open(late_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(late)
@@ -749,10 +750,19 @@ class ServerSlot:
                     with self._lock:
                         self.player_teams[seen_account_id] = team
 
-            # Do not depend on one exact "entered the game" log phrase. Any
-            # Source log event containing the reserved account proves the human
-            # is on this server and must cancel the pre-join timeout.
-            self._player_entered(seen_account_id)
+            with self._lock:
+                expected = (
+                    not self.expected_account_ids
+                    or seen_account_id in self.expected_account_ids
+                )
+                if expected:
+                    self.human_presence_seen = True
+
+            # "connected" can happen while the client is still loading for
+            # 10-30 seconds. Start Competitive only at Source's authoritative
+            # entered-game event.
+            if "entered the game" in line.lower():
+                self._player_entered(seen_account_id)
 
         if any(p.search(line) for p in GAME_OVER_PATTERNS):
             self._report_end_once(
@@ -803,13 +813,21 @@ class ServerSlot:
                 position = 0
                 print(f"[agent] reading Source match log: {os.path.basename(path)}")
             try:
-                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                # Track a byte offset explicitly. TextIO iteration + tell() is
+                # unreliable on growing Windows log files and could silently
+                # kill/rewind the old tailer before the human join line arrived.
+                with open(path, "rb") as fh:
                     fh.seek(position)
-                    for raw in fh:
-                        self._handle_server_log_line(raw)
-                    position = fh.tell()
-            except OSError:
-                pass
+                    while True:
+                        raw = fh.readline()
+                        if not raw:
+                            break
+                        position = fh.tell()
+                        self._handle_server_log_line(
+                            raw.decode("utf-8", errors="replace")
+                        )
+            except Exception as exc:
+                print(f"[agent] Source log tail error: {exc}")
 
         while proc.poll() is None:
             drain()
@@ -960,6 +978,7 @@ class ServerSlot:
             return
 
         found: set[int] = set()
+        active: set[int] = set()
         saw_any_human = False
         for raw in status.splitlines():
             upper = raw.upper()
@@ -969,22 +988,30 @@ class ServerSlot:
             account_id = account_id_from_text(raw)
             if account_id and account_id in expected:
                 found.add(account_id)
+                if re.search(r"\\bactive\\b", raw, re.I):
+                    active.add(account_id)
 
-        for account_id in sorted(found):
+        if found:
+            with self._lock:
+                self.human_presence_seen = True
+
+        for account_id in sorted(active):
             self._player_entered(account_id)
 
-        # This server is private to the active reservation. If Source reports a
-        # real Steam player but formats the ID in an unexpected way, preserve
-        # the server and retry Competitive setup instead of killing a live match.
+        # Private one-match server: an unparsed real Steam player is enough to
+        # protect the allocation from cleanup, but not enough to start rounds.
         if saw_any_human and not found:
             with self._lock:
                 first_fallback = not self.human_presence_seen
                 self.human_presence_seen = True
             if first_fallback:
                 print("[agent] RCON status shows a human player; preserving active reservation")
-            self._begin_match()
 
     def check_accept_timeout(self) -> None:
+        # Do NOT independently kill a native reservation on a wall-clock timer.
+        # The coordinator owns cancellation/withdrawal. Previous builds could
+        # destroy a live Competitive server after five minutes when join
+        # detection missed the player even though Source had accepted them.
         with self._lock:
             if (
                 self._ended
@@ -995,11 +1022,17 @@ class ServerSlot:
                 or not self.match_id
             ):
                 return
-            timeout = float(self.cfg.get("accept_timeout_seconds", 90))
-            expired = time.monotonic() - self.ready_at >= timeout
-        if expired:
-            print("[agent] nobody joined the new server before timeout; cancelling reservation")
-            self._report_end_once("accept_timeout")
+            timeout = float(self.cfg.get("accept_timeout_seconds", 300))
+            if time.monotonic() - self.ready_at < timeout:
+                return
+            match_id = self.match_id
+            # Log once, then disable this local timer. The heartbeat assignment
+            # remains authoritative and explicit cancellation still stops srcds.
+            self.ready_at = 0.0
+        print(
+            f"[agent] pre-join timer reached for match {match_id}; "
+            "keeping reservation alive until coordinator withdraws it"
+        )
 
     def _report_end_once(self, reason: str, grace: float = 0.0) -> None:
         with self._lock:
