@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V14"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V15"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -263,7 +263,6 @@ log on
     late_path = os.path.join(cfg_dir, "gamemode_competitive_server.cfg")
     late = r"""// CS:GO Revival - final matchmaking overrides
 sv_competitive_official_5v5 1
-deathmatch 0
 
 bot_quota 10
 bot_quota_mode fill
@@ -303,7 +302,6 @@ mp_do_warmup_period 1
 mp_warmuptime 300
 mp_warmuptime_all_players_connected 5
 mp_warmup_pausetimer 0
-mp_warmup_start
 
 echo "[REVIVAL] gamemode_competitive_server.cfg applied"
 """
@@ -902,7 +900,7 @@ class ServerSlot:
                 port,
                 password,
                 (
-                    "sv_competitive_official_5v5 1; deathmatch 0; "
+                    "sv_competitive_official_5v5 1; "
                     "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
                     "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
@@ -914,7 +912,7 @@ class ServerSlot:
                 port,
                 password,
                 (
-                    "sv_competitive_official_5v5; deathmatch; "
+                    "sv_competitive_official_5v5; "
                     "bot_quota; bot_quota_mode; bot_join_after_player; "
                     "bot_stop; bot_freeze; mp_maxrounds; mp_friendlyfire; "
                     "mp_warmuptime_all_players_connected; mp_warmup_pausetimer"
