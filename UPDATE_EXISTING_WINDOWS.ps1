@@ -159,6 +159,14 @@ if (-not $SkipInstall) {
     Need-Path $CsgoDir "CS:GO Legacy root"
     Expand-Archive -Path $pack -DestinationPath $CsgoDir -Force
 
+    # Do not trust ZIP extraction alone for the runtime binaries. Explicitly
+    # overwrite them from the freshly built Release outputs so a stale/locked
+    # DLL can never silently survive an update.
+    Write-Host "    Installing verified fresh runtime binaries..." -ForegroundColor Yellow
+    Copy-Item $gcDll (Join-Path $CsgoDir "csgo_gc.dll") -Force
+    Copy-Item $serverExe (Join-Path $CsgoDir "srcds.exe") -Force
+    Copy-Item $clientExe (Join-Path $CsgoDir "csgo_revival.exe") -Force
+
     $repackScript = Join-Path $RevivalRepo "REPACK_PANORAMA.ps1"
     Need-Path $repackScript "Panorama PBIN repack script"
     & powershell -ExecutionPolicy Bypass -File $repackScript -RevivalRepo $RevivalRepo -CsgoDir $CsgoDir
@@ -176,8 +184,39 @@ if (-not $SkipInstall) {
     Need-Path (Join-Path $panoramaDir "_code.pbin") "Preserved _code.pbin"
     Need-Path (Join-Path $panoramaDir "pbin.py") "Installed pbin.py"
     Need-Path (Join-Path $CsgoDir "bin\panorama.dll") "Patched panorama.dll"
-    Need-Path (Join-Path $CsgoDir "csgo_gc.dll") "Installed csgo_gc.dll"
-    Need-Path (Join-Path $CsgoDir "csgo_revival.exe") "Installed revival launcher"
+    $installedGc = Join-Path $CsgoDir "csgo_gc.dll"
+    $installedServer = Join-Path $CsgoDir "srcds.exe"
+    $installedLauncher = Join-Path $CsgoDir "csgo_revival.exe"
+
+    Need-Path $installedGc "Installed csgo_gc.dll"
+    Need-Path $installedServer "Installed srcds.exe"
+    Need-Path $installedLauncher "Installed revival launcher"
+
+    $builtGcHash = (Get-FileHash $gcDll -Algorithm SHA256).Hash
+    $installedGcHash = (Get-FileHash $installedGc -Algorithm SHA256).Hash
+    if ($builtGcHash -ne $installedGcHash) {
+        throw "Installed csgo_gc.dll does not match the freshly built DLL."
+    }
+
+    $builtServerHash = (Get-FileHash $serverExe -Algorithm SHA256).Hash
+    $installedServerHash = (Get-FileHash $installedServer -Algorithm SHA256).Hash
+    if ($builtServerHash -ne $installedServerHash) {
+        throw "Installed srcds.exe does not match the freshly built server launcher."
+    }
+
+    $builtLauncherHash = (Get-FileHash $clientExe -Algorithm SHA256).Hash
+    $installedLauncherHash = (Get-FileHash $installedLauncher -Algorithm SHA256).Hash
+    if ($builtLauncherHash -ne $installedLauncherHash) {
+        throw "Installed csgo_revival.exe does not match the freshly built client launcher."
+    }
+
+    $installedGcBytes = [IO.File]::ReadAllBytes($installedGc)
+    $installedGcText = [Text.Encoding]::ASCII.GetString($installedGcBytes)
+    if (-not $installedGcText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
+        throw "Installed csgo_gc.dll is missing the current matchmaking build marker."
+    }
+
+    Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
     Write-Host "    PBIN Panorama + runtime validation OK." -ForegroundColor Green
 }
 
