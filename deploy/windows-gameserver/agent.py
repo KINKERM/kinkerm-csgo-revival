@@ -267,8 +267,12 @@ deathmatch 0
 
 bot_quota 10
 bot_quota_mode fill
-bot_join_after_player 0
+bot_join_after_player 1
+bot_auto_vacate 1
 bot_join_team any
+bot_stop 0
+bot_freeze 0
+bot_dont_shoot 0
 
 mp_autokick 0
 mp_autoteambalance 0
