@@ -24,7 +24,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -663,8 +663,37 @@ void ServerGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             k_EAccountTypeIndividual
         };
 
+        const uint64_t playerSteamId = playerId.ConvertToUint64();
+
+        // Keep the original Steam-P2P path for servers that have a real
+        // gameserver identity, but also spool the exact 9136 packet locally.
+        // Direct-UDP revival servers do not have a usable gameserver SteamID,
+        // so the laptop agent relays this file through the backend/launcher.
+        {
+            const std::string rewardPath =
+                "csgo_gc/server_rewards/" + std::to_string(playerSteamId) + ".bin";
+            std::ofstream rewardOut(
+                rewardPath, std::ios::binary | std::ios::trunc);
+            if (rewardOut.is_open())
+            {
+                rewardOut.write(
+                    reinterpret_cast<const char *>(messageWrite.Data()),
+                    static_cast<std::streamsize>(messageWrite.Size()));
+                rewardOut.flush();
+                Platform::Print(
+                    "REVIVAL_SERVER_REWARD_BRIDGE_V1 spooled 9136 for %llu (%u bytes)\n",
+                    playerSteamId, messageWrite.Size());
+            }
+            else
+            {
+                Platform::Print(
+                    "REVIVAL_SERVER_REWARD_BRIDGE_V1 failed to spool 9136 for %llu\n",
+                    playerSteamId);
+            }
+        }
+
         PostToHost(HostEvent::NetMessage,
-            playerId.ConvertToUint64(),
+            playerSteamId,
             messageWrite.Data(),
             messageWrite.Size());
 
