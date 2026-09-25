@@ -383,6 +383,9 @@ if (-not $SkipInstall) {
     if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_RETRY_V2")) {
         throw "Installed csgo_gc.dll is missing retry-safe native drop hook installation."
     }
+    if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_TIMING_V3")) {
+        throw "Installed csgo_gc.dll is missing native intermission reward timing."
+    }
     if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_BUNDLE_V1")) {
         throw "Installed csgo_gc.dll is missing exact server drop bundle delivery."
     }
