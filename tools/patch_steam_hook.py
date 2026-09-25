@@ -221,24 +221,65 @@ void *FindModulePattern(const char *moduleName, const unsigned char *pattern, co
         return nullptr;
 
     const auto *base = reinterpret_cast<const unsigned char *>(module);
-    for (size_t i = 0; i + patternSize <= imageSize; ++i)
+    const auto *sections = IMAGE_FIRST_SECTION(nt);
+    void *found = nullptr;
+    size_t foundOffset = 0;
+    unsigned matches = 0;
+
+    // Only scan executable PE sections. The old full-image scan could match
+    // function-like bytes in data and hand funchook an invalid target.
+    for (unsigned s = 0; s < nt->FileHeader.NumberOfSections; ++s)
     {
-        bool match = true;
-        for (size_t j = 0; j < patternSize; ++j)
+        const auto &section = sections[s];
+        if (!(section.Characteristics & IMAGE_SCN_MEM_EXECUTE))
+            continue;
+
+        size_t begin = static_cast<size_t>(section.VirtualAddress);
+        size_t sectionSize = static_cast<size_t>(section.Misc.VirtualSize);
+        if (sectionSize < static_cast<size_t>(section.SizeOfRawData))
+            sectionSize = static_cast<size_t>(section.SizeOfRawData);
+        if (begin >= imageSize)
+            continue;
+        if (sectionSize > imageSize - begin)
+            sectionSize = imageSize - begin;
+        if (sectionSize < patternSize)
+            continue;
+
+        for (size_t local = 0; local + patternSize <= sectionSize; ++local)
         {
-            if (mask[j] == 'x' && base[i + j] != pattern[j])
+            const size_t i = begin + local;
+            bool match = true;
+            for (size_t j = 0; j < patternSize; ++j)
             {
-                match = false;
-                break;
+                if (mask[j] == 'x' && base[i + j] != pattern[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if (!match)
+                continue;
+
+            ++matches;
+            if (matches == 1)
+            {
+                found = const_cast<unsigned char *>(base + i);
+                foundOffset = i;
+            }
+            else
+            {
+                Print(
+                    "REVIVAL_PLATFORM_FIND_PATTERN_V1 ambiguous %s first=+0x%zx another=+0x%zx\n",
+                    moduleName, foundOffset, i);
+                return nullptr;
             }
         }
-        if (match)
-        {
-            Print("REVIVAL_PLATFORM_FIND_PATTERN_V1 %s +0x%zx\n", moduleName, i);
-            return const_cast<unsigned char *>(base + i);
-        }
     }
-    return nullptr;
+
+    if (found)
+        Print("REVIVAL_PLATFORM_FIND_PATTERN_V1 %s +0x%zx unique executable match\n",
+            moduleName, foundOffset);
+    return found;
 }
 
 '''
@@ -415,12 +456,42 @@ static bool RevivalInstallNativeDropRevealHooks()
 
     s_revRecordPlayerItemDrop =
         reinterpret_cast<RevivalRecordPlayerItemDropFn>(record);
-    HookCreate(
-        "CCSGameRules::RewardMatchEndDrops",
-        reward,
-        reinterpret_cast<void *>(&Hk_RevivalRewardMatchEndDrops),
-        reinterpret_cast<void **>(&s_revOriginalRewardMatchEndDrops));
 
+    // Unlike the generic HookCreate helper, this optional native scoreboard
+    // hook must never terminate SRCDS when an old server.dll prologue cannot
+    // be decoded by funchook. The proper reward bridge remains authoritative.
+    funchook_t *nativeHook = funchook_create();
+    if (!nativeHook)
+    {
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 funchook_create failed; keeping reward bridge alive\n");
+        return false;
+    }
+
+    void *nativeBridge = reward;
+    int hookResult = funchook_prepare(
+        nativeHook, &nativeBridge,
+        reinterpret_cast<void *>(&Hk_RevivalRewardMatchEndDrops));
+    if (hookResult != 0)
+    {
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 funchook_prepare rejected reward target: %s; keeping reward bridge alive\n",
+            funchook_error_message(nativeHook));
+        funchook_destroy(nativeHook);
+        return false;
+    }
+
+    hookResult = funchook_install(nativeHook, 0);
+    if (hookResult != 0)
+    {
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 funchook_install failed: %s; keeping reward bridge alive\n",
+            funchook_error_message(nativeHook));
+        return false;
+    }
+
+    s_revOriginalRewardMatchEndDrops =
+        reinterpret_cast<RevivalRewardMatchEndDropsFn>(nativeBridge);
     s_revNativeDropRevealInstalled = true;
     Platform::Print(
         "REVIVAL_NATIVE_DROP_REVEAL_V1 hooks installed reward=%p record=%p\n",
