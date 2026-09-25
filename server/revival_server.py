@@ -164,6 +164,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_text(400, "invalid steamid")
             return self._send_json(200, self.matchmaking.state(steamid))
 
+        if path.startswith("/matchmaking/reward/"):
+            steamid = path[len("/matchmaking/reward/"):]
+            if not steamid.isdigit():
+                return self._send_text(400, "invalid steamid")
+            return self._send_json(200, self.matchmaking.pop_reward(steamid))
+
         if path == "/matchmaking/admin/state":
             if not self._authed():
                 return self._send_text(401, "unauthorized")
@@ -217,6 +223,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/matchmaking/server/heartbeat":
             body = self._read_json_body()
             return self._send_json(200, self.matchmaking.server_heartbeat(body))
+
+        if path == "/matchmaking/server/reward":
+            body = self._read_json_body()
+            steamid = str(body.get("steamid", "")).strip()
+            payload_b64 = str(body.get("payload_b64", "")).strip()
+            if not steamid.isdigit() or not payload_b64 or len(payload_b64) > 6_000_000:
+                return self._send_json(400, {"error": "invalid reward payload"})
+            return self._send_json(
+                200, self.matchmaking.queue_reward(steamid, payload_b64)
+            )
 
         if path == "/matchmaking/server/started":
             body = self._read_json_body()
