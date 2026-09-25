@@ -73,11 +73,38 @@ def main() -> int:
         return 3
 
     if not already_server_id:
-        anchor = "static ISteamGameServer *s_steamGameServer;"
-        if anchor not in patched:
-            print("[patch_steam_hook] ERROR: could not locate s_steamGameServer declaration")
+        # The user's existing Win32 tree uses the older Steam proxy layout.
+        # Do not import a newer steam_hook.cpp. That newer file requires C++20
+        # abbreviated templates and generated proxy headers absent from the
+        # working tree. The old hook already uses SteamGameServer(), so export
+        # the server SteamID through that stable API instead.
+        include_anchor = '#include "networking_server.h"'
+        if include_anchor not in patched:
+            print("[patch_steam_hook] ERROR: could not locate networking_server.h include")
             return 5
-        patched = patched.replace(anchor, "static ISteamGameServer *s_steamGameServer;\n\nuint64_t RevivalGameServerSteamId()\n{\n    if (!s_steamGameServer)\n        return 0;\n\n    const CSteamID steamId = s_steamGameServer->GetSteamID();\n    if (!steamId.IsValid())\n        return 0;\n\n    const uint64_t value = steamId.ConvertToUint64();\n    static uint64_t s_lastPrinted = 0;\n    if (value && value != s_lastPrinted)\n    {\n        Platform::Print(\"REVIVAL_SERVER_ID_EXPORT_V1 serverid=%llu\\n\", value);\n        s_lastPrinted = value;\n    }\n    return value;\n}", 1)
+
+        helper = r'''
+uint64_t RevivalGameServerSteamId()
+{
+    ISteamGameServer *server = SteamGameServer();
+    if (!server)
+        return 0;
+
+    const CSteamID steamId = server->GetSteamID();
+    if (!steamId.IsValid())
+        return 0;
+
+    const uint64_t value = steamId.ConvertToUint64();
+    static uint64_t s_lastPrinted = 0;
+    if (value && value != s_lastPrinted)
+    {
+        Platform::Print("REVIVAL_SERVER_ID_EXPORT_V1 serverid=%llu\\n", value);
+        s_lastPrinted = value;
+    }
+    return value;
+}
+'''
+        patched = patched.replace(include_anchor, include_anchor + "\n" + helper, 1)
 
     path.write_text(patched, encoding="utf-8", newline="\n")
 
