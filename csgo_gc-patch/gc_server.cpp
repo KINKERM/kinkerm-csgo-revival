@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -76,12 +77,12 @@ void ServerGC::HandleIdle()
     const uint64_t serverId = RevivalGameServerSteamId();
     if (serverId)
     {
-        std::ifstream in(ServerReservationResponsePath, std::ios::binary);
+        std::ifstream in("csgo_gc/server_reservation_response.txt", std::ios::binary);
         std::string existing((std::istreambuf_iterator<char>(in)),
             std::istreambuf_iterator<char>());
         if (!existing.empty() && existing.find("server_id=") == std::string::npos)
         {
-            std::ofstream out(ServerReservationResponsePath,
+            std::ofstream out("csgo_gc/server_reservation_response.txt",
                 std::ios::binary | std::ios::app);
             if (out.is_open())
             {
@@ -334,7 +335,7 @@ namespace
 {
 constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;
 constexpr const char *ServerReservationPath = "csgo_gc/server_reservation.txt";
-constexpr const char *ServerReservationResponsePath = "csgo_gc/server_reservation_response.txt";
+constexpr const char *"csgo_gc/server_reservation_response.txt" = "csgo_gc/server_reservation_response.txt";
 
 std::unordered_map<std::string, std::string> ReadServerReservationFile()
 {
@@ -397,7 +398,7 @@ void ServerGC::SendMatchmakingReservation()
         // Stop retrying only after our own 9106 handler has persisted a real
         // reservation id for this exact match. Until then, retrying is required
         // because early 9105 messages can be consumed before server.dll is ready.
-        std::ifstream response(ServerReservationResponsePath, std::ios::binary);
+        std::ifstream response("csgo_gc/server_reservation_response.txt", std::ios::binary);
         uint64_t responseMatch = 0;
         uint64_t responseReservation = 0;
         std::string line;
@@ -482,7 +483,7 @@ void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
         const uint64_t requestedMatchId = ReservationNumber(current, "match_id");
         if (requestedMatchId)
         {
-            std::ofstream out(ServerReservationResponsePath,
+            std::ofstream out("csgo_gc/server_reservation_response.txt",
                 std::ios::binary | std::ios::trunc);
             if (out.is_open())
             {
@@ -511,7 +512,7 @@ void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
         return;
     }
 
-    std::ofstream out(ServerReservationResponsePath, std::ios::binary | std::ios::trunc);
+    std::ofstream out("csgo_gc/server_reservation_response.txt", std::ios::binary | std::ios::trunc);
     if (out.is_open())
     {
         out << "match_id=" << matchId << "\n";
