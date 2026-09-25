@@ -33,6 +33,7 @@ var PlayMenu = ( function()
 
 	                     
 	var m_challengeKey = '';
+	var m_revivalPendingStart = false;
 	var m_popupChallengeKeyEntryValidate = null;
 
 	var k_workshopModes = {
@@ -87,6 +88,19 @@ var PlayMenu = ( function()
 		_setAndSaveGameModeFlags( 0 );
 		_ApplySessionSettings();
 	}
+	function _StartRevivalMatchmakingNow()
+	{
+		if ( !m_revivalPendingStart )
+			return;
+
+		m_revivalPendingStart = false;
+		LobbyAPI.StartMatchmaking(
+			MyPersonaAPI.GetMyOfficialTournamentName(),
+			MyPersonaAPI.GetMyOfficialTeamName(),
+			'',
+			_GetTournamentStage()
+		);
+	}
 
 	function StartSearch ()
 	{
@@ -113,26 +127,36 @@ var PlayMenu = ( function()
 		}
 
 		var tile = $( '#RevivalPoolTile' );
-		if ( tile )
-			tile.checked = true;
+		if ( tile ) tile.checked = true;
 
 		GameInterfaceAPI.SetSettingString(
 			'ui_playsettings_maps_official_competitive',
 			validationMapGroup
 		);
 
+		m_revivalPendingStart = true;
 		_ApplySessionSettings();
 		btnStartSearch.AddClass( 'pressed' );
 		$.DispatchEvent( 'PlaySoundEffect', 'mainmenu_press_GO', 'MOUSE' );
 
-		$.Schedule( 0.10, function()
+		// The normal path starts from PanoramaComponent_Lobby_MatchmakingSessionUpdate
+		// once the real mapgroup has landed. This fallback only handles a missed event.
+		$.Schedule( 1.0, function()
 		{
-			LobbyAPI.StartMatchmaking(
-				MyPersonaAPI.GetMyOfficialTournamentName(),
-				MyPersonaAPI.GetMyOfficialTeamName(),
-				'',
-				_GetTournamentStage()
-			);
+			if ( !m_revivalPendingStart ) return;
+			var settings = LobbyAPI.GetSessionSettings();
+			if ( settings && settings.game &&
+				settings.game.mode === 'competitive' &&
+				settings.game.mapgroupname === validationMapGroup )
+			{
+				_StartRevivalMatchmakingNow();
+				return;
+			}
+
+			m_revivalPendingStart = false;
+			btnStartSearch.RemoveClass( 'pressed' );
+			btnStartSearch.RemoveClass( 'hidden' );
+			$.Msg( '[revival] matchmaking settings did not commit; GO restored' );
 		} );
 	}
 
@@ -1343,13 +1367,6 @@ var PlayMenu = ( function()
 			$( '#WorkshopSearchBar' ).visible = false;
 			$( '#WorkshopVisitButton' ).visible = false;
 			$( '#GameModeSelectionRadios' ).visible = true;
-			return;
-		}
-		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
-		{
-			var revivalLegacyMapPicker = $( '#RevivalLegacyMapPicker' );
-			if ( revivalLegacyMapPicker )
-				revivalLegacyMapPicker.visible = false;
 			return;
 		}
 
@@ -2961,6 +2978,17 @@ var PlayMenu = ( function()
 			var settings = LobbyAPI.GetSessionSettings();
 
 			_SyncDialogsFromSessionSettings( settings );
+
+			if ( m_revivalPendingStart && settings && settings.game )
+			{
+				var expectedMapGroup = _GetRevivalValidationMapGroup();
+				if ( expectedMapGroup &&
+					settings.game.mode === 'competitive' &&
+					settings.game.mapgroupname === expectedMapGroup )
+				{
+					_StartRevivalMatchmakingNow();
+				}
+			}
 		}
 		else if ( sessionState === "closed" )
 		{
