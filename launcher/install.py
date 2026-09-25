@@ -244,9 +244,9 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
 
     with open(code_pbin, "rb") as fh:
         packed_bytes = fh.read()
-    if (b"mg_revival_pool" not in packed_bytes
+    if (b"m_revivalValidationMapGroup" not in packed_bytes
             or b"_GetRevivalValidationMapGroup" not in packed_bytes):
-        log("rebuilt code.pbin is missing stock Revival queue markers")
+        log("rebuilt code.pbin is missing real stock-mapgroup Revival markers")
         sys.exit(3)
 
     log("Panorama code.pbin rebuilt and panorama.dll patch verified")
