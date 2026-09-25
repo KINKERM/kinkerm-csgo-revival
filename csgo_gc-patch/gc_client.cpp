@@ -6,6 +6,7 @@
 #include <fstream>
 
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <sstream>
 #include <string>
@@ -25,6 +26,7 @@ namespace
 {
 constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
+constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
 
 bool WriteMatchmakingBridgeFile(const char *path, const std::string &text)
 {
@@ -287,6 +289,8 @@ ClientGC::~ClientGC()
 
 void ClientGC::HandleIdle()
 {
+    PollRewardBridge();
+
 #ifdef _WIN32
     if (g_revAcceptFullyAccepted.exchange(false, std::memory_order_acq_rel))
         SendMatchmakingConnectReserve();
@@ -756,7 +760,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
-    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2 active; REVIVAL_CLIENT_REWARD_BRIDGE_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
@@ -1189,6 +1193,34 @@ void ClientGC::ProcessBridgeMatchEnd(
     Platform::Print(
         "REVIVAL_MATCH_END_BRIDGE_V1 processed match=%llu rounds_won=%u xp=%u won=%u tied=%u\n",
         matchId, roundsWon, awardedXp, won ? 1u : 0u, tied ? 1u : 0u);
+}
+
+void ClientGC::PollRewardBridge()
+{
+    std::ifstream in(MatchmakingRewardPath, std::ios::binary);
+    if (!in.is_open())
+        return;
+
+    std::vector<uint8_t> payload(
+        (std::istreambuf_iterator<char>(in)),
+        std::istreambuf_iterator<char>());
+    in.close();
+
+    if (payload.empty() || payload.size() > 4u * 1024u * 1024u)
+    {
+        std::remove(MatchmakingRewardPath);
+        Platform::Print(
+            "REVIVAL_CLIENT_REWARD_BRIDGE_V1 discarded invalid reward payload (%zu bytes)\n",
+            payload.size());
+        return;
+    }
+
+    // Remove first so a crash/re-entry cannot apply the same local spool twice.
+    std::remove(MatchmakingRewardPath);
+    Platform::Print(
+        "REVIVAL_CLIENT_REWARD_BRIDGE_V1 delivering server 9136 bridge (%zu bytes)\n",
+        payload.size());
+    HandleNetMessage(payload.data(), static_cast<uint32_t>(payload.size()));
 }
 
 void ClientGC::PollMatchmakingBridge()
