@@ -254,7 +254,7 @@
 						onmouseout="UiToolkitAPI.HideTextTooltip();"/>
 					</RadioButton>
 				</Panel>
-				<Panel id="WorkshopSearchBar" class="content-navbar__tabs">
+				<Panel id="WorkshopSearchBar" class="content-navbar__tabs" visible="false">
 					<TextEntry id="WorkshopSearchTextEntry" class="workshop-search-textentry" placeholder="#CSGO_Workshop_Search_Placeholder" onfocus="" />
 				</Panel>
 				<Panel class="vertical-center left-right-flow horizontal-align-right left-right-padding">
@@ -266,13 +266,13 @@
 						<Label text="#SFUI_BotDifficulty4" id="4"/>
 						<Label text="#SFUI_BotDifficulty5" id="5"/>
 					</DropDown>
-					<Button class="PopupButton White" id="WorkshopVisitButton" onactivate="CSGOOpenSteamWorkshop()">
+					<Button class="PopupButton White" id="WorkshopVisitButton" visible="false" onactivate="CSGOOpenSteamWorkshop()">
 						<Label text="#CSGO_Workshop_Visit" />
 					</Button>
 				</Panel>
 			</Panel>
 			<Panel class="top-bottom-flow full-width full-height">
-					<Panel class="settings-container content-navbar__tabs--small" visible="false">
+					<Panel id="RevivalLegacySettings" class="settings-container content-navbar__tabs--small" visible="false">
 						<Panel class="left-right-flow full-height">
 							<ToggleButton id="JsDirectChallengeBtn" html="true" class="play-menu-toggle-prime play-menu-option-btn play-menu-option-long-btn" onactivate="PlayMenu.OnDirectChallengeBtn()">
 								<Panel id="id-play-menu-toggle-slider" class="PopupButton play-menu-prime-toggle__slider-pill">
@@ -317,14 +317,18 @@
 							</TooltipPanel>
 						</Panel>
 					</Panel>
-				<Panel id="RevivalSingleQueuePanel" class="revival-single-queue">
-					<Panel class="revival-single-queue__card">
-						<Image class="revival-single-queue__icon" src="file://{images}/icons/ui/competitive.svg" />
-						<Label class="revival-single-queue__title" text="REVIVAL COMPETITIVE" />
-						<Label class="revival-single-queue__subtitle" text="ONE RANKED 5V5 QUEUE  •  64 TICK" />
-						<Label class="revival-single-queue__body" text="No per-map queues. When 10 players are ready, the server randomly chooses from every installed defuse or hostage map." />
-						<Label class="revival-single-queue__maps" text="DUST II  •  MIRAGE  •  INFERNO  •  NUKE  •  OVERPASS  •  VERTIGO  •  TRAIN  •  CACHE  •  COBBLESTONE  •  ANCIENT  •  ANUBIS  •  TUSCAN  •  CANALS  •  BREACH  •  BASALT  •  OFFICE  •  AGENCY  •  ITALY  •  INSERTION II  •  + ALL INSTALLED DE_/CS_ MAPS" />
-					</Panel>
+				<Panel id="RevivalSingleQueuePanel" class="revival-pool-stage">
+					<ToggleButton id="RevivalPoolTile" class="revival-pool-tile" checked="true" onactivate="PlayMenu.OnRevivalPoolClicked()">
+						<Panel class="revival-pool-art">
+							<Label class="revival-pool-badge" text="✓" />
+							<Image class="revival-pool-icon" src="file://{images}/icons/ui/competitive.svg" />
+							<Label class="revival-pool-mapgrid" text="DUST II   MIRAGE   INFERNO&#10;NUKE   OVERPASS   VERTIGO&#10;TRAIN   CACHE   COBBLESTONE&#10;ANCIENT   ANUBIS   TUSCAN&#10;CANALS   BREACH   BASALT&#10;OFFICE   AGENCY   ITALY&#10;INSERTION II   + INSTALLED" />
+						</Panel>
+						<Panel class="revival-pool-footer">
+							<Label class="revival-pool-title" text="REVIVAL MAPS" />
+							<Label class="revival-pool-subtitle" text="RANKED 5V5 • 64 TICK" />
+						</Panel>
+					</ToggleButton>
 				</Panel>
 				<Panel id="RevivalLegacyMapPicker" class="left-right-flow full-width fill-parent-flow-height" visible="false">
 					<Panel id="JsQuickSelectParent" class="top-bottom-flow map-selection-list__quick-selection-sets">
