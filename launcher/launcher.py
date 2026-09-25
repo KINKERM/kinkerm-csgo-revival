@@ -182,7 +182,7 @@ def _write_mm_state(config: dict, state: dict) -> None:
         "state", "players_searching", "players_required", "server_online",
         "server_available", "match_id", "reservation_id", "map", "server_address",
         "public_host", "public_port", "direct_udp_ip", "game_type", "server_version",
-        "server_id", "error",
+        "server_id", "error", "last_match_id", "last_map",
     ]
     lines: list[str] = []
     for key in fields:
@@ -195,6 +195,18 @@ def _write_mm_state(config: dict, state: dict) -> None:
         value = state.get(key)
         if isinstance(value, list):
             lines.append(f"{key}=" + ",".join(str(int(x)) for x in value))
+
+    result = state.get("result")
+    if isinstance(result, dict):
+        for key in ("reason", "ct_score", "t_score", "time_played",
+                    "player_team", "won", "tied", "rounds_won"):
+            if key not in result:
+                continue
+            value = result[key]
+            if isinstance(value, bool):
+                value = 1 if value else 0
+            lines.append(f"result_{key}={value}")
+
     _atomic_write_text(_mm_state_path(config), "\n".join(lines) + "\n")
 
 
@@ -218,6 +230,10 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                 request = _read_kv(request_path)
                 action = request.get("action", "")
                 if action == "start":
+                    # Equip changes are persisted by the injected GC immediately.
+                    # Push that exact current inventory before allocation so the
+                    # laptop can build the server-side equipped SOCache.
+                    upload_inventory(config)
                     state = _http_json(
                         "POST", base + "/matchmaking/start",
                         {
