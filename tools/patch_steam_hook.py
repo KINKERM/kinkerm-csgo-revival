@@ -12,6 +12,7 @@ PLATFORM_INTERFACE_MARKER = "REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1"
 LOCAL_SOCACHE_AUTH_MARKER = "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1"
 NATIVE_DROP_REVEAL_MARKER = "REVIVAL_NATIVE_DROP_REVEAL_V1"
 NATIVE_DROP_RETRY_MARKER = "REVIVAL_NATIVE_DROP_RETRY_V2"
+NATIVE_DROP_TIMING_MARKER = "REVIVAL_NATIVE_DROP_TIMING_V3"
 PLATFORM_PATTERN_MARKER = "REVIVAL_PLATFORM_FIND_PATTERN_V1"
 RICH_PRESENCE_MARKER = "REVIVAL_MATCHMAKING_RICH_PRESENCE_V1"
 
@@ -470,6 +471,14 @@ static void __fastcall Hk_RevivalRewardMatchEndDrops(
         "REVIVAL_NATIVE_DROP_REVEAL_V1 captured CCSGameRules=%p aborted=%d\n",
         gameRules, aborted ? 1 : 0);
 
+    if (!aborted && s_serverGC)
+    {
+        s_serverGC->m_gc.PostToGC(
+            GCEvent::RevivalMatchEnd, 0, nullptr, 0);
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_TIMING_V3 queued native intermission rewards\n");
+    }
+
     if (s_revOriginalRewardMatchEndDrops)
         s_revOriginalRewardMatchEndDrops(gameRules, aborted);
 }
@@ -635,6 +644,8 @@ static bool RevivalRecordPlayerItemDrop(
             or QUEUE_RESERVE_MARKER not in verify
             or LOCAL_SOCACHE_AUTH_MARKER not in verify
             or NATIVE_DROP_REVEAL_MARKER not in verify
+            or NATIVE_DROP_RETRY_MARKER not in verify
+            or NATIVE_DROP_TIMING_MARKER not in verify
             or RICH_PRESENCE_MARKER not in verify
             or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
