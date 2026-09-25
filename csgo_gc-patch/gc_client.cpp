@@ -486,15 +486,33 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
     }
 
     uint64_t reservationId = 0;
-    if (message.has_serverinfo() && message.serverinfo().has_reservationid())
+    uint64_t matchId = 0;
+    if (message.has_serverinfo())
     {
-        reservationId = message.serverinfo().reservationid();
+        const CMsgGCCStrike15_v2_MatchmakingServerReservationResponse &serverInfo =
+            message.serverinfo();
+        if (serverInfo.has_reservationid())
+            reservationId = serverInfo.reservationid();
+        if (serverInfo.has_reservation()
+            && serverInfo.reservation().has_match_id())
+        {
+            matchId = serverInfo.reservation().match_id();
+        }
     }
 
-    // srcds may flush the same final stats more than once. Treat a reservation
-    // as one progression transaction so XP, rank wins and timed drops cannot
-    // duplicate during the same match.
-    if (reservationId && reservationId == m_lastRewardedReservation)
+    // Direct-UDP revival uses the same GC-welcome cookie as reservation id on
+    // every match, so reservationid alone is NOT a valid transaction key.
+    // Prefer the real queued match id carried by serverinfo.reservation.
+    if (matchId && matchId == m_lastRewardedMatchId)
+    {
+        Platform::Print("progression: duplicate 9136 ignored for match %llu\n",
+            matchId);
+        return;
+    }
+    // Older/non-revival packets can lack match_id. Reservation id remains a
+    // useful fallback except for our deliberately reused welcome cookie.
+    if (!matchId && reservationId && reservationId != GameServerCookieId
+        && reservationId == m_lastRewardedReservation)
     {
         Platform::Print("progression: duplicate 9136 ignored for reservation %llu\n",
             reservationId);
@@ -692,14 +710,17 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, operationUpdate);
     }
 
-    if (processedPlayer && reservationId)
+    if (processedPlayer)
     {
-        m_lastRewardedReservation = reservationId;
+        if (matchId)
+            m_lastRewardedMatchId = matchId;
+        if (reservationId)
+            m_lastRewardedReservation = reservationId;
     }
 
     Platform::Print(
-        "progression: completed match-end processing reservation=%llu account=%u\n",
-        reservationId, AccountId());
+        "progression: completed match-end processing match=%llu reservation=%llu account=%u\n",
+        matchId, reservationId, AccountId());
 }
 
 
@@ -1116,155 +1137,6 @@ void ClientGC::SendMatchmakingConnectReserve()
         m_matchmakingMap.c_str());
 }
 
-void ClientGC::ProcessBridgeMatchEnd(
-    const std::unordered_map<std::string, std::string> &state)
-{
-    const uint64_t matchId = BridgeU64(state, "last_match_id", 0);
-    if (!matchId || matchId == m_lastBridgeRewardedMatch)
-        return;
-
-    // If the real server 9136 already arrived through either Steam P2P or the
-    // direct reward relay, it already applied XP/rank/drops. Mark this backend
-    // result consumed without issuing a second reward package.
-    if (m_lastMatchmakingReservation
-        && m_lastRewardedReservation == m_lastMatchmakingReservation)
-    {
-        m_lastBridgeRewardedMatch = matchId;
-        Platform::Print(
-            "REVIVAL_MATCH_END_BRIDGE_V1 native 9136 already processed; "
-            "fallback skipped for match=%llu\n",
-            matchId);
-        return;
-    }
-
-    auto reasonIt = state.find("result_reason");
-    if (reasonIt == state.end() || reasonIt->second != "game_over")
-    {
-        Platform::Print(
-            "progression: bridge match %llu ended without game_over (%s); no rewards\n",
-            matchId,
-            reasonIt == state.end() ? "missing" : reasonIt->second.c_str());
-        m_lastBridgeRewardedMatch = matchId;
-        return;
-    }
-
-    const uint32_t roundsWon = static_cast<uint32_t>(
-        std::min<uint64_t>(BridgeU64(state, "result_rounds_won", 0), 30));
-    const uint32_t baseXp = roundsWon * 30u;
-    uint32_t levelsGained = 0;
-    const uint32_t awardedXp =
-        m_inventory.ApplyWeeklyProfileXp(baseXp, &levelsGained);
-
-    if (awardedXp)
-    {
-        CMsgSOMultipleObjects profileUpdate;
-        m_inventory.BuildProfilePersonaUpdate(profileUpdate);
-        SendMessageToGame(false, k_ESOMsg_UpdateMultiple, profileUpdate);
-
-        CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
-        BuildMatchmakingHello(profileHello);
-        SendMessageToGame(false,
-            k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
-    }
-
-    if (levelsGained)
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateWeeklyLevelReward(create, drop))
-        {
-            SendMessageToGame(false, k_ESOMsg_Create, create);
-            SendMessageToGame(false,
-                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
-        }
-    }
-
-    // Revival reward package: two guaranteed case drops every completed match.
-    for (int i = 0; i < 2; ++i)
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
-        {
-            SendMessageToGame(false, k_ESOMsg_Create, create);
-            SendMessageToGame(false,
-                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
-        }
-    }
-
-    // One guaranteed Dust II collection reward. Prefer the 2021 collection
-    // (Gold Arabesque lives here), with the legacy Dust II set as fallback.
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        static const std::vector<std::string_view> Dust2021{ "set_dust_2_2021" };
-        static const std::vector<std::string_view> DustLegacy{ "set_dust_2" };
-        if (m_inventory.CreateRandomCollectionMatchDrop(Dust2021, create, drop)
-            || m_inventory.CreateRandomCollectionMatchDrop(DustLegacy, create, drop))
-        {
-            SendMessageToGame(false, k_ESOMsg_Create, create);
-            SendMessageToGame(false,
-                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
-        }
-    }
-
-    // One guaranteed Cache collection reward.
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        static const std::vector<std::string_view> Cache{ "set_cache" };
-        if (m_inventory.CreateRandomCollectionMatchDrop(Cache, create, drop))
-        {
-            SendMessageToGame(false, k_ESOMsg_Create, create);
-            SendMessageToGame(false,
-                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
-        }
-    }
-
-    // Dragon Lore is a Cobblestone item, not Cache. Keep it possible as a
-    // genuinely rare bonus: 1/20 matches get a Cobblestone collection roll,
-    // then normal collection rarity weighting decides the actual skin.
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        static const std::vector<std::string_view> Cobblestone{ "set_cobblestone" };
-        if (m_inventory.CreateRareCollectionBonusMatchDrop(
-            Cobblestone, 20, create, drop))
-        {
-            SendMessageToGame(false, k_ESOMsg_Create, create);
-            SendMessageToGame(false,
-                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
-        }
-    }
-
-    const bool won = BridgeU64(state, "result_won", 0) != 0;
-    const bool tied = BridgeU64(state, "result_tied", 0) != 0;
-    auto teamIt = state.find("result_player_team");
-    const std::string team =
-        teamIt == state.end() ? std::string{} : teamIt->second;
-    if (team == "CT" || team == "TERRORIST" || tied)
-    {
-        if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
-            SendRankUpdate();
-    }
-    else
-    {
-        Platform::Print(
-            "matchmaking: bridge result missing player team for match %llu; rank result skipped\n",
-            matchId);
-    }
-
-    m_lastBridgeRewardedMatch = matchId;
-    // Direct-UDP revival is authoritative for rewards; suppress a late duplicate
-    // P2P 9136 if a Steam networking session happens to appear.
-    if (m_lastMatchmakingReservation)
-        m_lastRewardedReservation = m_lastMatchmakingReservation;
-
-    Platform::Print(
-        "REVIVAL_MATCH_END_BRIDGE_V1 processed match=%llu rounds_won=%u xp=%u won=%u tied=%u\n",
-        matchId, roundsWon, awardedXp, won ? 1u : 0u, tied ? 1u : 0u);
-}
-
 void ClientGC::PollRewardBridge()
 {
     std::ifstream in(MatchmakingRewardPath, std::ios::binary);
@@ -1408,7 +1280,6 @@ void ClientGC::PollMatchmakingBridge()
 
     if (phase == "idle")
     {
-        ProcessBridgeMatchEnd(state);
         if (m_matchmakingActive)
         {
             CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
