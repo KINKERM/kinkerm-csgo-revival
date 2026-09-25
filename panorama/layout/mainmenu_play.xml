@@ -272,7 +272,7 @@
 				</Panel>
 			</Panel>
 			<Panel class="top-bottom-flow full-width full-height">
-					<Panel id="RevivalLegacySettings" class="settings-container content-navbar__tabs--small" visible="false">
+					<Panel class="settings-container content-navbar__tabs--small" visible="false">
 						<Panel class="left-right-flow full-height">
 							<ToggleButton id="JsDirectChallengeBtn" html="true" class="play-menu-toggle-prime play-menu-option-btn play-menu-option-long-btn" onactivate="PlayMenu.OnDirectChallengeBtn()">
 								<Panel id="id-play-menu-toggle-slider" class="PopupButton play-menu-prime-toggle__slider-pill">
@@ -317,21 +317,8 @@
 							</TooltipPanel>
 						</Panel>
 					</Panel>
-				<Panel id="RevivalSingleQueuePanel" class="revival-pool-stage">
-					<ToggleButton id="RevivalPoolTile" class="revival-pool-tile" checked="true" onactivate="PlayMenu.OnRevivalPoolClicked()">
-						<Panel class="revival-pool-art">
-							<Label class="revival-pool-badge" text="✓" />
-							<Image class="revival-pool-icon" src="file://{images}/icons/ui/competitive.svg" />
-							<Label class="revival-pool-mapgrid" text="DUST II   MIRAGE   INFERNO&#10;NUKE   OVERPASS   VERTIGO&#10;TRAIN   CACHE   COBBLESTONE&#10;ANCIENT   ANUBIS   TUSCAN&#10;CANALS   BREACH   BASALT&#10;OFFICE   AGENCY   ITALY&#10;INSERTION II   + INSTALLED" />
-						</Panel>
-						<Panel class="revival-pool-footer">
-							<Label class="revival-pool-title" text="REVIVAL MAPS" />
-							<Label class="revival-pool-subtitle" text="RANKED 5V5 • 64 TICK" />
-						</Panel>
-					</ToggleButton>
-				</Panel>
-				<Panel id="RevivalLegacyMapPicker" class="left-right-flow full-width fill-parent-flow-height" visible="false">
-					<Panel id="JsQuickSelectParent" class="top-bottom-flow map-selection-list__quick-selection-sets">
+				<Panel id="RevivalLegacyMapPicker" class="left-right-flow full-width fill-parent-flow-height">
+					<Panel id="JsQuickSelectParent" class="top-bottom-flow map-selection-list__quick-selection-sets" visible="false">
 						<Label text="#presets_title" class="map-selection__quick-selection-set-title" />
 						<Panel class="game-mode-selection-radios-spacer"/>
 						<Panel id="jsQuickSelectionSetsContainer" class="map-selection-list__quick-selection-sets__btns">
