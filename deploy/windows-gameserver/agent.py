@@ -499,6 +499,7 @@ class ServerSlot:
         self.source_match_started_at = 0.0
         self.using_cookie_fallback = False
         self.started = False
+        self.human_presence_seen = False
         self._lock = threading.RLock()
         self._ended = False
         self.rcon_password = secrets.token_hex(16)
@@ -619,6 +620,7 @@ class ServerSlot:
             self.source_match_started_at = 0.0
             self.using_cookie_fallback = False
             self.started = False
+            self.human_presence_seen = False
             self._ended = False
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
             threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
@@ -807,6 +809,7 @@ class ServerSlot:
                 return
             if self.expected_account_ids and account_id not in self.expected_account_ids:
                 return
+            self.human_presence_seen = True
             before = len(self.connected_account_ids)
             self.connected_account_ids.add(account_id)
             if len(self.connected_account_ids) != before:
@@ -955,15 +958,18 @@ class ServerSlot:
         # the server and retry Competitive setup instead of killing a live match.
         if saw_any_human and not found:
             with self._lock:
-                already_connected = bool(self.connected_account_ids)
-            if not already_connected:
+                first_fallback = not self.human_presence_seen
+                self.human_presence_seen = True
+            if first_fallback:
                 print("[agent] RCON status shows a human player; preserving active reservation")
+            self._begin_match()
 
     def check_accept_timeout(self) -> None:
         with self._lock:
             if (
                 self._ended
                 or self.started
+                or self.human_presence_seen
                 or bool(self.connected_account_ids)
                 or not self.ready_at
                 or not self.match_id
@@ -1028,6 +1034,7 @@ class ServerSlot:
         self.source_match_started_at = 0.0
         self.using_cookie_fallback = False
         self.started = False
+        self.human_presence_seen = False
         self.expected_account_ids.clear()
         self.connected_account_ids.clear()
         self.player_teams.clear()
