@@ -132,6 +132,15 @@ public:
     bool AddMatchPlaytimeAndCreateCaseDrop(uint32_t seconds,
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool CreateRandomCollectionMatchDrop(
+        const std::vector<std::string_view> &collectionNames,
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool CreateRareCollectionBonusMatchDrop(
+        const std::vector<std::string_view> &collectionNames,
+        uint32_t oneIn,
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
 
     // operation shop (revival): query/spend stars from the player's Operation coin.
     // CanSpendStars never mutates inventory. SpendStars persists and emits the
