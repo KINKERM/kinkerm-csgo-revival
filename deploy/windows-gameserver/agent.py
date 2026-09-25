@@ -442,6 +442,31 @@ class ServerSlot:
             print(f"[agent] start notification will retry via heartbeat: {exc}")
         print(f"[agent] first human entered; bot-filled match {match_id} started")
 
+    def refresh_native_reservation_response(self) -> None:
+        with self._lock:
+            match_id = self.match_id
+            old_reservation = self.reservation_id
+            if not match_id or not self.alive():
+                return
+
+        response = read_native_reservation_response(self.cfg["csgo_dir"])
+        if int(response.get("match_id") or 0) != match_id:
+            return
+        new_reservation = int(response.get("reservation_id") or 0)
+        if not new_reservation:
+            return
+
+        with self._lock:
+            if self.match_id != match_id:
+                return
+            if new_reservation != old_reservation:
+                self.reservation_id = new_reservation
+                self.ready_match_id = match_id
+                print(
+                    f"[agent] native reservation refreshed for match {match_id}: "
+                    f"{old_reservation} -> {new_reservation}"
+                )
+
     def check_accept_timeout(self) -> None:
         with self._lock:
             if (
@@ -542,6 +567,7 @@ def main() -> None:
 
     try:
         while True:
+            slot.refresh_native_reservation_response()
             body = {
                 "agent_id": cfg["agent_id"],
                 "public_host": cfg["public_host"],
