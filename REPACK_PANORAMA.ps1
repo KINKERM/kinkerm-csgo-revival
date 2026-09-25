@@ -110,10 +110,18 @@ finally {
 }
 
 # Validate the actual packed archive, not merely the loose source files.
-& py -3 -c "import sys; from pathlib import Path; d=Path(sys.argv[1]).read_bytes(); assert b\"RevivalSingleQueuePanel\" in d; assert b\"Revival has exactly one official Competitive queue\" in d; print(\"PBIN queue markers OK\")" $codePbin
-if ($LASTEXITCODE -ne 0) {
-    throw "Packed code.pbin does not contain the Revival Competitive UI/logic"
+# PBIN entries are stored uncompressed/fixed-slot, so the UTF-8 source markers
+# must be present literally in code.pbin. Use native PowerShell here to avoid
+# shell quoting problems with Python -c on Windows.
+$packedBytes = [IO.File]::ReadAllBytes($codePbin)
+$packedText = [Text.Encoding]::UTF8.GetString($packedBytes)
+if (-not $packedText.Contains("RevivalSingleQueuePanel")) {
+    throw "Packed code.pbin is missing RevivalSingleQueuePanel"
 }
+if (-not $packedText.Contains("Revival has exactly one official Competitive queue")) {
+    throw "Packed code.pbin is missing the single-queue JavaScript marker"
+}
+Write-Host "PBIN queue markers OK" -ForegroundColor Green
 
 $newHash = (Get-FileHash $codePbin -Algorithm SHA256).Hash
 $oldHash = (Get-FileHash $originalPbin -Algorithm SHA256).Hash
