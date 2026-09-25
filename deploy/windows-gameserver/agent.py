@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_NATIVE_DROPS_V19"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V20"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -95,7 +95,7 @@ def load_config() -> dict:
     cfg.setdefault("extra_srcds_args", "")
     cfg.setdefault("accept_timeout_seconds", 300)
     cfg["accept_timeout_seconds"] = max(300.0, float(cfg.get("accept_timeout_seconds", 300)))
-    cfg.setdefault("post_match_grace_seconds", 25)
+    cfg.setdefault("post_match_grace_seconds", 35)
     return cfg
 
 
@@ -117,7 +117,7 @@ def flush_server_reward_bridge(cfg: dict) -> None:
     reward_dir = os.path.join(cfg["csgo_dir"], "csgo_gc", "server_rewards")
     os.makedirs(reward_dir, exist_ok=True)
     try:
-        names = list(os.listdir(reward_dir))
+        names = sorted(os.listdir(reward_dir))
     except OSError:
         return
 
@@ -125,9 +125,11 @@ def flush_server_reward_bridge(cfg: dict) -> None:
     for name in names:
         if not name.lower().endswith(".bin"):
             continue
-        steamid = name[:-4]
-        if not steamid.isdigit():
+        stem = name[:-4]
+        match = re.match(r"^(\d+)(?:[_.-].*)?$", stem)
+        if not match:
             continue
+        steamid = match.group(1)
         path = os.path.join(reward_dir, name)
         try:
             with open(path, "rb") as fh:
@@ -145,8 +147,8 @@ def flush_server_reward_bridge(cfg: dict) -> None:
             if response.get("ok"):
                 os.remove(path)
                 print(
-                    f"[agent] relayed match-end 9136 for {steamid} "
-                    f"({len(payload)} bytes)"
+                    f"[agent] relayed match-end reward packet for {steamid} "
+                    f"({len(payload)} bytes, {name})"
                 )
         except Exception as exc:
             print(f"[agent] reward relay retry for {steamid}: {exc}")
@@ -278,8 +280,9 @@ mp_autoteambalance 0
 mp_limitteams 0
 mp_friendlyfire 1
 mp_maxrounds 30
+mp_winlimit 0
 mp_halftime 1
-mp_overtime_enable 0
+mp_overtime_enable 1
 mp_overtime_maxrounds 6
 mp_match_can_clinch 1
 mp_ignore_round_win_conditions 0
@@ -293,6 +296,7 @@ mp_roundtime 1.92
 mp_roundtime_defuse 1.92
 mp_roundtime_hostage 1.92
 mp_match_restart_delay 15
+mp_competitive_endofmatch_extra_time 20
 mp_endmatch_votenextmap 0
 mp_match_end_restart 0
 
@@ -913,6 +917,12 @@ class ServerSlot:
                     "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
                     "mp_autokick 0; mp_autoteambalance 0; mp_limitteams 0; "
+                    "mp_friendlyfire 1; mp_maxrounds 30; mp_winlimit 0; "
+                    "mp_halftime 1; mp_overtime_enable 1; mp_overtime_maxrounds 6; "
+                    "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
+                    "mp_timelimit 0; mp_match_restart_delay 15; "
+                    "mp_competitive_endofmatch_extra_time 20; "
+                    "mp_endmatch_votenextmap 0; mp_match_end_restart 0; "
                     "mp_warmup_pausetimer 0; mp_warmup_end"
                 ),
             )
@@ -922,7 +932,9 @@ class ServerSlot:
                 (
                     "sv_competitive_official_5v5; "
                     "bot_quota; bot_quota_mode; bot_join_after_player; "
-                    "bot_stop; bot_freeze; mp_maxrounds; mp_friendlyfire; "
+                    "bot_stop; bot_freeze; mp_maxrounds; mp_winlimit; "
+                    "mp_timelimit; mp_match_can_clinch; mp_halftime; "
+                    "mp_overtime_enable; mp_friendlyfire; "
                     "mp_warmuptime_all_players_connected; mp_warmup_pausetimer"
                 ),
             )
