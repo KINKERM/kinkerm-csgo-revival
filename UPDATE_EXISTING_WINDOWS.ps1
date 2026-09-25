@@ -220,6 +220,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_RETRY_V2")) {
         throw "Built csgo_gc.dll does not contain retry-safe native drop hook installation."
     }
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_TIMING_V3")) {
+        throw "Built csgo_gc.dll does not contain native intermission reward timing."
+    }
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_BUNDLE_V1")) {
         throw "Built csgo_gc.dll does not contain exact server drop bundle delivery."
     }
