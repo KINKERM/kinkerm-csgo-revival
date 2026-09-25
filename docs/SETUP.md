@@ -205,7 +205,7 @@ seeing modified loose files under `csgo\panorama` is not considered success.
 The full client pack must contain at least:
 
 ```text
-csgo_gc.dll
+csgo_gc/csgo_gc.dll
 csgo_revival.exe
 srcds.exe
 csgo_gc/config.txt
@@ -228,7 +228,7 @@ The laptop CS:GO root also needs the newly built:
 
 ```text
 srcds.exe
-csgo_gc.dll
+csgo_gc/csgo_gc.dll
 csgo_gc/config.txt
 csgo/scripts/items/items_game.txt
 ```
