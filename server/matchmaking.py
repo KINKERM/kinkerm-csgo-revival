@@ -211,14 +211,24 @@ class MatchmakingCoordinator:
         if match is None:
             return
 
-        existing = {p.steamid for p in match.players}
+        existing = {p.steamid: p for p in match.players}
         changed = False
         while self._queue and len(match.players) < MAX_HUMANS:
             player = self._queue.pop(0)
-            if player.steamid in existing:
+            already = existing.get(player.steamid)
+            if already is not None:
+                # Repair a stale/restarted search for a player who is already
+                # attached to this allocation. Older builds could leave the
+                # player's public state as "searching" while silently dropping
+                # the new queue entry here forever.
+                already.game_type = player.game_type
+                already.client_version = player.client_version
+                self._states[player.steamid] = self._state_for_match_player_locked(
+                    match, already
+                )
                 continue
             match.players.append(player)
-            existing.add(player.steamid)
+            existing[player.steamid] = player
             changed = True
             self._states[player.steamid] = self._state_for_match_player_locked(
                 match, player
@@ -280,10 +290,34 @@ class MatchmakingCoordinator:
                 return {"state": "error", "error": "invalid steamid"}
 
             existing = self._states.get(steamid, {})
-            if existing.get("state") in (
-                "searching", "allocating", "reserved", "in_match"
-            ):
+            if existing.get("state") in ("reserved", "in_match"):
                 return dict(existing)
+
+            # Idempotent repair path: if a previous build left this SteamID in
+            # "searching" without a queue entry, or it is already attached to a
+            # still-live allocation, reconstruct the correct state instead of
+            # returning the dead searching state forever.
+            if existing.get("state") in ("searching", "allocating"):
+                match = self._active_match_locked()
+                if match is not None:
+                    for attached in match.players:
+                        if attached.steamid == steamid:
+                            attached.game_type = int(game_type or attached.game_type or 8)
+                            attached.client_version = int(client_version or attached.client_version or 0)
+                            self._states[steamid] = self._state_for_match_player_locked(
+                                match, attached
+                            )
+                            return dict(self._states[steamid])
+
+                if not any(q.steamid == steamid for q in self._queue):
+                    self._queue.append(QueueEntry(
+                        steamid=steamid,
+                        account_id=account_id,
+                        game_type=int(game_type or 8),
+                        client_version=int(client_version or 0),
+                    ))
+                self._try_form_locked()
+                return dict(self._states[steamid])
 
             self._queue = [q for q in self._queue if q.steamid != steamid]
             self._queue.append(QueueEntry(
@@ -304,11 +338,34 @@ class MatchmakingCoordinator:
         with self._lock:
             self._queue = [q for q in self._queue if q.steamid != steamid]
             old = self._states.get(steamid, {})
+
+            # If the user cancels before the match actually starts, detach them
+            # from the allocation too. Otherwise an empty reserved match can
+            # remain "active" and poison the next search for the same SteamID.
+            match = self._active_match_locked()
+            if match is not None and match.state in ("allocating", "reserved"):
+                before = len(match.players)
+                match.players = [p for p in match.players if p.steamid != steamid]
+                if len(match.players) != before:
+                    if match.players:
+                        self._sync_assignment_locked(match)
+                        self._refresh_match_player_states_locked(match)
+                    else:
+                        match.state = "complete"
+                        if (
+                            self._assignment
+                            and int(self._assignment.get("match_id") or 0)
+                            == match.match_id
+                        ):
+                            self._assignment = None
+                        self._server["ready_match_id"] = 0
+                        self._server["reserved_account_ids"] = []
+
             self._states[steamid] = {
                 "state": "idle",
                 "previous_state": old.get("state", ""),
             }
-            self._publish_search_states_locked()
+            self._try_form_locked()
             return dict(self._states[steamid])
 
     def state(self, steamid: str) -> dict[str, Any]:
