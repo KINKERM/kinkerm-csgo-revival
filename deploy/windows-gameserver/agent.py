@@ -180,12 +180,15 @@ def reservation_paths(csgo_dir: str) -> tuple[str, str]:
     )
 
 
-def write_native_reservation(csgo_dir: str, assignment: dict) -> None:
+def write_native_reservation(
+    csgo_dir: str, assignment: dict, *, clear_response: bool = True
+) -> None:
     request_path, response_path = reservation_paths(csgo_dir)
-    try:
-        os.remove(response_path)
-    except OSError:
-        pass
+    if clear_response:
+        try:
+            os.remove(response_path)
+        except OSError:
+            pass
 
     account_ids = [
         int(x) for x in assignment.get("account_ids", []) if int(x) > 0
@@ -266,9 +269,13 @@ class ServerSlot:
                 added = new_accounts.difference(self.expected_account_ids)
                 self.expected_account_ids.update(new_accounts)
                 if added:
-                    # The running srcds/reservation stays intact; this only
-                    # expands the set of humans the agent tracks for the live
-                    # drop-in match.
+                    # Keep the request file current. If ServerGC has not read
+                    # it yet, early drop-ins become part of the initial native
+                    # reservation. Never delete a 9106 response for a live
+                    # server while doing this.
+                    write_native_reservation(
+                        self.cfg["csgo_dir"], assignment, clear_response=False
+                    )
                     print(
                         "[agent] drop-in player(s) added to live match "
                         f"{match_id}: {', '.join(str(x) for x in sorted(added))}"
