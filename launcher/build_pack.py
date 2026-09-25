@@ -140,6 +140,7 @@ def main() -> None:
             b"REVIVAL_SERVER_REWARD_BRIDGE_V1",
             b"REVIVAL_CLIENT_REWARD_BRIDGE_V1",
             b"REVIVAL_GUARANTEED_MATCH_DROPS_V1",
+            b"REVIVAL_SYNTHETIC_MATCH_END_V1",
         ):
             if marker not in dll_blob:
                 print(f"[build_pack] ERROR: stale csgo_gc.dll, missing {marker.decode()}")
