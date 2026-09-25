@@ -54,7 +54,7 @@ WHAT MUST ALREADY EXIST
        build\launcher\Release\srcds.exe
            -> <laptop csgo_dir>\srcds.exe
        build\csgo_gc\Release\csgo_gc.dll
-           -> <laptop csgo_dir>\csgo_gc.dll
+           -> <laptop csgo_dir>\csgo_gc\csgo_gc.dll
 
    Also keep the revival GC data beside the DLL, especially config.txt and the
    schema files your normal revival pack already installs.
