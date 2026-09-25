@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "gc_server.h"
+#include "steam_hook.h"
 #include "gc_const.h"
 #include "gc_const_csgo.h"
 #include "graffiti.h"
@@ -21,7 +22,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V3 active; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -69,6 +70,29 @@ void ServerGC::HandleIdle()
     }
 
     SendMatchmakingReservation();
+
+    // 9107 requires the actual game-server SteamID. Steam may assign it a
+    // moment after the reservation response, so backfill it once available.
+    const uint64_t serverId = RevivalGameServerSteamId();
+    if (serverId)
+    {
+        std::ifstream in(ServerReservationResponsePath, std::ios::binary);
+        std::string existing((std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        if (!existing.empty() && existing.find("server_id=") == std::string::npos)
+        {
+            std::ofstream out(ServerReservationResponsePath,
+                std::ios::binary | std::ios::app);
+            if (out.is_open())
+            {
+                out << "server_id=" << serverId << "\n";
+                out.flush();
+                Platform::Print(
+                    "matchmaking server: published gameserver SteamID %llu\n",
+                    serverId);
+            }
+        }
+    }
 }
 
 void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
@@ -469,6 +493,9 @@ void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
                 if (accounts != current.end())
                     out << accounts->second;
                 out << "\n";
+                const uint64_t serverId = RevivalGameServerSteamId();
+                if (serverId)
+                    out << "server_id=" << serverId << "\n";
                 out.flush();
             }
 
@@ -516,6 +543,9 @@ void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
                 out << accounts->second;
         }
         out << "\n";
+        const uint64_t serverId = RevivalGameServerSteamId();
+        if (serverId)
+            out << "server_id=" << serverId << "\n";
         out.flush();
     }
 
