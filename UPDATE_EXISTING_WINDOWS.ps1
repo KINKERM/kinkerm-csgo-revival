@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Branch = "operation-revival-finish"
+$PinnedCsgoGcCommit = "06301e7173329723a3506f8345fe23b147bc0881"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $backup = Join-Path "$env:USERPROFILE\Documents\CSGO_Revival_Backups" $stamp
 
@@ -100,11 +101,21 @@ Write-Host "    HEAD = $head"
 
 Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 
-# Keep steam_hook.cpp from this pinned csgo_gc checkout. Newer upstream versions
-# use a different proxy/C++ layout and do not compile in this tree.
-& git -C $CsgoGcSource checkout -- "csgo_gc/steam_hook.cpp"
+# Keep steam_hook.cpp from the exact csgo_gc revision this revival targets.
+# Do NOT restore from the local checkout HEAD: users may have moved csgo_gc_clean
+# to a newer upstream revision whose Steam proxy layout is incompatible.
+& git -C $CsgoGcSource cat-file -e "$PinnedCsgoGcCommit^{commit}" 2>$null
 if ($LASTEXITCODE -ne 0) {
-    throw "Could not restore the pinned csgo_gc steam_hook.cpp."
+    Write-Host "    Fetching pinned csgo_gc commit $PinnedCsgoGcCommit..." -ForegroundColor Yellow
+    & git -C $CsgoGcSource fetch origin $PinnedCsgoGcCommit
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not fetch pinned csgo_gc commit $PinnedCsgoGcCommit."
+    }
+}
+
+& git -C $CsgoGcSource checkout $PinnedCsgoGcCommit -- "csgo_gc/steam_hook.cpp"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not restore steam_hook.cpp from pinned csgo_gc commit $PinnedCsgoGcCommit."
 }
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
