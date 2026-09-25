@@ -190,6 +190,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1")) {
         throw "Built csgo_gc.dll does not contain local SOCache auth trigger."
     }
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_PLAYER_AUTH_V1")) {
+        throw "Built csgo_gc.dll does not contain authoritative player-auth marker support."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SERVER_REWARD_BRIDGE_V1")) {
         throw "Built csgo_gc.dll does not contain the direct match-end server reward bridge."
     }
@@ -325,6 +328,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1")) {
         throw "Installed csgo_gc.dll is missing local SOCache auth trigger."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_PLAYER_AUTH_V1")) {
+        throw "Installed csgo_gc.dll is missing authoritative player-auth marker support."
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_REWARD_BRIDGE_V1")) {
         throw "Installed csgo_gc.dll is missing the direct match-end server reward bridge."
