@@ -67,6 +67,11 @@ void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
 
 void ServerGC::HandleIdle()
 {
+    // End-match reveal is timing-sensitive: the stock scoreboard waits for the
+    // server gamerules drop list during intermission. Poll this tiny local trigger
+    // every GC idle tick rather than on the slower reservation refresh cadence.
+    ProcessRevivalMatchEndTrigger();
+
     // Some Legacy dedicated-server builds never emit k_EMsgGCServerHello after
     // the injected GC comes up. If we wait for that hello, 9105 is never queued
     // and the agent waits forever for 9106. Proactively establish the local GC
@@ -445,6 +450,218 @@ std::string BuildQueuedReservationPayload(
     return payload;
 }
 } // namespace
+
+void ServerGC::ProcessRevivalMatchEndTrigger()
+{
+    constexpr const char *TriggerPath = "csgo_gc/server_match_end_trigger.txt";
+    std::ifstream trigger(TriggerPath, std::ios::binary);
+    if (!trigger.is_open())
+        return;
+
+    std::unordered_map<std::string, std::string> end;
+    std::string line;
+    while (std::getline(trigger, line))
+    {
+        const size_t eq = line.find('=');
+        if (eq != std::string::npos)
+            end[line.substr(0, eq)] = line.substr(eq + 1);
+    }
+    trigger.close();
+
+    const uint64_t matchId = ReservationNumber(end, "match_id");
+    if (!matchId || matchId == m_lastSyntheticDropMatchId)
+    {
+        std::remove(TriggerPath);
+        return;
+    }
+
+    const auto reservation = ReadServerReservationFile();
+    if (ReservationNumber(reservation, "match_id") != matchId)
+    {
+        // Ignore a stale trigger from a previous srcds allocation.
+        std::remove(TriggerPath);
+        return;
+    }
+
+    auto accountIt = reservation.find("account_ids");
+    if (accountIt == reservation.end() || accountIt->second.empty())
+        return;
+
+    const uint32_t timePlayed = static_cast<uint32_t>(
+        std::min<uint64_t>(ReservationNumber(end, "time_played"), UINT32_MAX));
+
+    std::vector<uint32_t> accountIds;
+    std::stringstream accountStream(accountIt->second);
+    std::string part;
+    while (std::getline(accountStream, part, ','))
+    {
+        char *parseEnd = nullptr;
+        const unsigned long value = std::strtoul(part.c_str(), &parseEnd, 10);
+        if (parseEnd && *parseEnd == '\0' && value && value <= UINT32_MAX)
+            accountIds.push_back(static_cast<uint32_t>(value));
+    }
+
+    bool processedAny = false;
+    for (uint32_t accountId : accountIds)
+    {
+        CSteamID playerId{ accountId, k_EUniversePublic, k_EAccountTypeIndividual };
+        const uint64_t steamId = playerId.ConvertToUint64();
+        const std::string inventoryPath =
+            "csgo_gc/server_players/" + std::to_string(steamId) + ".txt";
+
+        std::ifstream probe(inventoryPath, std::ios::binary);
+        if (!probe.is_open())
+        {
+            Platform::Print(
+                "REVIVAL_NATIVE_DROP_REVEAL_V1 missing cached inventory for %llu\n",
+                static_cast<unsigned long long>(steamId));
+            continue;
+        }
+        probe.close();
+
+        Inventory inventory{ steamId, inventoryPath };
+
+        struct BridgeMessage
+        {
+            uint32_t type{};
+            std::vector<uint8_t> bytes;
+        };
+        std::vector<BridgeMessage> bridgeMessages;
+
+        auto queueMessage = [&bridgeMessages](const GCMessageWrite &write)
+        {
+            BridgeMessage out;
+            out.type = write.TypeMasked();
+            out.bytes.assign(write.Data(), write.Data() + write.Size());
+            bridgeMessages.emplace_back(std::move(out));
+        };
+
+        auto publishDrop = [this, &queueMessage](
+            CMsgSOSingleObject &create,
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &drop)
+        {
+            if (!drop.has_iteminfo())
+                return;
+
+            const std::string preview = drop.iteminfo().SerializeAsString();
+            PostToHost(
+                HostEvent::RecordPlayerItemDrop, drop.iteminfo().accountid(),
+                preview.data(), static_cast<uint32_t>(preview.size()));
+
+            GCMessageWrite createWrite{ k_ESOMsg_Create, create };
+            GCMessageWrite dropWrite{
+                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop };
+            queueMessage(createWrite);
+            queueMessage(dropWrite);
+        };
+
+        for (int i = 0; i < 2; ++i)
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateRandomCaseMatchDrop(create, drop))
+                publishDrop(create, drop);
+        }
+
+        static const std::vector<std::string_view> Dust2021{
+            "set_dust_2_2021"
+        };
+        static const std::vector<std::string_view> DustLegacy{
+            "set_dust_2"
+        };
+        static const std::vector<std::string_view> Cache{
+            "set_cache"
+        };
+        static const std::vector<std::string_view> Cobblestone{
+            "set_cobblestone"
+        };
+
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateRandomCollectionMatchDrop(Dust2021, create, drop)
+                || inventory.CreateRandomCollectionMatchDrop(DustLegacy, create, drop))
+            {
+                publishDrop(create, drop);
+            }
+        }
+
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateRandomCollectionMatchDrop(Cache, create, drop))
+                publishDrop(create, drop);
+        }
+
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateRareCollectionBonusMatchDrop(
+                Cobblestone, 20, create, drop))
+            {
+                publishDrop(create, drop);
+            }
+        }
+
+        if (timePlayed)
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.AddMatchPlaytimeAndCreateCaseDrop(
+                timePlayed, create, drop))
+            {
+                publishDrop(create, drop);
+            }
+        }
+
+        if (bridgeMessages.empty())
+        {
+            Platform::Print(
+                "REVIVAL_NATIVE_DROP_REVEAL_V1 no drops generated for account=%u\n",
+                accountId);
+            continue;
+        }
+
+        const std::string rewardPath =
+            "csgo_gc/server_rewards/" + std::to_string(steamId) + ".bin";
+        std::ofstream out(rewardPath, std::ios::binary | std::ios::trunc);
+        if (out.is_open())
+        {
+            const char magic[8] = { 'R','V','M','S','G','V','1','\0' };
+            out.write(magic, sizeof(magic));
+            const uint32_t count = static_cast<uint32_t>(bridgeMessages.size());
+            out.write(reinterpret_cast<const char *>(&count), sizeof(count));
+            for (const BridgeMessage &message : bridgeMessages)
+            {
+                const uint32_t size = static_cast<uint32_t>(message.bytes.size());
+                out.write(reinterpret_cast<const char *>(&message.type), sizeof(message.type));
+                out.write(reinterpret_cast<const char *>(&size), sizeof(size));
+                if (size)
+                {
+                    out.write(
+                        reinterpret_cast<const char *>(message.bytes.data()), size);
+                }
+            }
+            out.flush();
+        }
+
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 queued %u client messages for account=%u match=%llu\n",
+            static_cast<unsigned>(bridgeMessages.size()), accountId,
+            static_cast<unsigned long long>(matchId));
+        processedAny = true;
+    }
+
+    if (processedAny)
+    {
+        m_lastSyntheticDropMatchId = matchId;
+        std::remove(TriggerPath);
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 processed match=%llu players=%u\n",
+            static_cast<unsigned long long>(matchId),
+            static_cast<unsigned>(accountIds.size()));
+    }
+}
 
 void ServerGC::SendMatchmakingReservation()
 {
