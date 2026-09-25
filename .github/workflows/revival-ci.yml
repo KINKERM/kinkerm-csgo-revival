@@ -35,7 +35,7 @@ jobs:
       - name: Validate Windows updater syntax
         shell: pwsh
         run: |
-          foreach ($script in @('UPDATE_EXISTING_WINDOWS.ps1','REPACK_PANORAMA.ps1')) {
+          foreach ($script in @('UPDATE_EXISTING_WINDOWS.ps1','REPACK_PANORAMA.ps1','deploy/windows-gameserver/UPDATE_LAPTOP.ps1')) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
