@@ -163,9 +163,18 @@ if (-not $SkipInstall) {
     # overwrite them from the freshly built Release outputs so a stale/locked
     # DLL can never silently survive an update.
     Write-Host "    Installing verified fresh runtime binaries..." -ForegroundColor Yellow
-    Copy-Item $gcDll (Join-Path $CsgoDir "csgo_gc.dll") -Force
+    $gcRuntimeDir = Join-Path $CsgoDir "csgo_gc"
+    New-Item $gcRuntimeDir -ItemType Directory -Force | Out-Null
+    Copy-Item $gcDll (Join-Path $gcRuntimeDir "csgo_gc.dll") -Force
     Copy-Item $serverExe (Join-Path $CsgoDir "srcds.exe") -Force
     Copy-Item $clientExe (Join-Path $CsgoDir "csgo_revival.exe") -Force
+
+    # Older broken revival packs put csgo_gc.dll at the game root. The launcher
+    # never loads it, so remove it to avoid misleading future diagnostics.
+    $wrongRootGc = Join-Path $CsgoDir "csgo_gc.dll"
+    if (Test-Path $wrongRootGc) {
+        Remove-Item $wrongRootGc -Force
+    }
 
     $repackScript = Join-Path $RevivalRepo "REPACK_PANORAMA.ps1"
     Need-Path $repackScript "Panorama PBIN repack script"
@@ -184,7 +193,7 @@ if (-not $SkipInstall) {
     Need-Path (Join-Path $panoramaDir "_code.pbin") "Preserved _code.pbin"
     Need-Path (Join-Path $panoramaDir "pbin.py") "Installed pbin.py"
     Need-Path (Join-Path $CsgoDir "bin\panorama.dll") "Patched panorama.dll"
-    $installedGc = Join-Path $CsgoDir "csgo_gc.dll"
+    $installedGc = Join-Path $CsgoDir "csgo_gc\csgo_gc.dll"
     $installedServer = Join-Path $CsgoDir "srcds.exe"
     $installedLauncher = Join-Path $CsgoDir "csgo_revival.exe"
 
