@@ -52,21 +52,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Clone clean upstream csgo_gc
+      - name: Clone compatible upstream csgo_gc
         shell: pwsh
-        run: git clone --depth 1 https://github.com/mikkokko/csgo_gc.git upstream
+        run: |
+          git clone https://github.com/mikkokko/csgo_gc.git upstream
+          git -C upstream checkout 8651467b6bcffaa6e90f56a4d9cce31708deb348
       - name: Apply complete revival overlay
         shell: pwsh
         run: Copy-Item -Path 'csgo_gc-patch\*' -Destination 'upstream\csgo_gc\' -Force
       - name: Install Win32 dependencies
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install mbedtls:x86-windows protobuf:x86-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install mbedtls:x86-windows-static protobuf:x86-windows-static
       - name: Configure Win32 Release
         shell: pwsh
         run: |
           cmake -S upstream -B upstream/build -G 'Visual Studio 17 2022' -A Win32 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" 
+            -DVCPKG_TARGET_TRIPLET=x86-windows-static
       - name: Build client server and GC
         shell: pwsh
         run: cmake --build upstream/build --config Release --target csgo srcds csgo_gc
