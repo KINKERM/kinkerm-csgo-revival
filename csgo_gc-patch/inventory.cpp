@@ -41,7 +41,7 @@ inline bool IsDefaultItemId(uint64_t itemId, uint32_t &defIndex, uint32_t &paint
 
 Inventory::Inventory(uint64_t steamId, std::string filePath)
     : m_steamId{ steamId }
-    , m_filePath{ std::move(filePath) }
+    , m_filePath{ filePath }
 {
     m_profileLevel = static_cast<uint32_t>(std::max(GetConfig().Level(), 1));
     m_profileXp = static_cast<uint32_t>(std::max(GetConfig().Xp(), 0));
