@@ -265,7 +265,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(
         auth_new = auth_anchor + (
             "\n            s_serverGC->m_gc.PostToGC("
             "GCEvent::ClientLocalInventoryRequest, steamID.ConvertToUint64(), nullptr, 0);"
-            "\n            Platform::Print(\"REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1 player=%llu\\\\n\", "
+            "\n            Platform::Print(\"REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1 player=%llu\\n\", "
             "steamID.ConvertToUint64());"
         )
         patched = patched.replace(auth_anchor, auth_new, 1)
