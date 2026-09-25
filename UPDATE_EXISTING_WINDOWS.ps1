@@ -2,6 +2,7 @@ param(
     [string]$RevivalRepo = "$env:USERPROFILE\Documents\kinkerm-csgo-revival-pinned",
     [string]$CsgoGcSource = "$env:USERPROFILE\Documents\csgo_gc_clean",
     [string]$CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy",
+    [switch]$ForceBuild,
     [switch]$SkipBuild,
     [switch]$SkipInstall
 )
@@ -100,12 +101,14 @@ $clientExe = Join-Path $CsgoGcSource "build\launcher\Release\csgo.exe"
 $serverExe = Join-Path $CsgoGcSource "build\launcher\Release\srcds.exe"
 $gcDll = Join-Path $CsgoGcSource "build\csgo_gc\Release\csgo_gc.dll"
 $existingRuntime = (Test-Path $clientExe) -and (Test-Path $serverExe) -and (Test-Path $gcDll)
-$autoReuseBuild = (-not $SkipBuild) -and (-not $gcSourceChanged) -and $existingRuntime
+$autoReuseBuild = (-not $SkipBuild) -and (-not $ForceBuild) -and (-not $gcSourceChanged) -and $existingRuntime
 $didBuild = $false
 
 if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     Write-Host "[3/6] Building csgo + srcds + csgo_gc (Win32 Release)..." -ForegroundColor Yellow
-    if ($gcSourceChanged) {
+    if ($ForceBuild) {
+        Write-Host "    ForceBuild requested; rebuilding regardless of build stamp." -ForegroundColor Yellow
+    } elseif ($gcSourceChanged) {
         if ($lastBuiltGcTree) {
             Write-Host "    Built GC tree $lastBuiltGcTree does not match target $targetGcTree; rebuilding."
         } else {
