@@ -115,11 +115,11 @@ finally {
 # shell quoting problems with Python -c on Windows.
 $packedBytes = [IO.File]::ReadAllBytes($codePbin)
 $packedText = [Text.Encoding]::UTF8.GetString($packedBytes)
-if (-not $packedText.Contains("RevivalSingleQueuePanel")) {
-    throw "Packed code.pbin is missing RevivalSingleQueuePanel"
+if (-not $packedText.Contains("mg_revival_pool")) {
+    throw "Packed code.pbin is missing the stock Revival mapgroup marker"
 }
-if (-not $packedText.Contains("Revival has exactly one official Competitive queue")) {
-    throw "Packed code.pbin is missing the single-queue JavaScript marker"
+if (-not $packedText.Contains("_GetRevivalValidationMapGroup")) {
+    throw "Packed code.pbin is missing the Revival queue validation logic"
 }
 Write-Host "PBIN queue markers OK" -ForegroundColor Green
 
