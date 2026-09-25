@@ -473,11 +473,20 @@ static bool RevivalRecordPlayerItemDrop(
         if callback_anchor not in patched:
             print("[patch_steam_hook] ERROR: server callback body missing for native drop retry")
             return 19
+        # Do not install the raw server.dll RewardMatchEndDrops hook on the
+        # compatible/older tree. The signatures were taken from a newer build
+        # and can hard-crash srcds when funchook prepares the wrong address.
+        # Reward generation still runs from server_match_end_trigger.txt and
+        # the exact SO Create/9137 bundle is spooled to the client bridge.
         patched = patched.replace(
             callback_anchor,
             callback_anchor
             + "\n\n#ifdef _WIN32\n"
-            + "    RevivalInstallNativeDropRevealHooks();\n"
+            + "    static bool s_revSafeModeLogged = false;\n"
+            + "    if (!s_revSafeModeLogged) {\n"
+            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 compatible-tree safe mode; native server.dll hook disabled\\n\");\n"
+            + "        s_revSafeModeLogged = true;\n"
+            + "    }\n"
             + "#endif",
             1,
         )
@@ -486,15 +495,10 @@ static bool RevivalRecordPlayerItemDrop(
         if install_anchor not in patched:
             print("[patch_steam_hook] ERROR: SteamGameServer_RunCallbacks install anchor missing")
             return 15
-        patched = patched.replace(
-            install_anchor,
-            install_anchor
-            + "\n#ifdef _WIN32\n"
-            + "    if (dedicated)\n"
-            + "        RevivalInstallNativeDropRevealHooks();\n"
-            + "#endif",
-            1,
-        )
+        # Intentionally do not call RevivalInstallNativeDropRevealHooks() here.
+        # See safe-mode note above: bridge-only rewards are stable on the older
+        # compatible Win32 tree and avoid a native funchook crash.
+
 
         reserve_case_anchor = '''            case HostEvent::ReserveServerForQueuedGame:
 #ifdef _WIN32
