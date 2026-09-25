@@ -563,6 +563,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V2 active\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
