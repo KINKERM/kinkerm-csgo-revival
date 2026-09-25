@@ -43,7 +43,7 @@ def main() -> int:
             f"{i}{{\n"
             f'{i}    Platform::Print("{MARKER} active\\n");\n'
             f"{i}    s_revAllowOfflineGcPrinted = true;\n"
-            f"{i}}"
+            i + "}"
         )
 
     patched, count = pattern.subn(repl, text, count=1)
