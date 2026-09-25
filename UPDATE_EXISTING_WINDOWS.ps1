@@ -127,6 +127,14 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
 
     & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo srcds csgo_gc
     if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed" }
+
+    $gcDllBytes = [IO.File]::ReadAllBytes($gcDll)
+    $gcDllText = [Text.Encoding]::ASCII.GetString($gcDllBytes)
+    if (-not $gcDllText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
+        throw "Built csgo_gc.dll does not contain the current matchmaking source. Stale object files are still being used."
+    }
+    Write-Host "    Verified current matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
+
     [System.IO.File]::WriteAllText(
         $buildStamp,
         $targetGcTree + [Environment]::NewLine,
