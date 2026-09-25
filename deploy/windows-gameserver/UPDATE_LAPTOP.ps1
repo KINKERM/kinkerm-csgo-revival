@@ -145,6 +145,7 @@ foreach ($marker in @(
     "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1",
     "REVIVAL_SERVER_PLAYER_AUTH_V1",
     "REVIVAL_SERVER_REWARD_BRIDGE_V1",
+    "REVIVAL_REWARD_SPOOL_QUEUE_V1",
     "REVIVAL_CLIENT_REWARD_BRIDGE_V1",
     "REVIVAL_GUARANTEED_MATCH_DROPS_V1",
     "REVIVAL_SYNTHETIC_MATCH_END_V1",
@@ -159,8 +160,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_NATIVE_DROPS_V19")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_REWARDS_V18"
+if (-not $agentText.Contains("REVIVAL_AGENT_MATCH_FINAL_V20")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_MATCH_FINAL_V20"
 }
 Write-Host "    Verified current Competitive/match-result laptop agent." -ForegroundColor Green
 
