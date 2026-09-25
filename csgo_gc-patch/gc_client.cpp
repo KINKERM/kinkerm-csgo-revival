@@ -563,7 +563,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
-    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V2 active\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
@@ -862,8 +862,12 @@ void ClientGC::PollMatchmakingBridge()
         if (serverAddress.empty())
             return;
 
+        const uint64_t serverId = BridgeU64(state, "server_id", 0);
+        if (!serverId)
+            return;
+
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
-        reserve.set_serverid(matchId);
+        reserve.set_serverid(serverId);
         const uint32_t directUdpIp = static_cast<uint32_t>(
             BridgeU64(state, "direct_udp_ip", 0));
         if (directUdpIp)
@@ -900,13 +904,15 @@ void ClientGC::PollMatchmakingBridge()
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 
         m_lastMatchmakingReservation = reservationId;
-        m_matchmakingServerId = matchId;
+        m_matchmakingServerId = serverId;
         m_matchmakingDirectUdpIp = directUdpIp;
         m_matchmakingDirectUdpPort = port;
         m_matchmakingServerAddress = serverAddress;
         m_matchmakingMap = mapName;
-        Platform::Print("matchmaking: MATCH FOUND reservation=%llu map=%s server=%s\n",
-            reservationId, mapName.c_str(), serverAddress.c_str());
+        Platform::Print(
+            "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu map=%s server=%s game_type=%u version=%u\n",
+            reservationId, serverId, mapName.c_str(), serverAddress.c_str(),
+            gameType, serverVersion);
         return;
     }
 
