@@ -301,9 +301,11 @@ mp_match_end_restart 0
 // The agent ends it immediately once status/logs confirm that player.
 mp_do_warmup_period 1
 mp_warmuptime 300
-mp_warmuptime_all_players_connected 0
-mp_warmup_pausetimer 1
+mp_warmuptime_all_players_connected 5
+mp_warmup_pausetimer 0
 mp_warmup_start
+
+echo "[REVIVAL] gamemode_competitive_server.cfg applied"
 """
     with open(late_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(late)
@@ -901,7 +903,8 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5 1; deathmatch 0; "
-                    "bot_join_after_player 0; bot_join_team any; "
+                    "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
+                    "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
                     "mp_autokick 0; mp_autoteambalance 0; mp_limitteams 0; "
                     "mp_warmup_pausetimer 0; mp_warmup_end"
@@ -912,8 +915,9 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5; deathmatch; "
-                    "bot_quota; bot_quota_mode; "
-                    "mp_maxrounds; mp_friendlyfire; mp_warmup_pausetimer"
+                    "bot_quota; bot_quota_mode; bot_join_after_player; "
+                    "bot_stop; bot_freeze; mp_maxrounds; mp_friendlyfire; "
+                    "mp_warmuptime_all_players_connected; mp_warmup_pausetimer"
                 ),
             )
         except Exception as exc:
