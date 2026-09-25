@@ -800,6 +800,7 @@ def main() -> None:
                 "agent_id": cfg["agent_id"],
                 "public_host": cfg["public_host"],
                 "public_port": int(cfg["public_port"]),
+                "server_version": read_csgo_server_version(cfg["csgo_dir"]),
                 "maps": maps,
                 "ready_match_id": slot.ready_match_id,
                 "reservation_id": slot.reservation_id,
