@@ -21,6 +21,12 @@ jobs:
       - name: Syntax check revival Python
         shell: pwsh
         run: python -m py_compile server/matchmaking.py server/revival_server.py launcher/launcher.py deploy/windows-gameserver/agent.py tools/pbin.py
+      - name: Test drop-in matchmaking flow
+        shell: pwsh
+        run: |
+          Push-Location server
+          python -m unittest test_matchmaking.py
+          Pop-Location
       - name: Validate Panorama JS and XML
         shell: pwsh
         run: |
