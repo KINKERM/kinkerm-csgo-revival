@@ -109,6 +109,72 @@ class DropInMatchmakingTests(unittest.TestCase):
         self.assertEqual(next_state["state"], "searching")
         self.assertNotEqual(next_state["match_id"], match_id)
 
+    def test_same_player_can_recover_from_stale_search_state(self) -> None:
+        first = steamid(42)
+        self.mm.start(first, game_type=0x02000008, client_version=13881)
+        assignment = self.mm.snapshot()["assignment"]
+        self.assertIsNotNone(assignment)
+        match_id = assignment["match_id"]
+
+        aid = account_id_from_steamid64(first)
+        self.mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2"],
+            "ready_match_id": match_id,
+            "reservation_id": 987654321,
+            "reserved_account_ids": [aid],
+        })
+        self.assertEqual(self.mm.state(first)["state"], "reserved")
+
+        # Reproduce the stale state left by the older coordinator: the player
+        # is still attached to the active match, but its public state says
+        # searching and there is no queue entry.
+        self.mm._states[first] = {
+            "state": "searching",
+            "server_online": True,
+            "server_available": True,
+        }
+
+        repaired = self.mm.start(
+            first, game_type=0x02000008, client_version=13881
+        )
+        self.assertEqual(repaired["state"], "reserved")
+        self.assertEqual(repaired["match_id"], match_id)
+        self.assertEqual(repaired["reservation_id"], 987654321)
+
+    def test_cancel_reserved_solo_match_allows_clean_new_allocation(self) -> None:
+        first = steamid(43)
+        self.mm.start(first)
+        assignment = self.mm.snapshot()["assignment"]
+        self.assertIsNotNone(assignment)
+        old_match_id = assignment["match_id"]
+
+        aid = account_id_from_steamid64(first)
+        self.mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2"],
+            "ready_match_id": old_match_id,
+            "reservation_id": 123456789,
+            "reserved_account_ids": [aid],
+        })
+        self.assertEqual(self.mm.state(first)["state"], "reserved")
+
+        stopped = self.mm.stop(first)
+        self.assertEqual(stopped["state"], "idle")
+        snap = self.mm.snapshot()
+        self.assertIsNone(snap["assignment"])
+        self.assertEqual(snap["matches"][str(old_match_id)]["state"], "complete")
+
+        restarted = self.mm.start(first)
+        self.assertEqual(restarted["state"], "searching")
+        new_assignment = self.mm.snapshot()["assignment"]
+        self.assertIsNotNone(new_assignment)
+        self.assertNotEqual(new_assignment["match_id"], old_match_id)
+
 
 if __name__ == "__main__":
     unittest.main()
