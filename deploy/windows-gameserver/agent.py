@@ -244,6 +244,7 @@ class ServerSlot:
         self.match_id = 0
         self.ready_match_id = 0
         self.reservation_id = 0
+        self.reserved_account_ids: set[int] = set()
         self.ct_score = 0
         self.t_score = 0
         self.expected_account_ids: set[int] = set()
@@ -322,6 +323,7 @@ class ServerSlot:
             self.match_id = match_id
             self.ready_match_id = 0
             self.reservation_id = 0
+            self.reserved_account_ids.clear()
             self.ct_score = 0
             self.t_score = 0
             self.expected_account_ids = {
@@ -359,6 +361,10 @@ class ServerSlot:
                     if not self.alive() or self.match_id != match_id:
                         return
                     self.reservation_id = int(response["reservation_id"])
+                    self.reserved_account_ids = {
+                        int(x) for x in str(response.get("account_ids") or "").split(",")
+                        if x.strip().isdigit() and int(x) > 0
+                    }
                     self.ready_match_id = match_id
                     self.ready_at = time.monotonic()
                     print(
@@ -456,15 +462,23 @@ class ServerSlot:
         if not new_reservation:
             return
 
+        acknowledged = {
+            int(x) for x in str(response.get("account_ids") or "").split(",")
+            if x.strip().isdigit() and int(x) > 0
+        }
+
         with self._lock:
             if self.match_id != match_id:
                 return
-            if new_reservation != old_reservation:
-                self.reservation_id = new_reservation
-                self.ready_match_id = match_id
+            membership_changed = acknowledged != self.reserved_account_ids
+            self.reserved_account_ids = acknowledged
+            self.reservation_id = new_reservation
+            self.ready_match_id = match_id
+            if new_reservation != old_reservation or membership_changed:
                 print(
                     f"[agent] native reservation refreshed for match {match_id}: "
-                    f"{old_reservation} -> {new_reservation}"
+                    f"reservation={new_reservation}, "
+                    f"accounts={','.join(str(x) for x in sorted(acknowledged))}"
                 )
 
     def check_accept_timeout(self) -> None:
@@ -519,6 +533,7 @@ class ServerSlot:
         self.proc = None
         self.ready_match_id = 0
         self.reservation_id = 0
+        self.reserved_account_ids.clear()
         self.match_id = 0
         self.ready_at = 0.0
         self.started = False
@@ -575,6 +590,7 @@ def main() -> None:
                 "maps": maps,
                 "ready_match_id": slot.ready_match_id,
                 "reservation_id": slot.reservation_id,
+                "reserved_account_ids": sorted(slot.reserved_account_ids),
                 "started_match_id": slot.match_id if slot.started else 0,
             }
             try:
