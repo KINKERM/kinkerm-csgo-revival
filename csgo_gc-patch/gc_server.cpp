@@ -31,7 +31,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -431,6 +431,48 @@ uint64_t ReservationNumber(
     return end && *end == '\0' ? static_cast<uint64_t>(value) : fallback;
 }
 
+std::string NextRewardSpoolPath(uint64_t steamId, const char *kind)
+{
+    static uint64_t sequence = 0;
+    char path[256];
+    snprintf(
+        path, sizeof(path),
+        "csgo_gc/server_rewards/%llu_%010llu_%020llu_%s.bin",
+        static_cast<unsigned long long>(steamId),
+        static_cast<unsigned long long>(time(nullptr)),
+        static_cast<unsigned long long>(++sequence),
+        kind ? kind : "packet");
+    return path;
+}
+
+bool WriteRewardSpool(
+    uint64_t steamId, const char *kind, const void *data, size_t size,
+    std::string *writtenPath = nullptr)
+{
+    if (!data || !size)
+        return false;
+
+    const std::string path = NextRewardSpoolPath(steamId, kind);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open())
+        return false;
+
+    out.write(
+        reinterpret_cast<const char *>(data),
+        static_cast<std::streamsize>(size));
+    out.flush();
+    if (!out.good())
+        return false;
+
+    if (writtenPath)
+        *writtenPath = path;
+    Platform::Print(
+        "REVIVAL_REWARD_SPOOL_QUEUE_V1 queued %s for %llu (%zu bytes) path=%s\n",
+        kind ? kind : "packet",
+        static_cast<unsigned long long>(steamId), size, path.c_str());
+    return true;
+}
+
 std::string BuildQueuedReservationPayload(
     uint64_t cookie, uint64_t matchId,
     const CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve &reserve)
@@ -625,33 +667,28 @@ void ServerGC::ProcessRevivalMatchEndTrigger()
             continue;
         }
 
-        const std::string rewardPath =
-            "csgo_gc/server_rewards/" + std::to_string(steamId) + ".bin";
-        std::ofstream out(rewardPath, std::ios::binary | std::ios::trunc);
-        if (out.is_open())
+        std::vector<uint8_t> bundle;
+        const char magic[8] = { 'R','V','M','S','G','V','1','\0' };
+        bundle.insert(bundle.end(), magic, magic + sizeof(magic));
+        const uint32_t count = static_cast<uint32_t>(bridgeMessages.size());
+        const auto *countBytes = reinterpret_cast<const uint8_t *>(&count);
+        bundle.insert(bundle.end(), countBytes, countBytes + sizeof(count));
+        for (const BridgeMessage &message : bridgeMessages)
         {
-            const char magic[8] = { 'R','V','M','S','G','V','1','\0' };
-            out.write(magic, sizeof(magic));
-            const uint32_t count = static_cast<uint32_t>(bridgeMessages.size());
-            out.write(reinterpret_cast<const char *>(&count), sizeof(count));
-            for (const BridgeMessage &message : bridgeMessages)
-            {
-                const uint32_t size = static_cast<uint32_t>(message.bytes.size());
-                out.write(reinterpret_cast<const char *>(&message.type), sizeof(message.type));
-                out.write(reinterpret_cast<const char *>(&size), sizeof(size));
-                if (size)
-                {
-                    out.write(
-                        reinterpret_cast<const char *>(message.bytes.data()), size);
-                }
-            }
-            out.flush();
+            const uint32_t size = static_cast<uint32_t>(message.bytes.size());
+            const auto *typeBytes = reinterpret_cast<const uint8_t *>(&message.type);
+            const auto *sizeBytes = reinterpret_cast<const uint8_t *>(&size);
+            bundle.insert(bundle.end(), typeBytes, typeBytes + sizeof(message.type));
+            bundle.insert(bundle.end(), sizeBytes, sizeBytes + sizeof(size));
+            bundle.insert(bundle.end(), message.bytes.begin(), message.bytes.end());
         }
 
+        const bool spooled = WriteRewardSpool(
+            steamId, "dropbundle", bundle.data(), bundle.size());
         Platform::Print(
-            "REVIVAL_NATIVE_DROP_REVEAL_V1 queued %u client messages for account=%u match=%llu\n",
+            "REVIVAL_NATIVE_DROP_REVEAL_V1 queued %u client messages for account=%u match=%llu spooled=%d\n",
             static_cast<unsigned>(bridgeMessages.size()), accountId,
-            static_cast<unsigned long long>(matchId));
+            static_cast<unsigned long long>(matchId), spooled ? 1 : 0);
         processedAny = true;
     }
 
@@ -921,26 +958,14 @@ void ServerGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         // Direct-UDP revival servers do not have a usable gameserver SteamID,
         // so the laptop agent relays this file through the backend/launcher.
         {
-            const std::string rewardPath =
-                "csgo_gc/server_rewards/" + std::to_string(playerSteamId) + ".bin";
-            std::ofstream rewardOut(
-                rewardPath, std::ios::binary | std::ios::trunc);
-            if (rewardOut.is_open())
-            {
-                rewardOut.write(
-                    reinterpret_cast<const char *>(messageWrite.Data()),
-                    static_cast<std::streamsize>(messageWrite.Size()));
-                rewardOut.flush();
-                Platform::Print(
-                    "REVIVAL_SERVER_REWARD_BRIDGE_V1 spooled 9136 for %llu (%u bytes)\n",
-                    playerSteamId, messageWrite.Size());
-            }
-            else
-            {
-                Platform::Print(
-                    "REVIVAL_SERVER_REWARD_BRIDGE_V1 failed to spool 9136 for %llu\n",
-                    playerSteamId);
-            }
+            const bool spooled = WriteRewardSpool(
+                playerSteamId, "9136", messageWrite.Data(), messageWrite.Size());
+            Platform::Print(
+                spooled
+                    ? "REVIVAL_SERVER_REWARD_BRIDGE_V1 spooled 9136 for %llu (%u bytes)\n"
+                    : "REVIVAL_SERVER_REWARD_BRIDGE_V1 failed to spool 9136 for %llu (%u bytes)\n",
+                static_cast<unsigned long long>(playerSteamId),
+                messageWrite.Size());
         }
 
         PostToHost(HostEvent::NetMessage,
