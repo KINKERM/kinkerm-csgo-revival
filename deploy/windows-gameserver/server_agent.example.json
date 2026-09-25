@@ -8,6 +8,6 @@
   "playit_exe": "",
   "steam_account_token": "",
   "extra_srcds_args": "",
-  "accept_timeout_seconds": 90,
+  "accept_timeout_seconds": 300,
   "post_match_grace_seconds": 25
 }
