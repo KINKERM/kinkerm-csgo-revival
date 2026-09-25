@@ -1156,6 +1156,63 @@ void ClientGC::PollRewardBridge()
 
     // Remove first so a crash/re-entry cannot apply the same local spool twice.
     std::remove(MatchmakingRewardPath);
+
+    static const char BundleMagic[8] = { 'R','V','M','S','G','V','1','\0' };
+    if (payload.size() >= 12
+        && std::memcmp(payload.data(), BundleMagic, sizeof(BundleMagic)) == 0)
+    {
+        size_t offset = sizeof(BundleMagic);
+        uint32_t count = 0;
+        std::memcpy(&count, payload.data() + offset, sizeof(count));
+        offset += sizeof(count);
+
+        if (!count || count > 64)
+        {
+            Platform::Print(
+                "REVIVAL_NATIVE_DROP_BUNDLE_V1 invalid message count=%u\n", count);
+            return;
+        }
+
+        uint32_t delivered = 0;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            if (offset + 8 > payload.size())
+                break;
+
+            uint32_t type = 0;
+            uint32_t size = 0;
+            std::memcpy(&type, payload.data() + offset, sizeof(type));
+            offset += sizeof(type);
+            std::memcpy(&size, payload.data() + offset, sizeof(size));
+            offset += sizeof(size);
+
+            if (!size || size > 1024u * 1024u || offset + size > payload.size())
+                break;
+
+            const void *messageData = payload.data() + offset;
+
+            GCMessageRead read{ type, messageData, size };
+            if (read.IsValid() && read.IsProtobuf()
+                && read.TypeUnmasked() == k_ESOMsg_Create)
+            {
+                CMsgSOSingleObject create;
+                if (read.ReadProtobuf(create))
+                    m_inventory.ImportServerCreatedItem(create);
+            }
+
+            // Feed the exact server-generated SO Create / 9137 through the same
+            // local SteamGC message queue used by normal GC responses.
+            PostToHost(HostEvent::Message, type, messageData, size);
+            offset += size;
+            ++delivered;
+        }
+
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_BUNDLE_V1 delivered %u/%u exact server messages\n",
+            delivered, count);
+        return;
+    }
+
     Platform::Print(
         "REVIVAL_CLIENT_REWARD_BRIDGE_V1 delivering server 9136 bridge (%zu bytes)\n",
         payload.size());
@@ -1203,81 +1260,10 @@ void ClientGC::ProcessCompletedMatchBridge(
             k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
     }
 
-    auto sendDrop = [this](
-        CMsgSOSingleObject &create,
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &drop)
-    {
-        // Local client delivery is sufficient at intermission. Sending these
-        // back to the direct-UDP game server would re-enter the broken P2P path.
-        SendMessageToGame(false, k_ESOMsg_Create, create);
-        SendMessageToGame(false,
-            k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
-    };
-
-    if (levelsGained)
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateWeeklyLevelReward(create, drop))
-            sendDrop(create, drop);
-    }
-
-    // Revival policy: exactly two regular cases are attempted every completed
-    // Competitive match.
-    for (int i = 0; i < 2; ++i)
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
-            sendDrop(create, drop);
-    }
-
-    // Guaranteed Dust II 2021 and Cache collection rolls.
-    static const std::vector<std::string_view> Dust2021{ "set_dust_2_2021" };
-    static const std::vector<std::string_view> DustLegacy{ "set_dust_2" };
-    static const std::vector<std::string_view> Cache{ "set_cache" };
-
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateRandomCollectionMatchDrop(Dust2021, create, drop)
-            || m_inventory.CreateRandomCollectionMatchDrop(DustLegacy, create, drop))
-        {
-            sendDrop(create, drop);
-        }
-    }
-
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateRandomCollectionMatchDrop(Cache, create, drop))
-            sendDrop(create, drop);
-    }
-
-    // Dragon Lore is a Cobblestone item. Keep it as a rare extra collection
-    // roll rather than falsely treating it as Cache.
-    {
-        static const std::vector<std::string_view> Cobblestone{ "set_cobblestone" };
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.CreateRareCollectionBonusMatchDrop(
-            Cobblestone, 20, create, drop))
-        {
-            sendDrop(create, drop);
-        }
-    }
-
-    // Preserve legacy timed-case accounting as an extra weekly bonus.
-    if (timePlayed)
-    {
-        CMsgSOSingleObject create;
-        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-        if (m_inventory.AddMatchPlaytimeAndCreateCaseDrop(
-            timePlayed, create, drop))
-        {
-            sendDrop(create, drop);
-        }
-    }
+    // Item drops are generated exactly once by the dedicated server so the
+    // inventory item IDs match the previews recorded in CCSGameRules and shown
+    // by the native scoreboard reveal. This bridge remains responsible only
+    // for profile XP / Competitive result state when the public DS omits 9136.
 
     if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
         SendRankUpdate();
@@ -1287,7 +1273,7 @@ void ClientGC::ProcessCompletedMatchBridge(
     m_lastRewardedMatchId = matchId;
 
     Platform::Print(
-        "REVIVAL_SYNTHETIC_MATCH_END_V1 complete match=%llu xp=%u\n",
+        "REVIVAL_MATCH_RESULT_FALLBACK_V2 complete match=%llu xp=%u\n",
         matchId, awardedXp);
 }
 
