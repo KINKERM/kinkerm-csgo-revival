@@ -35,7 +35,6 @@ var PlayMenu = ( function()
 	var m_challengeKey = '';
 	var m_revivalPendingStart = false;
 	var m_revivalValidationMapGroup = '';
-	var k_revivalPoolMapGroup = 'mg_revival_pool';
 	var m_popupChallengeKeyEntryValidate = null;
 
 	var k_workshopModes = {
@@ -178,14 +177,32 @@ var PlayMenu = ( function()
 		var competitiveCfg = m_gameModeConfigs[ 'competitive' ];
 		if ( competitiveCfg && competitiveCfg.mapgroupsMP )
 		{
-			var stockCompetitiveGroups = Object.keys( competitiveCfg.mapgroupsMP );
+			var stockCompetitiveGroups = Object.keys( competitiveCfg.mapgroupsMP ).filter( function( groupName )
+			{
+				return cfg.mapgroups && cfg.mapgroups.hasOwnProperty( groupName );
+			} );
 			if ( stockCompetitiveGroups.length > 0 )
 				m_revivalValidationMapGroup = stockCompetitiveGroups[ 0 ];
 		}
 
+		if ( m_revivalValidationMapGroup )
+		{
+			// Migrate the old synthetic mg_revival_pool setting out of config.cfg.
+			// The visible tile is still the normal stock MapGroupSelection snippet,
+			// but its actual mapname MUST be a mapgroup known to the engine.
+			GameInterfaceAPI.SetSettingString(
+				'ui_playsettings_maps_official_competitive',
+				m_revivalValidationMapGroup
+			);
+			GameInterfaceAPI.SetSettingString(
+				'ui_playsettings_custom_preset',
+				m_revivalValidationMapGroup
+			);
+		}
+
 		GetMGDetails = function( mg )
 		{
-			if ( mg === k_revivalPoolMapGroup )
+			if ( mg === m_revivalValidationMapGroup )
 			{
 				return {
 					nameID: 'Revival Maps',
@@ -1275,7 +1292,7 @@ var PlayMenu = ( function()
 	function _GetAvailableMapGroups( gameMode, isPlayingOnValveOfficial )
 	{
 		if ( gameMode === 'competitive' && isPlayingOnValveOfficial )
-			return [ k_revivalPoolMapGroup ];
+			return m_revivalValidationMapGroup ? [ m_revivalValidationMapGroup ] : [];
 		                                   
 		var gameModeCfg = m_gameModeConfigs[ gameMode ];
 		if ( gameModeCfg === undefined )
@@ -1305,7 +1322,7 @@ var PlayMenu = ( function()
 	function _OnActivateMapOrMapGroupButton( mapgroupButton )
 	{
 		var mapGroupNameClicked = mapgroupButton.GetAttributeString( "mapname", '' );
-		if ( mapGroupNameClicked === k_revivalPoolMapGroup )
+		if ( mapGroupNameClicked === m_revivalValidationMapGroup )
 		{
 			mapgroupButton.checked = true;
 			_ApplySessionSettings();
@@ -1743,7 +1760,7 @@ var PlayMenu = ( function()
 	{
 		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
 		{
-			GameInterfaceAPI.SetSettingString( 'ui_playsettings_custom_preset', k_revivalPoolMapGroup );
+			GameInterfaceAPI.SetSettingString( 'ui_playsettings_custom_preset', m_revivalValidationMapGroup );
 			return;
 		}
 
@@ -2174,7 +2191,7 @@ var PlayMenu = ( function()
 			var revivalTiles = _GetMapListForServerTypeAndGameMode( m_activeMapGroupSelectionPanelID );
 			revivalTiles.forEach( function( e )
 			{
-				e.checked = e.GetAttributeString( "mapname", "" ) === k_revivalPoolMapGroup;
+				e.checked = e.GetAttributeString( "mapname", "" ) === m_revivalValidationMapGroup;
 			} );
 			return;
 		}
@@ -2558,7 +2575,7 @@ var PlayMenu = ( function()
 	function _GetSelectedMapsForServerTypeAndGameMode( serverType, gameMode, bDontToggleMaps = false )
 	{
 		if ( serverType === 'official' && gameMode === 'competitive' )
-			return k_revivalPoolMapGroup;
+			return m_revivalValidationMapGroup;
 		var isPlayingOnValveOfficial = _IsValveOfficialServer( serverType );
 		                                                                         
 		                                                                        
