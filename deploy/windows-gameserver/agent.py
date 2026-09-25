@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V14"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V13"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -319,6 +319,24 @@ def reservation_paths(csgo_dir: str) -> tuple[str, str]:
     )
 
 
+def server_auth_dir(csgo_dir: str) -> str:
+    return os.path.join(csgo_dir, "csgo_gc", "server_auth")
+
+
+def clear_server_auth_markers(csgo_dir: str) -> None:
+    path = server_auth_dir(csgo_dir)
+    os.makedirs(path, exist_ok=True)
+    try:
+        for name in os.listdir(path):
+            if name.lower().endswith(".txt"):
+                try:
+                    os.remove(os.path.join(path, name))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
 def engine_reservation_ready_path(csgo_dir: str) -> str:
     return os.path.join(csgo_dir, "csgo_gc", "engine_reservation_ready.txt")
 
@@ -571,6 +589,7 @@ class ServerSlot:
             sync_server_player_inventories(
                 self.cfg, assignment, clear_existing=True
             )
+            clear_server_auth_markers(self.cfg["csgo_dir"])
             os.makedirs(
                 os.path.join(self.cfg["csgo_dir"], "csgo_gc", "server_rewards"),
                 exist_ok=True,
@@ -959,6 +978,30 @@ class ServerSlot:
                     f"accounts={','.join(str(x) for x in sorted(acknowledged))}"
                 )
 
+    def refresh_authenticated_players(self) -> None:
+        with self._lock:
+            if self._ended or not self.match_id or not self.alive():
+                return
+            expected = set(self.expected_account_ids)
+        if not expected:
+            return
+
+        auth_dir = server_auth_dir(self.cfg["csgo_dir"])
+        for account_id in sorted(expected):
+            marker = os.path.join(auth_dir, f"{account_id}.txt")
+            if not os.path.isfile(marker):
+                continue
+
+            with self._lock:
+                first = not self.human_presence_seen
+                self.human_presence_seen = True
+
+            if first:
+                print(
+                    f"[agent] authoritative Source auth detected for reserved "
+                    f"account {account_id}; pre-join timeout disabled"
+                )
+
     def refresh_connected_players_via_rcon(self) -> None:
         with self._lock:
             if self._ended or self.started or not self.match_id or not self.alive():
@@ -1145,6 +1188,7 @@ def main() -> None:
     try:
         while True:
             slot.refresh_native_reservation_response()
+            slot.refresh_authenticated_players()
             slot.refresh_connected_players_via_rcon()
             flush_server_reward_bridge(cfg)
             body = {
