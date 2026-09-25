@@ -12,6 +12,7 @@ PLATFORM_INTERFACE_MARKER = "REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1"
 LOCAL_SOCACHE_AUTH_MARKER = "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1"
 NATIVE_DROP_REVEAL_MARKER = "REVIVAL_NATIVE_DROP_REVEAL_V1"
 PLATFORM_PATTERN_MARKER = "REVIVAL_PLATFORM_FIND_PATTERN_V1"
+RICH_PRESENCE_MARKER = "REVIVAL_MATCHMAKING_RICH_PRESENCE_V1"
 
 
 def main() -> int:
@@ -74,6 +75,120 @@ def main() -> int:
         if not found:
             print("[patch_steam_hook] No BLoggedOn() occurrence exists in this source file.")
         return 3
+
+    if RICH_PRESENCE_MARKER not in patched:
+        rich_anchor = "static uint64_t GetUserSteamId(HSteamPipe pipe, HSteamUser user)"
+        if rich_anchor not in patched:
+            print("[patch_steam_hook] ERROR: client Steam user anchor missing for rich presence hook")
+            return 17
+
+        rich_code = r'''
+#ifdef _WIN32
+static void HookCreate(const char *name, void *target, void *hook, void **bridge);
+
+using RevivalSetRichPresenceFn =
+    bool (__thiscall *)(ISteamFriends *, const char *, const char *);
+static RevivalSetRichPresenceFn s_revOriginalSetRichPresence = nullptr;
+
+static bool RevivalQueuedMatchRichPresenceActive()
+{
+    std::ifstream in("csgo_gc/mm_state.txt", std::ios::binary);
+    if (!in.is_open())
+        return false;
+
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (line == "state=reserved" || line == "state=in_match")
+            return true;
+    }
+    return false;
+}
+
+static bool __fastcall Hk_RevivalSetRichPresence(
+    ISteamFriends *friends, void *, const char *key, const char *value)
+{
+    if (!s_revOriginalSetRichPresence)
+        return false;
+
+    if (!RevivalQueuedMatchRichPresenceActive() || !key)
+        return s_revOriginalSetRichPresence(friends, key, value);
+
+    if (!strcmp(key, "game:server") && value && !strcmp(value, "community"))
+    {
+        Platform::Print("REVIVAL_MATCHMAKING_RICH_PRESENCE_V1 game:server community -> kv\n");
+        return s_revOriginalSetRichPresence(friends, key, "kv");
+    }
+
+    if (!strcmp(key, "game:act") && value && !strcmp(value, "community"))
+        return s_revOriginalSetRichPresence(friends, key, nullptr);
+
+    if (!strcmp(key, "status") && value && !strncmp(value, "Community ", 10))
+    {
+        const std::string officialStatus = value + 10;
+        return s_revOriginalSetRichPresence(
+            friends, key,
+            officialStatus.empty() ? "Playing CS:GO" : officialStatus.c_str());
+    }
+
+    return s_revOriginalSetRichPresence(friends, key, value);
+}
+
+static void RevivalInstallMatchmakingRichPresenceHook(
+    HSteamPipe pipe, HSteamUser user)
+{
+    static bool attempted = false;
+    if (attempted)
+        return;
+    attempted = true;
+
+    ISteamFriends *friends =
+        s_actualSteamClient->GetISteamFriends(user, pipe, "SteamFriends015");
+    if (!friends)
+    {
+        Platform::Print("REVIVAL_MATCHMAKING_RICH_PRESENCE_V1 SteamFriends015 unavailable\n");
+        return;
+    }
+
+    // CS:GO 2018/Legacy uses SteamFriends015. SetRichPresence is vtable slot 43.
+    void **vtable = *reinterpret_cast<void ***>(friends);
+    void *target = vtable[43];
+    if (!target)
+    {
+        Platform::Print("REVIVAL_MATCHMAKING_RICH_PRESENCE_V1 vtable slot 43 unavailable\n");
+        return;
+    }
+
+    HookCreate(
+        "ISteamFriends::SetRichPresence",
+        target,
+        reinterpret_cast<void *>(&Hk_RevivalSetRichPresence),
+        reinterpret_cast<void **>(&s_revOriginalSetRichPresence));
+    Platform::Print("REVIVAL_MATCHMAKING_RICH_PRESENCE_V1 hook installed\n");
+}
+#endif
+
+'''
+        patched = patched.replace(rich_anchor, rich_code + rich_anchor, 1)
+
+        client_anchor = (
+            "            s_clientGC = new GCWrapper<ClientGC, NetworkingClient>"
+        )
+        client_pos = patched.find(client_anchor)
+        if client_pos < 0:
+            print("[patch_steam_hook] ERROR: ClientGC construction anchor missing for rich presence hook")
+            return 18
+        client_line_end = patched.find("\n", client_pos)
+        if client_line_end < 0:
+            print("[patch_steam_hook] ERROR: ClientGC construction line malformed")
+            return 18
+        patched = (
+            patched[:client_line_end + 1]
+            + "#ifdef _WIN32\n"
+            + "            RevivalInstallMatchmakingRichPresenceHook(pipe, user);\n"
+            + "#endif\n"
+            + patched[client_line_end + 1:]
+        )
 
     if not already_server_id:
         # The user's existing Win32 tree uses the older Steam proxy layout.
@@ -492,6 +607,7 @@ static bool RevivalRecordPlayerItemDrop(
             or QUEUE_RESERVE_MARKER not in verify
             or LOCAL_SOCACHE_AUTH_MARKER not in verify
             or NATIVE_DROP_REVEAL_MARKER not in verify
+            or RICH_PRESENCE_MARKER not in verify
             or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
             or "FindModulePattern" not in ph_verify
