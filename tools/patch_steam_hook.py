@@ -162,6 +162,10 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
         platform_cpp.write_text(pc, encoding="utf-8", newline="\n")
 
     if not already_queue_reserve:
+        include_anchor = '#include "platform.h"'
+        if include_anchor in patched and "#include <fstream>" not in patched:
+            patched = patched.replace(include_anchor, include_anchor + "\n#include <fstream>", 1)
+
         # Add the main-thread engine reservation dispatcher immediately before
         # SteamGameServer_RunCallbacks, then teach the server HostEvent switch
         # to invoke it. This exact callback drain is present in the old tree.
@@ -172,7 +176,8 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
 
         bridge = r'''
 #ifdef _WIN32
-static bool RevivalDispatchReserveServerForQueuedGame(const std::vector<uint8_t> &payload)
+static bool RevivalDispatchReserveServerForQueuedGame(
+    uint64_t matchId, const std::vector<uint8_t> &payload)
 {
     static void *s_engineServer = nullptr;
     if (!s_engineServer)
@@ -195,8 +200,25 @@ static bool RevivalDispatchReserveServerForQueuedGame(const std::vector<uint8_t>
     auto reserve = reinterpret_cast<ReserveFn>(vtable[149]);
     const bool ok = reserve(s_engineServer, payloadString.c_str());
     Platform::Print(
-        "REVIVAL_ENGINE_QUEUE_RESERVE_V1 result=%d payload=%s\n",
-        ok ? 1 : 0, payloadString.c_str());
+        "REVIVAL_ENGINE_QUEUE_RESERVE_V1 result=%d match=%llu payload=%s\n",
+        ok ? 1 : 0, static_cast<unsigned long long>(matchId),
+        payloadString.c_str());
+
+    if (ok)
+    {
+        // Separate readiness file: the Python agent must not advertise this
+        // allocation until the Source engine itself accepted the queued
+        // reservation. This prevents a valid-looking 9106 cookie fallback from
+        // racing ahead of the actual 0x21/0x25 ready-up state.
+        std::ofstream ready("csgo_gc/engine_reservation_ready.txt",
+            std::ios::binary | std::ios::trunc);
+        if (ready.is_open())
+        {
+            ready << "match_id=" << matchId << "\n";
+            ready << "payload=" << payloadString << "\n";
+            ready.flush();
+        }
+    }
     return ok;
 }
 #endif
@@ -216,7 +238,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(const std::vector<uint8_t>
         server_case_new = server_case_anchor + r'''
             case HostEvent::ReserveServerForQueuedGame:
 #ifdef _WIN32
-                RevivalDispatchReserveServerForQueuedGame(event.buffer);
+                RevivalDispatchReserveServerForQueuedGame(event.id, event.buffer);
 #else
                 Platform::Print("REVIVAL_ENGINE_QUEUE_RESERVE_V1 unsupported platform\n");
 #endif
