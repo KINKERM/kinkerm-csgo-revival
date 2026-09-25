@@ -422,6 +422,31 @@ void ServerGC::MatchmakingReservationResponse(GCMessageRead &messageRead)
         out << "reservation_id=" << reservationId << "\n";
         if (response.has_map())
             out << "map=" << response.map() << "\n";
+
+        // Persist the exact account list acknowledged by the game server.
+        // This is used by the HTTP coordinator as a barrier before a late
+        // drop-in client receives 9107, preventing a race where the client
+        // connects before sv_mmqueue_reservation contains its account id.
+        out << "account_ids=";
+        bool wroteAccount = false;
+        if (response.has_reservation())
+        {
+            for (int i = 0; i < response.reservation().account_ids_size(); ++i)
+            {
+                if (wroteAccount)
+                    out << ",";
+                out << response.reservation().account_ids(i);
+                wroteAccount = true;
+            }
+        }
+        if (!wroteAccount)
+        {
+            const auto current = ReadServerReservationFile();
+            auto accounts = current.find("account_ids");
+            if (accounts != current.end())
+                out << accounts->second;
+        }
+        out << "\n";
         out.flush();
     }
 
