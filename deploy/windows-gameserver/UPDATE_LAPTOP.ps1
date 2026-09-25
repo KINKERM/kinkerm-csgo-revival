@@ -117,9 +117,10 @@ $installedGc = Join-Path $CsgoDir "csgo_gc\csgo_gc.dll"
 $installedGcText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($installedGc))
 foreach ($marker in @(
     "REVIVAL_MM_BRIDGE_CLEAN_V1",
-    "REVIVAL_SERVER_RESERVATION_RETRY_V3",
+    "REVIVAL_SERVER_RESERVATION_RETRY_V4",
     "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1",
-    "REVIVAL_CLIENT_COOKIE_RESERVE_V2"
+    "REVIVAL_SERVER_ID_EXPORT_V1",
+    "REVIVAL_CLIENT_COOKIE_RESERVE_V3"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
