@@ -3,9 +3,9 @@
 
 - No port forwarding is required. Run playit.gg separately (or set playit_exe)
   and put the public tunnel hostname/port in server_agent.json.
-- The agent heartbeats the central revival backend, receives one match
-  assignment, starts exactly one 64-tick srcds.exe, and frees the slot when the
-  match ends.
+- The first queued human starts one 64-tick srcds.exe. Bots fill the empty
+  10-player slots, and later queued humans join the same live server and replace
+  bots. The slot is freed when the match ends.
 - Standard library only.
 """
 
@@ -140,10 +140,15 @@ sv_allow_votes 1
 sv_deadtalk 1
 sv_hibernate_when_empty 0
 sv_hibernate_postgame_delay 5
+sv_allow_lobby_connect_only 0
 sv_setsteamaccount ""
 log on
 
-bot_quota 0
+bot_quota 10
+bot_quota_mode fill
+bot_join_after_player 0
+bot_auto_vacate 1
+bot_join_team any
 mp_autokick 0
 mp_autoteambalance 1
 mp_limitteams 2
@@ -255,6 +260,19 @@ class ServerSlot:
             return
         with self._lock:
             if self.alive() and self.match_id == match_id:
+                new_accounts = {
+                    int(x) for x in assignment.get("account_ids", []) if int(x) > 0
+                }
+                added = new_accounts.difference(self.expected_account_ids)
+                self.expected_account_ids.update(new_accounts)
+                if added:
+                    # Keep the local reservation description current for logs/
+                    # reconnects. The running server remains the same process.
+                    write_native_reservation(self.cfg["csgo_dir"], assignment)
+                    print(
+                        "[agent] drop-in player(s) added to live match "
+                        f"{match_id}: {', '.join(str(x) for x in sorted(added))}"
+                    )
                 return
             self.stop()
 
@@ -339,7 +357,7 @@ class ServerSlot:
                     print(
                         f"[agent] native 9106 accepted match {match_id}; "
                         f"reservation={self.reservation_id}; waiting for "
-                        f"{len(self.expected_account_ids)} accepted players"
+                        "first human to enter (bots fill empty slots)"
                     )
                 return
 
@@ -388,8 +406,7 @@ class ServerSlot:
                       f"({len(self.connected_account_ids)}/{len(self.expected_account_ids)})")
             should_start = (
                 not self.started
-                and self.expected_account_ids
-                and self.connected_account_ids >= self.expected_account_ids
+                and len(self.connected_account_ids) >= 1
             )
 
         if should_start:
@@ -416,7 +433,7 @@ class ServerSlot:
             )
         except Exception as exc:
             print(f"[agent] start notification will retry via heartbeat: {exc}")
-        print(f"[agent] all 10 players entered; match {match_id} started")
+        print(f"[agent] first human entered; bot-filled match {match_id} started")
 
     def check_accept_timeout(self) -> None:
         with self._lock:
@@ -430,7 +447,7 @@ class ServerSlot:
             timeout = float(self.cfg.get("accept_timeout_seconds", 90))
             expired = time.monotonic() - self.ready_at >= timeout
         if expired:
-            print("[agent] ACCEPT/join timeout; cancelling reservation")
+            print("[agent] nobody joined the new server before timeout; cancelling reservation")
             self._report_end_once("accept_timeout")
 
     def _report_end_once(self, reason: str, grace: float = 0.0) -> None:
