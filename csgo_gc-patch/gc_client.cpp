@@ -881,7 +881,10 @@ void ClientGC::PollMatchmakingBridge()
             details->add_account_ids(accountId);
         details->set_game_type(gameType);
         details->set_match_id(matchId);
-        details->set_server_version(m_matchmakingClientVersion);
+        const uint32_t serverVersion = static_cast<uint32_t>(
+            BridgeU64(state, "server_version", 0));
+        if (serverVersion)
+            details->set_server_version(serverVersion);
 
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
 
