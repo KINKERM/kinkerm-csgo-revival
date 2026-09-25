@@ -118,6 +118,13 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
         Write-Host "    Existing Release runtime is incomplete, so a rebuild is required."
     }
     Need-Path (Join-Path $CsgoGcSource "build") "Existing CMake build directory"
+
+    if ($ForceBuild) {
+        Write-Host "    Cleaning stale C++ objects first..." -ForegroundColor Yellow
+        & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target clean
+        if ($LASTEXITCODE -ne 0) { throw "csgo_gc clean failed" }
+    }
+
     & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo srcds csgo_gc
     if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed" }
     [System.IO.File]::WriteAllText(
