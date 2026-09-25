@@ -684,7 +684,8 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     if (m_lastMatchmakingReservation && !m_matchmakingServerAddress.empty())
     {
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve *res = response.mutable_res();
-        res->set_serverid(m_matchmakingServerId);
+        if (m_matchmakingServerId)
+            res->set_serverid(m_matchmakingServerId);
         if (m_matchmakingDirectUdpIp)
             res->set_direct_udp_ip(m_matchmakingDirectUdpIp);
         res->set_direct_udp_port(m_matchmakingDirectUdpPort);
@@ -863,11 +864,10 @@ void ClientGC::PollMatchmakingBridge()
             return;
 
         const uint64_t serverId = BridgeU64(state, "server_id", 0);
-        if (!serverId)
-            return;
 
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
-        reserve.set_serverid(serverId);
+        if (serverId)
+            reserve.set_serverid(serverId);
         const uint32_t directUdpIp = static_cast<uint32_t>(
             BridgeU64(state, "direct_udp_ip", 0));
         if (directUdpIp)
@@ -910,9 +910,9 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingServerAddress = serverAddress;
         m_matchmakingMap = mapName;
         Platform::Print(
-            "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu map=%s server=%s game_type=%u version=%u\n",
-            reservationId, serverId, mapName.c_str(), serverAddress.c_str(),
-            gameType, serverVersion);
+            "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu route=%s map=%s server=%s game_type=%u version=%u\n",
+            reservationId, serverId, serverId ? "steamid+direct" : "direct-udp",
+            mapName.c_str(), serverAddress.c_str(), gameType, serverVersion);
         return;
     }
 
