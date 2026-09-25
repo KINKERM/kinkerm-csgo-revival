@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gc_shared.h"
+#include <string>
 
 class ServerGC final : public SharedGC
 {
@@ -10,6 +11,7 @@ public:
 
 private:
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
+    void HandleIdle() override;
 
     // event handlers
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
@@ -24,4 +26,6 @@ private:
 
     bool m_sentWelcome{};
     bool m_sentReservation{};
+    uint32_t m_reservationIdleTicks{};
+    std::string m_lastReservationSignature;
 };
