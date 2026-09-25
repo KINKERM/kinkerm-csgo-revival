@@ -365,6 +365,8 @@ void *FindModulePattern(const char *moduleName, const unsigned char *pattern, co
 
         bridge = r'''
 #ifdef _WIN32
+static bool RevivalInstallNativeDropRevealHooks();
+
 static bool RevivalDispatchReserveServerForQueuedGame(
     uint64_t matchId, const std::vector<uint8_t> &payload)
 {
@@ -457,6 +459,7 @@ using RevivalRecordPlayerItemDropFn =
 static RevivalRewardMatchEndDropsFn s_revOriginalRewardMatchEndDrops = nullptr;
 static RevivalRecordPlayerItemDropFn s_revRecordPlayerItemDrop = nullptr;
 static void *s_revGameRules = nullptr;
+static bool s_revNativeDropRevealInstalled = false;
 
 static void __fastcall Hk_RevivalRewardMatchEndDrops(
     void *gameRules, void *, bool aborted)
@@ -470,12 +473,12 @@ static void __fastcall Hk_RevivalRewardMatchEndDrops(
         s_revOriginalRewardMatchEndDrops(gameRules, aborted);
 }
 
-static void RevivalInstallNativeDropRevealHooks()
+static bool RevivalInstallNativeDropRevealHooks()
 {
-    static bool attempted = false;
-    if (attempted)
-        return;
-    attempted = true;
+    if (s_revNativeDropRevealInstalled)
+        return true;
+
+    static uint32_t retryCount = 0;
 
     static const unsigned char RewardPattern[] = {
         0x55,0x8B,0xEC,0x83,0xE4,0xF8,0xA1,0,0,0,0,0x83,0xEC,0x1C,0xB9
@@ -491,10 +494,14 @@ static void RevivalInstallNativeDropRevealHooks()
 
     if (!reward || !record)
     {
-        Platform::Print(
-            "REVIVAL_NATIVE_DROP_REVEAL_V1 signature failure reward=%p record=%p\n",
-            reward, record);
-        return;
+        ++retryCount;
+        if (retryCount == 1 || (retryCount % 128u) == 0)
+        {
+            Platform::Print(
+                "REVIVAL_NATIVE_DROP_REVEAL_V1 waiting for server.dll signatures reward=%p record=%p retry=%u\n",
+                reward, record, retryCount);
+        }
+        return false;
     }
 
     s_revRecordPlayerItemDrop =
@@ -505,9 +512,11 @@ static void RevivalInstallNativeDropRevealHooks()
         reinterpret_cast<void *>(&Hk_RevivalRewardMatchEndDrops),
         reinterpret_cast<void **>(&s_revOriginalRewardMatchEndDrops));
 
+    s_revNativeDropRevealInstalled = true;
     Platform::Print(
         "REVIVAL_NATIVE_DROP_REVEAL_V1 hooks installed reward=%p record=%p\n",
         reward, record);
+    return true;
 }
 
 static bool RevivalRecordPlayerItemDrop(
@@ -541,6 +550,23 @@ static bool RevivalRecordPlayerItemDrop(
 
 '''
         patched = patched.replace(init_anchor, hook_code + init_anchor, 1)
+
+        callback_anchor = (
+            "static void Hk_SteamGameServer_RunCallbacks()\n"
+            "{\n"
+            "    Og_SteamGameServer_RunCallbacks();"
+        )
+        if callback_anchor not in patched:
+            print("[patch_steam_hook] ERROR: server callback body missing for native drop retry")
+            return 19
+        patched = patched.replace(
+            callback_anchor,
+            callback_anchor
+            + "\n\n#ifdef _WIN32\n"
+            + "    RevivalInstallNativeDropRevealHooks();\n"
+            + "#endif",
+            1,
+        )
 
         install_anchor = "    INLINE_HOOK(SteamGameServer_RunCallbacks);"
         if install_anchor not in patched:
