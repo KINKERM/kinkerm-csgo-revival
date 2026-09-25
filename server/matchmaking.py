@@ -72,6 +72,7 @@ class MatchmakingCoordinator:
             "public_host": "",
             "public_port": 27015,
             "server_version": 0,
+            "server_id": 0,
             "last_seen": 0.0,
             "ready_match_id": 0,
             "reserved_account_ids": [],
@@ -151,9 +152,12 @@ class MatchmakingCoordinator:
             "map": match.map_name,
             "account_ids": self._match_account_ids(match),
             "server_version": int(self._server.get("server_version") or 0),
+            "server_id": int(self._server.get("server_id") or 0),
             "server_online": self._server_online_locked(),
             "server_available": len(match.players) < MAX_HUMANS,
-            "game_type": 8,
+            # Preserve the exact queue bitfield sent by this client. Legacy
+            # Competitive is commonly 0x02000008, not plain 8.
+            "game_type": int(match.players[0].game_type if match.players else 8),
         }
         if client_state == "searching":
             ids = self._match_account_ids(match)
@@ -322,6 +326,7 @@ class MatchmakingCoordinator:
             self._server["public_host"] = str(body.get("public_host") or "")
             self._server["public_port"] = int(body.get("public_port") or 27015)
             self._server["server_version"] = int(body.get("server_version") or 0)
+            self._server["server_id"] = int(body.get("server_id") or 0)
             self._server["last_seen"] = time.time()
             maps = body.get("maps")
             if isinstance(maps, list):
@@ -342,7 +347,8 @@ class MatchmakingCoordinator:
 
             ready_match_id = int(body.get("ready_match_id") or 0)
             native_reservation_id = int(body.get("reservation_id") or 0)
-            if ready_match_id and native_reservation_id:
+            game_server_id = int(body.get("server_id") or 0)
+            if ready_match_id and native_reservation_id and game_server_id:
                 self._server["ready_match_id"] = ready_match_id
                 match = self._matches.get(ready_match_id)
                 if (
