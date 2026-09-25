@@ -54,6 +54,7 @@ GAME_OVER_PATTERNS = (
 TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
 STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
+PLAYER_TEAM_RE = re.compile(r'<(CT|TERRORIST)>', re.I)
 
 
 def account_id_from_text(text: str) -> int:
@@ -434,6 +435,8 @@ class ServerSlot:
         self.t_score = 0
         self.expected_account_ids: set[int] = set()
         self.connected_account_ids: set[int] = set()
+        self.player_teams: dict[int, str] = {}
+        self.match_play_started_at = 0.0
         self.ready_at = 0.0
         self.source_match_started_at = 0.0
         self.using_cookie_fallback = False
@@ -548,6 +551,8 @@ class ServerSlot:
                 int(x) for x in assignment.get("account_ids", []) if int(x) > 0
             }
             self.connected_account_ids.clear()
+            self.player_teams.clear()
+            self.match_play_started_at = 0.0
             self.ready_at = 0.0
             self.source_match_started_at = 0.0
             self.using_cookie_fallback = False
@@ -654,6 +659,15 @@ class ServerSlot:
             else:
                 self.t_score = score
 
+        seen_account_id = account_id_from_text(line)
+        if seen_account_id:
+            team_match = PLAYER_TEAM_RE.search(line)
+            if team_match:
+                team = team_match.group(1).upper()
+                if team in ("CT", "TERRORIST"):
+                    with self._lock:
+                        self.player_teams[seen_account_id] = team
+
         account_id = account_id_from_log_line(line)
         if account_id:
             self._player_entered(account_id)
@@ -748,6 +762,7 @@ class ServerSlot:
             if self.started or self._ended or not self.match_id:
                 return
             self.started = True
+            self.match_play_started_at = time.monotonic()
             match_id = self.match_id
             proc = self.proc
             if proc and proc.poll() is None:
@@ -865,11 +880,20 @@ class ServerSlot:
                 return
             self._ended = True
             match_id = self.match_id
+            elapsed = 0
+            if self.match_play_started_at:
+                elapsed = max(0, int(time.monotonic() - self.match_play_started_at))
             result = {
                 "reason": reason,
                 "ct_score": self.ct_score,
                 "t_score": self.t_score,
+                "time_played": elapsed,
                 "connected_account_ids": sorted(self.connected_account_ids),
+                "player_teams": {
+                    str(account_id): team
+                    for account_id, team in self.player_teams.items()
+                    if account_id in self.expected_account_ids
+                },
             }
 
         def finish() -> None:
@@ -905,6 +929,8 @@ class ServerSlot:
         self.started = False
         self.expected_account_ids.clear()
         self.connected_account_ids.clear()
+        self.player_teams.clear()
+        self.match_play_started_at = 0.0
         if proc is None or proc.poll() is not None:
             return
         try:
