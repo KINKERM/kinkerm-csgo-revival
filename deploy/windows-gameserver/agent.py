@@ -499,10 +499,12 @@ def send_local_rcon(port: int, password: str, command: str) -> str:
             raise ConnectionError("RCON authentication response not received")
 
         command_id = 102
+        sentinel_id = 103
         sock.sendall(_rcon_packet(command_id, 2, command))
+        sock.sendall(_rcon_packet(sentinel_id, 2, "echo REVIVAL_RCON_DONE_103"))
 
         chunks: list[str] = []
-        sock.settimeout(0.40)
+        sock.settimeout(1.50)
         while True:
             try:
                 request_id, packet_type, text = _recv_rcon(sock)
@@ -512,6 +514,8 @@ def send_local_rcon(port: int, password: str, command: str) -> str:
                 break
             if request_id == command_id:
                 chunks.append(text)
+            elif request_id == sentinel_id:
+                break
         return "".join(chunks)
 
 def set_above_normal(proc: subprocess.Popen) -> None:
@@ -544,6 +548,7 @@ class ServerSlot:
         self.using_cookie_fallback = False
         self.started = False
         self.runtime_applied = False
+        self.runtime_guard_at = 0.0
         self.human_presence_seen = False
         self._lock = threading.RLock()
         self._ended = False
@@ -673,6 +678,7 @@ class ServerSlot:
             self.using_cookie_fallback = False
             self.started = False
             self.runtime_applied = False
+            self.runtime_guard_at = 0.0
             self.human_presence_seen = False
             self._ended = False
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
@@ -1123,6 +1129,39 @@ class ServerSlot:
             "keeping reservation alive until coordinator withdraws it"
         )
 
+    def enforce_competitive_runtime(self) -> None:
+        with self._lock:
+            if (
+                self._ended
+                or not self.started
+                or not self.match_id
+                or self.proc is None
+                or self.proc.poll() is not None
+            ):
+                return
+            now = time.monotonic()
+            if now - self.runtime_guard_at < 10.0:
+                return
+            self.runtime_guard_at = now
+            port = int(self.cfg["local_port"])
+            password = self.rcon_password
+
+        try:
+            send_local_rcon(
+                port,
+                password,
+                (
+                    "sv_competitive_official_5v5 1; "
+                    "mp_maxrounds 30; mp_winlimit 0; mp_timelimit 0; "
+                    "mp_halftime 1; mp_overtime_enable 1; mp_overtime_maxrounds 6; "
+                    "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
+                    "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
+                    "bot_quota_mode fill; bot_quota 10"
+                ),
+            )
+        except Exception as exc:
+            print(f"[agent] Competitive runtime guard retry: {exc}")
+
     def _report_end_once(self, reason: str, grace: float = 0.0) -> None:
         with self._lock:
             if self._ended or not self.match_id:
@@ -1255,6 +1294,7 @@ def main() -> None:
         while True:
             slot.refresh_native_reservation_response()
             slot.refresh_authenticated_players()
+            slot.enforce_competitive_runtime()
             flush_server_reward_bridge(cfg)
             body = {
                 "agent_id": cfg["agent_id"],
