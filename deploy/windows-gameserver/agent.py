@@ -199,9 +199,13 @@ def write_native_reservation(
     account_ids = [
         int(x) for x in assignment.get("account_ids", []) if int(x) > 0
     ]
+    # IMPORTANT: CMsgGCCStrike15_v2_MatchmakingStart.game_type is a
+    # client-search mode value. CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve
+    # expects the dedicated server's official reservation game type instead.
+    # Legacy CS:GO's CServerGameDLL initializes that value to 0.
     lines = [
         f"match_id={int(assignment.get('match_id') or 0)}",
-        f"game_type={int(assignment.get('game_type') or 8)}",
+        "game_type=0",
         f"server_version={int(assignment.get('client_version') or 0)}",
         "account_ids=" + ",".join(str(x) for x in account_ids),
     ]
