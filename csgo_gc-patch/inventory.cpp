@@ -39,8 +39,9 @@ inline bool IsDefaultItemId(uint64_t itemId, uint32_t &defIndex, uint32_t &paint
     return false;
 }
 
-Inventory::Inventory(uint64_t steamId)
+Inventory::Inventory(uint64_t steamId, std::string filePath)
     : m_steamId{ steamId }
+    , m_filePath{ std::move(filePath) }
 {
     m_profileLevel = static_cast<uint32_t>(std::max(GetConfig().Level(), 1));
     m_profileXp = static_cast<uint32_t>(std::max(GetConfig().Xp(), 0));
@@ -351,7 +352,7 @@ CSOEconItem &Inventory::CreateItem(uint32_t defIndex, ItemOrigin origin, Unackno
 void Inventory::ReadFromFile()
 {
     KeyValue inventoryKey{ "inventory" };
-    if (!inventoryKey.ParseFromFile(InventoryFilePath))
+    if (!inventoryKey.ParseFromFile(m_filePath.c_str()))
     {
         return;
     }
@@ -551,7 +552,7 @@ void Inventory::WriteToFile() const
         }
     }
 
-    inventoryKey.WriteToFile(InventoryFilePath);
+    inventoryKey.WriteToFile(m_filePath.c_str());
 }
 
 void Inventory::WriteItem(KeyValue &itemKey, const CSOEconItem &item) const
