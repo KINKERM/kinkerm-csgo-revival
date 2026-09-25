@@ -22,6 +22,7 @@ enum class GCEvent
     SOCacheRequest, // sent to client gc when connected to a gameserver
     ClientSOCacheUnsubscribe, // sent to server gc when a client disconnects, id contains the steam id
     ClientLocalInventoryRequest, // direct-UDP revival: server loads cached inventory for this SteamID
+    RevivalMatchEnd, // server.dll RewardMatchEndDrops hook: generate native reveal items now
 };
 
 struct EventData
