@@ -77,7 +77,7 @@ def main() -> int:
         if anchor not in patched:
             print("[patch_steam_hook] ERROR: could not locate s_steamGameServer declaration")
             return 5
-        patched = patched.replace(anchor, "static ISteamGameServer *s_steamGameServer;\n\nuint64_t RevivalGameServerSteamId()\n{\n    if (!s_steamGameServer)\n        return 0;\n\n    const CSteamID steamId = s_steamGameServer->GetSteamID();\n    if (!steamId.IsValid())\n        return 0;\n\n    const uint64_t value = steamId.ConvertToUint64();\n    static uint64_t s_lastPrinted = 0;\n    if (value && value != s_lastPrinted)\n    {\n        Platform::Print(\"REVIVAL_SERVER_ID_EXPORT_V1 serverid=%llu\\\\n\", value);\n        s_lastPrinted = value;\n    }\n    return value;\n}", 1)
+        patched = patched.replace(anchor, "static ISteamGameServer *s_steamGameServer;\n\nuint64_t RevivalGameServerSteamId()\n{\n    if (!s_steamGameServer)\n        return 0;\n\n    const CSteamID steamId = s_steamGameServer->GetSteamID();\n    if (!steamId.IsValid())\n        return 0;\n\n    const uint64_t value = steamId.ConvertToUint64();\n    static uint64_t s_lastPrinted = 0;\n    if (value && value != s_lastPrinted)\n    {\n        Platform::Print(\"REVIVAL_SERVER_ID_EXPORT_V1 serverid=%llu\\n\", value);\n        s_lastPrinted = value;\n    }\n    return value;\n}", 1)
 
     path.write_text(patched, encoding="utf-8", newline="\n")
 
