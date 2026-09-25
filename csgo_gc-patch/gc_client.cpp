@@ -562,7 +562,63 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        // Case drops were playtime driven rather than guaranteed every match.
+        // Revival Competitive drop policy: every completed match gives two
+        // regular cases plus one Dust II 2021 and one Cache collection skin.
+        // Collection selection still uses the schema's rarity weights, so rare
+        // top-tier finishes remain actual luck rather than hardcoded grants.
+        for (int guaranteedCase = 0; guaranteedCase < 2; ++guaranteedCase)
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRandomCaseMatchDrop(create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        static const std::vector<std::string_view> Dust2021Collection{
+            "set_dust_2_2021"
+        };
+        static const std::vector<std::string_view> CacheCollection{
+            "set_cache"
+        };
+        static const std::vector<std::string_view> CobblestoneCollection{
+            "set_cobblestone"
+        };
+
+        for (const auto *collection :
+            { &Dust2021Collection, &CacheCollection })
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRandomCollectionMatchDrop(
+                *collection, create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        // Rare extra Cobblestone roll. The roll only decides whether a bonus
+        // collection item exists; the collection's own rarity weighting still
+        // decides the actual skin, so Dragon Lore remains extremely rare.
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRareCollectionBonusMatchDrop(
+                CobblestoneCollection, 100, create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        // Preserve legacy playtime accounting. It can still produce the normal
+        // weekly timed case as an additional bonus beyond the guaranteed drops.
         if (playerData.has_time_played() && playerData.time_played())
         {
             CMsgSOSingleObject create;
@@ -760,7 +816,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
-    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2 active; REVIVAL_CLIENT_REWARD_BRIDGE_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2 active; REVIVAL_CLIENT_REWARD_BRIDGE_V1 active; REVIVAL_GUARANTEED_MATCH_DROPS_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
