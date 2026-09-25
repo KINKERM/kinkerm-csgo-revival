@@ -55,8 +55,8 @@ void ServerGC::HandleIdle()
 {
     // SharedGC idles at ~250 ms. Re-read the tiny local reservation request
     // twice per second so later humans can be appended to the SAME live match.
-    // SendMatchmakingReservation itself suppresses unchanged requests.
-    if ((++m_reservationIdleTicks & 1u) == 0)
+    // Never emit 9105 before the normal server hello/welcome handshake.
+    if (m_sentWelcome && (++m_reservationIdleTicks & 1u) == 0)
         SendMatchmakingReservation();
 }
 
