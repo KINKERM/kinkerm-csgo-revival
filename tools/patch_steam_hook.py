@@ -258,7 +258,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(
     verify = path.read_text(encoding="utf-8")
     ph_verify = platform_h.read_text(encoding="utf-8")
     pc_verify = platform_cpp.read_text(encoding="utf-8")
-    expected_offline_log = f'Platform::Print("{MARKER} active\\\\n");'
+    expected_offline_log = f'Platform::Print("{MARKER} active\\n");'
     if (MARKER not in verify or SERVER_ID_MARKER not in verify
             or QUEUE_RESERVE_MARKER not in verify
             or expected_offline_log not in verify
