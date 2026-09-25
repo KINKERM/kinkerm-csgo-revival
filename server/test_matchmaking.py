@@ -15,7 +15,6 @@ class DropInMatchmakingTests(unittest.TestCase):
             "agent_id": "test-laptop",
             "public_host": "test.example",
             "public_port": 30123,
-            "server_id": 90123456789012345,
             "maps": ["de_dust2"],
         })
 
@@ -35,14 +34,13 @@ class DropInMatchmakingTests(unittest.TestCase):
             "agent_id": "test-laptop",
             "public_host": "test.example",
             "public_port": 30123,
-            "server_id": 90123456789012345,
             "maps": ["de_dust2"],
             "ready_match_id": match_id,
             "reservation_id": 987654321,
             "reserved_account_ids": [account_id_from_steamid64(first)],
         })
         self.assertEqual(self.mm.state(first)["state"], "reserved")
-        self.assertEqual(self.mm.state(first)["server_id"], 90123456789012345)
+        self.assertEqual(self.mm.state(first)["server_id"], 0)
         self.assertEqual(self.mm.state(first)["game_type"], 0x02000008)
 
         # First human enters; the bot-filled game begins.
@@ -86,7 +84,6 @@ class DropInMatchmakingTests(unittest.TestCase):
                 "agent_id": "test-laptop",
                 "public_host": "test.example",
                 "public_port": 30123,
-                "server_id": 90123456789012345,
                 "maps": ["de_dust2"],
                 "ready_match_id": match_id,
                 "reservation_id": 987654321,
