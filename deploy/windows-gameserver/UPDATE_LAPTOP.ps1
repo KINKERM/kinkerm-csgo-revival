@@ -147,7 +147,10 @@ foreach ($marker in @(
     "REVIVAL_SERVER_REWARD_BRIDGE_V1",
     "REVIVAL_CLIENT_REWARD_BRIDGE_V1",
     "REVIVAL_GUARANTEED_MATCH_DROPS_V1",
-    "REVIVAL_SYNTHETIC_MATCH_END_V1"
+    "REVIVAL_SYNTHETIC_MATCH_END_V1",
+    "REVIVAL_NATIVE_DROP_REVEAL_V1",
+    "REVIVAL_NATIVE_DROP_BUNDLE_V1",
+    "REVIVAL_SERVER_DROP_IMPORT_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
@@ -156,7 +159,7 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_REWARDS_V18")) {
+if (-not $agentText.Contains("REVIVAL_AGENT_NATIVE_DROPS_V19")) {
     throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_REWARDS_V18"
 }
 Write-Host "    Verified current Competitive/match-result laptop agent." -ForegroundColor Green
