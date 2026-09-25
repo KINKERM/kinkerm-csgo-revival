@@ -452,8 +452,11 @@ class ServerSlot:
                     )
                 return
 
-        print("[agent] srcds never produced native 9106 reservation response; "
-              "coordinator will cancel/requeue this allocation")
+        if self.alive():
+            print("[agent] srcds is alive but native 9106 never arrived; "
+                  "keeping the process up for diagnostics until coordinator timeout")
+        else:
+            print("[agent] srcds exited before native 9106 reservation response")
 
     def _handle_server_log_line(self, line: str) -> None:
         line = line.rstrip()
