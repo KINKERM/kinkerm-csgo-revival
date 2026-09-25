@@ -151,7 +151,7 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
         throw "Built csgo_gc.dll does not contain the current client matchmaking source. Stale object files are still being used."
     }
-    if (-not $gcDllText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V2")) {
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V3")) {
         throw "Built csgo_gc.dll does not contain the current server reservation handshake fix."
     }
     if (-not $gcDllText.Contains("REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1")) {
@@ -251,7 +251,7 @@ if (-not $SkipInstall) {
     if (-not $installedGcText.Contains("REVIVAL_MM_BRIDGE_CLEAN_V1")) {
         throw "Installed csgo_gc.dll is missing the current client matchmaking build marker."
     }
-    if (-not $installedGcText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V2")) {
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_RESERVATION_RETRY_V3")) {
         throw "Installed csgo_gc.dll is missing the current server reservation handshake fix."
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1")) {
