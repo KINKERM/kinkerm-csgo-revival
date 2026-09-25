@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_DIRECT_UDP_V4"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_ACCEPT_FLOW_V5"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -193,6 +193,30 @@ def reservation_paths(csgo_dir: str) -> tuple[str, str]:
     )
 
 
+def engine_reservation_ready_path(csgo_dir: str) -> str:
+    return os.path.join(csgo_dir, "csgo_gc", "engine_reservation_ready.txt")
+
+
+def engine_reservation_is_ready(csgo_dir: str, match_id: int) -> bool:
+    try:
+        with open(
+            engine_reservation_ready_path(csgo_dir),
+            "r",
+            encoding="utf-8",
+            errors="replace",
+        ) as fh:
+            for raw in fh:
+                line = raw.strip()
+                if line.startswith("match_id="):
+                    try:
+                        return int(line.split("=", 1)[1]) == int(match_id)
+                    except ValueError:
+                        return False
+    except OSError:
+        pass
+    return False
+
+
 def read_csgo_server_version(csgo_dir: str) -> int:
     """Read Source's dedicated ServerVersion from steam.inf.
 
@@ -227,6 +251,10 @@ def write_native_reservation(
     if clear_response:
         try:
             os.remove(response_path)
+        except OSError:
+            pass
+        try:
+            os.remove(engine_reservation_ready_path(csgo_dir))
         except OSError:
             pass
 
@@ -480,8 +508,12 @@ class ServerSlot:
                 source_started_at = self.source_match_started_at
 
             response = read_native_reservation_response(self.cfg["csgo_dir"])
+            engine_ready = engine_reservation_is_ready(
+                self.cfg["csgo_dir"], match_id
+            )
             if (
-                int(response.get("match_id") or 0) == match_id
+                engine_ready
+                and int(response.get("match_id") or 0) == match_id
                 and int(response.get("reservation_id") or 0) > 0
             ):
                 time.sleep(1.5)
@@ -510,7 +542,11 @@ class ServerSlot:
             # this exact cookie through GCServerWelcome, so once Source has
             # reached Match_Start we can safely mirror the same authoritative
             # cookie into the HTTP coordinator and continue over direct UDP.
-            if source_started_at and time.monotonic() - source_started_at >= 2.5:
+            if (
+                engine_ready
+                and source_started_at
+                and time.monotonic() - source_started_at >= 2.5
+            ):
                 with self._lock:
                     if not self.alive() or self.match_id != match_id:
                         return
@@ -528,7 +564,10 @@ class ServerSlot:
                 return
 
         if self.alive():
-            print("[agent] srcds never reached a usable matchmaking-ready state")
+            print(
+                "[agent] srcds never reached a usable matchmaking-ready state "
+                "(engine Q reservation was not confirmed)"
+            )
         else:
             print("[agent] srcds exited before matchmaking became ready")
 
@@ -672,6 +711,9 @@ class ServerSlot:
             old_reservation = self.reservation_id
             if not match_id or not self.alive():
                 return
+
+        if not engine_reservation_is_ready(self.cfg["csgo_dir"], match_id):
+            return
 
         response = read_native_reservation_response(self.cfg["csgo_dir"])
         if int(response.get("match_id") or 0) != match_id:
