@@ -62,7 +62,6 @@ class DropInMatchmakingTests(unittest.TestCase):
             "agent_id": "test-laptop",
             "public_host": "test.example",
             "public_port": 30123,
-            "server_id": 90123456789012345,
             "maps": ["de_dust2"],
             "ready_match_id": match_id,
             "reservation_id": 987654321,
