@@ -37,7 +37,7 @@ import urllib.error
 # Your inventory server (Tailscale Funnel public HTTPS URL -> local :8787):
 SERVER_URL = "https://cuckersfun.tail52305f.ts.net"
 # The published pack zip (a GitHub Release asset works great). It must extract
-# so that csgo_gc.dll / config.txt / items_game.txt land in the CS:GO install.
+# so that csgo_gc/csgo_gc.dll / config.txt / items_game.txt land in the CS:GO install.
 # See launcher/build_pack.py to build & upload it.
 PACK_URL = "https://github.com/KINKERM/kinkerm-csgo-revival/releases/latest/download/csgo-revival-pack.zip"
 # ==========================================================================
