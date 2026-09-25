@@ -2372,6 +2372,53 @@ bool Inventory::CreateRareCollectionBonusMatchDrop(
     return CreateRandomCollectionMatchDrop(collectionNames, create, notification);
 }
 
+bool Inventory::ImportServerCreatedItem(const CMsgSOSingleObject &create)
+{
+    if (!create.has_owner_soid()
+        || create.owner_soid().type() != SoIdTypeSteamId
+        || create.owner_soid().id() != m_steamId
+        || !create.has_type_id()
+        || create.type_id() != SOTypeItem
+        || !create.has_object_data())
+    {
+        Platform::Print("drops: rejected malformed server SO Create\n");
+        return false;
+    }
+
+    CSOEconItem incoming;
+    if (!incoming.ParseFromString(create.object_data())
+        || !incoming.has_id()
+        || incoming.account_id() != AccountId())
+    {
+        Platform::Print("drops: rejected malformed server item object\n");
+        return false;
+    }
+
+    const uint64_t itemId = incoming.id();
+    if (m_items.find(itemId) != m_items.end())
+    {
+        // Idempotent bridge retry: the exact item is already persisted.
+        return true;
+    }
+
+    const uint32_t highItemId = HighItemId(itemId);
+    if (!highItemId || (itemId & ItemIdDefaultItemMask) == ItemIdDefaultItemMask)
+    {
+        Platform::Print("drops: rejected invalid server item id %llu\n", itemId);
+        return false;
+    }
+
+    m_items.emplace(itemId, incoming);
+    if (highItemId > m_lastHighItemId)
+        m_lastHighItemId = highItemId;
+    WriteToFile();
+
+    Platform::Print(
+        "REVIVAL_SERVER_DROP_IMPORT_V1 item=%llu def=%u account=%u\n",
+        itemId, incoming.def_index(), incoming.account_id());
+    return true;
+}
+
 bool Inventory::AddProfileXp(uint32_t amount, uint32_t *levelsGained)
 {
     if (levelsGained)
