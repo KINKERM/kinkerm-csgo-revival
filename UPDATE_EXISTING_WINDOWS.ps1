@@ -199,6 +199,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_SERVER_REWARD_BRIDGE_V1")) {
         throw "Built csgo_gc.dll does not contain the direct match-end server reward bridge."
     }
+    if (-not $gcDllText.Contains("REVIVAL_REWARD_SPOOL_QUEUE_V1")) {
+        throw "Built csgo_gc.dll does not contain collision-free queued reward spooling."
+    }
     if (-not $gcDllText.Contains("REVIVAL_CLIENT_REWARD_BRIDGE_V1")) {
         throw "Built csgo_gc.dll does not contain the direct match-end client reward bridge."
     }
@@ -349,6 +352,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_REWARD_BRIDGE_V1")) {
         throw "Installed csgo_gc.dll is missing the direct match-end server reward bridge."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_REWARD_SPOOL_QUEUE_V1")) {
+        throw "Installed csgo_gc.dll is missing collision-free queued reward spooling."
     }
     if (-not $installedGcText.Contains("REVIVAL_CLIENT_REWARD_BRIDGE_V1")) {
         throw "Installed csgo_gc.dll is missing the direct match-end client reward bridge."
