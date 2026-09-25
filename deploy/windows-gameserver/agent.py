@@ -266,9 +266,9 @@ class ServerSlot:
                 added = new_accounts.difference(self.expected_account_ids)
                 self.expected_account_ids.update(new_accounts)
                 if added:
-                    # Keep the local reservation description current for logs/
-                    # reconnects. The running server remains the same process.
-                    write_native_reservation(self.cfg["csgo_dir"], assignment)
+                    # The running srcds/reservation stays intact; this only
+                    # expands the set of humans the agent tracks for the live
+                    # drop-in match.
                     print(
                         "[agent] drop-in player(s) added to live match "
                         f"{match_id}: {', '.join(str(x) for x in sorted(added))}"
