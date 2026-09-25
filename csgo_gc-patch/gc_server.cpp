@@ -335,7 +335,6 @@ namespace
 {
 constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;
 constexpr const char *ServerReservationPath = "csgo_gc/server_reservation.txt";
-constexpr const char *"csgo_gc/server_reservation_response.txt" = "csgo_gc/server_reservation_response.txt";
 
 std::unordered_map<std::string, std::string> ReadServerReservationFile()
 {
