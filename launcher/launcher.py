@@ -18,6 +18,7 @@ Uses only the Python standard library.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import socket
@@ -128,6 +129,18 @@ def _mm_request_path(config: dict) -> str:
 
 def _mm_state_path(config: dict) -> str:
     return os.path.join(config["csgo_dir"], "csgo_gc", "mm_state.txt")
+
+
+def _mm_reward_path(config: dict) -> str:
+    return os.path.join(config["csgo_dir"], "csgo_gc", "mm_reward.bin")
+
+
+def _write_binary_atomic(path: str, data: bytes) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as fh:
+        fh.write(data)
+    os.replace(tmp, path)
 
 
 def _atomic_write_text(path: str, text: str) -> None:
@@ -266,6 +279,23 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                     pass
                 elif state.get("state") == "idle":
                     searching = False
+
+            # Match-end rewards must keep flowing after the queue state becomes
+            # idle. Only fetch the next server packet once the DLL consumed the
+            # previous local spool file.
+            reward_path = _mm_reward_path(config)
+            if not os.path.exists(reward_path):
+                reward = _http_json(
+                    "GET", base + "/matchmaking/reward/" + config["steam_id"]
+                )
+                payload_b64 = str(reward.get("payload_b64") or "")
+                if payload_b64:
+                    payload = base64.b64decode(payload_b64, validate=True)
+                    _write_binary_atomic(reward_path, payload)
+                    print(
+                        f"[launcher] matchmaking: delivered {len(payload)}-byte "
+                        "match-end reward packet"
+                    )
         except (OSError, ValueError, urllib.error.URLError) as exc:
             # Matchmaking should recover automatically when the backend/tunnel
             # comes back; do not kill the launcher or the running game.
