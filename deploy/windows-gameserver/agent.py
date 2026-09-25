@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMPETITIVE_V8"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_SOCACHE_V9"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -106,6 +106,52 @@ def post_json(url: str, body: dict) -> dict:
     with urllib.request.urlopen(req, timeout=8) as resp:
         raw = resp.read()
     return json.loads(raw.decode("utf-8")) if raw else {}
+
+
+def sync_server_player_inventories(
+    cfg: dict, assignment: dict, clear_existing: bool = False
+) -> None:
+    cache_dir = os.path.join(cfg["csgo_dir"], "csgo_gc", "server_players")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    if clear_existing:
+        try:
+            for name in os.listdir(cache_dir):
+                if name.lower().endswith(".txt"):
+                    try:
+                        os.remove(os.path.join(cache_dir, name))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
+    steamids = [
+        str(x).strip()
+        for x in assignment.get("steamids", [])
+        if str(x).strip().isdigit()
+    ]
+    base = cfg["backend_url"].rstrip("/")
+
+    for steamid in steamids:
+        url = base + "/inventory/" + steamid
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "csgo-revival-gameserver/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                body = resp.read()
+            dest = os.path.join(cache_dir, steamid + ".txt")
+            tmp = dest + ".tmp"
+            with open(tmp, "wb") as fh:
+                fh.write(body)
+            os.replace(tmp, dest)
+            print(
+                f"[agent] cached equipped inventory source for {steamid} "
+                f"({len(body)} bytes)"
+            )
+        except Exception as exc:
+            print(f"[agent] failed to cache inventory for {steamid}: {exc}")
 
 
 def find_srcds(csgo_dir: str) -> str:
@@ -408,6 +454,9 @@ class ServerSlot:
             return
         with self._lock:
             if self.alive() and self.match_id == match_id:
+                sync_server_player_inventories(
+                    self.cfg, assignment, clear_existing=False
+                )
                 new_accounts = {
                     int(x) for x in assignment.get("account_ids", []) if int(x) > 0
                 }
@@ -434,6 +483,9 @@ class ServerSlot:
             ensure_match_cfg(
                 self.cfg["csgo_dir"],
                 self.cfg.get("steam_account_token", ""),
+            )
+            sync_server_player_inventories(
+                self.cfg, assignment, clear_existing=True
             )
             write_native_reservation(self.cfg["csgo_dir"], assignment)
             server_version = read_csgo_server_version(self.cfg["csgo_dir"])
