@@ -340,9 +340,13 @@ static bool RevivalDispatchReserveServerForQueuedGame(
         patched = patched[:m.start()] + server_case_new + patched[m.end():]
 
     if NATIVE_DROP_REVEAL_MARKER not in patched:
-        init_anchor = "static bool InitializeSteamAPI(void *steamApi, bool dedicated)"
-        if init_anchor not in patched:
-            print("[patch_steam_hook] ERROR: InitializeSteamAPI anchor missing for native drop hook")
+        # The user's compatible Win32 tree predates the newer
+        # InitializeSteamAPI helper. Hook code only needs to be emitted after
+        # HookCreate is defined and before SteamHookInstall uses it, so use the
+        # stable SteamHookInstall anchor that exists in both old and new trees.
+        install_function_anchor = "void SteamHookInstall(bool dedicated)"
+        if install_function_anchor not in patched:
+            print("[patch_steam_hook] ERROR: SteamHookInstall anchor missing for native drop hook")
             return 14
 
         hook_code = r'''
@@ -453,7 +457,11 @@ static bool RevivalRecordPlayerItemDrop(
 #endif
 
 '''
-        patched = patched.replace(init_anchor, hook_code + init_anchor, 1)
+        patched = patched.replace(
+            install_function_anchor,
+            hook_code + install_function_anchor,
+            1,
+        )
 
         callback_anchor = (
             "static void Hk_SteamGameServer_RunCallbacks()\n"
