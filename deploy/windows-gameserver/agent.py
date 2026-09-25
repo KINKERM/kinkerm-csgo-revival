@@ -505,21 +505,13 @@ class ServerSlot:
                     )
                 return
 
+            # Do not invent readiness in Python. The injected server GC owns
+            # the empty-9106 fallback and must also publish the real Steam game
+            # server ID. Advertising the match before server_id exists makes the
+            # client's 9107 reservation impossible to turn into game/mmqueue.
             if source_started_at and time.monotonic() - source_started_at >= 2.5:
-                with self._lock:
-                    if not self.alive() or self.match_id != match_id:
-                        return
-                    self.reservation_id = REVIVAL_GAME_SERVER_COOKIE_ID
-                    self.reserved_account_ids = set(self.expected_account_ids)
-                    self.ready_match_id = match_id
-                    self.ready_at = time.monotonic()
-                    self.using_cookie_fallback = True
-                    print(
-                        f"[agent] community DS cookie reservation ready for match {match_id}; "
-                        f"reservation={self.reservation_id}; accounts="
-                        + ",".join(str(x) for x in sorted(self.reserved_account_ids))
-                    )
-                return
+                if not response:
+                    continue
 
         if self.alive():
             print("[agent] srcds never reached a usable matchmaking-ready state")
