@@ -80,6 +80,7 @@ class MatchmakingCoordinator:
         }
         self._assignment: dict[str, Any] | None = None
         self._reward_queues: dict[str, list[str]] = {}
+        self._last_reward_payload: dict[str, tuple[str, float]] = {}
 
     def _server_online_locked(self) -> bool:
         return (
@@ -373,6 +374,19 @@ class MatchmakingCoordinator:
         with self._lock:
             if not steamid.isdigit() or not payload_b64:
                 return {"ok": False, "error": "invalid reward payload"}
+
+            # Some Legacy server builds can flush the same final 9136 more than
+            # once. Direct-UDP revival deliberately reuses one reservation
+            # cookie, so use the exact payload as a short-lived duplicate key.
+            # A later real Competitive match cannot reasonably finish inside
+            # this window, while immediate duplicate server flushes are dropped.
+            now = time.time()
+            previous = self._last_reward_payload.get(steamid)
+            if previous and previous[0] == payload_b64 and now - previous[1] < 60.0:
+                return {"ok": True, "queued": len(self._reward_queues.get(steamid, [])),
+                        "duplicate": True}
+            self._last_reward_payload[steamid] = (payload_b64, now)
+
             queue = self._reward_queues.setdefault(steamid, [])
             queue.append(payload_b64)
             # Avoid an unbounded queue if a client stays offline for months.
