@@ -4,6 +4,8 @@
 #include "gc_shared.h"
 #include "inventory.h"
 
+#include <unordered_map>
+
 class ClientGC final : public SharedGC
 {
 public:
