@@ -20,8 +20,11 @@ Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
 
 # Keep steam_hook.cpp matched to this local csgo_gc tree, then apply the
 # current revival overlay and the small compatibility patch.
-& git -C $CsgoGcSource checkout -- "csgo_gc/steam_hook.cpp"
-if ($LASTEXITCODE -ne 0) { throw "Could not restore local steam_hook.cpp." }
+& git -C $CsgoGcSource checkout -- `
+    "csgo_gc/steam_hook.cpp" `
+    "csgo_gc/platform.h" `
+    "csgo_gc/platform_windows.cpp"
+if ($LASTEXITCODE -ne 0) { throw "Could not restore local steam_hook/platform files." }
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
 
