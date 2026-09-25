@@ -79,6 +79,7 @@ class MatchmakingCoordinator:
             "maps": [],
         }
         self._assignment: dict[str, Any] | None = None
+        self._reward_queues: dict[str, list[str]] = {}
 
     def _server_online_locked(self) -> bool:
         return (
@@ -367,6 +368,27 @@ class MatchmakingCoordinator:
             }
             self._try_form_locked()
             return dict(self._states[steamid])
+
+    def queue_reward(self, steamid: str, payload_b64: str) -> dict[str, Any]:
+        with self._lock:
+            if not steamid.isdigit() or not payload_b64:
+                return {"ok": False, "error": "invalid reward payload"}
+            queue = self._reward_queues.setdefault(steamid, [])
+            queue.append(payload_b64)
+            # Avoid an unbounded queue if a client stays offline for months.
+            if len(queue) > 16:
+                del queue[:-16]
+            return {"ok": True, "queued": len(queue)}
+
+    def pop_reward(self, steamid: str) -> dict[str, Any]:
+        with self._lock:
+            queue = self._reward_queues.get(steamid, [])
+            if not queue:
+                return {"ok": True, "payload_b64": ""}
+            payload = queue.pop(0)
+            if not queue:
+                self._reward_queues.pop(steamid, None)
+            return {"ok": True, "payload_b64": payload}
 
     def state(self, steamid: str) -> dict[str, Any]:
         with self._lock:
