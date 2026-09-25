@@ -54,7 +54,7 @@ def main() -> int:
             f"{i}static bool s_revAllowOfflineGcPrinted = false;",
             f"{i}if (!s_revAllowOfflineGcPrinted)",
             i + "{",
-            i + f'    Platform::Print("{MARKER} active\n");',
+            i + f'    Platform::Print("{MARKER} active\\n");',
             i + "    s_revAllowOfflineGcPrinted = true;",
             i + "}",
         ])
@@ -258,8 +258,10 @@ static bool RevivalDispatchReserveServerForQueuedGame(
     verify = path.read_text(encoding="utf-8")
     ph_verify = platform_h.read_text(encoding="utf-8")
     pc_verify = platform_cpp.read_text(encoding="utf-8")
+    expected_offline_log = f'Platform::Print("{MARKER} active\\\\n");'
     if (MARKER not in verify or SERVER_ID_MARKER not in verify
             or QUEUE_RESERVE_MARKER not in verify
+            or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
             or PLATFORM_INTERFACE_MARKER not in pc_verify):
         print("[patch_steam_hook] ERROR: marker verification failed after write")
