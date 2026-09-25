@@ -10,6 +10,13 @@
 #include <string>
 #include <unordered_map>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+#include <funchook.h>
+#pragma comment(lib, "ws2_32.lib")
+#endif
+
 namespace
 {
 constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
@@ -77,6 +84,160 @@ std::vector<uint32_t> BridgeU32List(
     }
     return out;
 }
+
+#ifdef _WIN32
+constexpr uint32_t RevivalConnectionlessHeader = 0xFFFFFFFFu;
+constexpr uint8_t RevivalReserveCheckResponseOpcode = 0x25;
+constexpr size_t RevivalReserveCheckResponseSize = 19;
+
+std::atomic<bool> g_revAcceptArmed{ false };
+std::atomic<bool> g_revAcceptFullyAccepted{ false };
+std::atomic<uint32_t> g_revAcceptIp{ 0 };
+std::atomic<uint16_t> g_revAcceptPort{ 0 };
+std::atomic<uint32_t> g_revAcceptExpectedPlayers{ 0 };
+
+uint32_t RevivalReadU32(const uint8_t *data)
+{
+    uint32_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    return value;
+}
+
+using RevivalWSARecvFromFn = int(WSAAPI *)(SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD,
+    sockaddr *, LPINT, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+RevivalWSARecvFromFn g_revOriginalWSARecvFrom = nullptr;
+
+void RevivalInspectReserveCheckResponse(
+    const uint8_t *packet, const sockaddr *from, int fromLen)
+{
+    if (!g_revAcceptArmed.load(std::memory_order_relaxed))
+        return;
+    if (RevivalReadU32(packet) != RevivalConnectionlessHeader
+        || packet[4] != RevivalReserveCheckResponseOpcode)
+        return;
+    if (!from || fromLen < static_cast<int>(sizeof(sockaddr_in))
+        || from->sa_family != AF_INET)
+        return;
+
+    const sockaddr_in *fromIn = reinterpret_cast<const sockaddr_in *>(from);
+    const uint32_t expectedIp = g_revAcceptIp.load(std::memory_order_relaxed);
+    const uint16_t expectedPort = g_revAcceptPort.load(std::memory_order_relaxed);
+    const uint32_t actualIp = ntohl(fromIn->sin_addr.s_addr);
+    const uint16_t actualPort = ntohs(fromIn->sin_port);
+    if ((expectedIp && actualIp != expectedIp)
+        || (expectedPort && actualPort != expectedPort))
+        return;
+
+    const uint32_t stage = RevivalReadU32(packet + 13);
+    const uint8_t awaiting = packet[17];
+    const uint8_t total = packet[18];
+
+    Platform::Print(
+        "REVIVAL_CLIENT_ACCEPT_WATCH_V1 0x25 stage=%u awaiting=%u total=%u\n",
+        stage, awaiting, total);
+
+    const uint32_t expectedPlayers =
+        g_revAcceptExpectedPlayers.load(std::memory_order_relaxed);
+    if (expectedPlayers && awaiting != 0x7f && total != expectedPlayers)
+    {
+        Platform::Print(
+            "matchmaking: WARNING reservation roster total=%u expected=%u\n",
+            total, expectedPlayers);
+    }
+
+    if (stage == 2 && awaiting == 0
+        && g_revAcceptArmed.exchange(false, std::memory_order_acq_rel))
+    {
+        g_revAcceptFullyAccepted.store(true, std::memory_order_release);
+        Platform::Print(
+            "matchmaking: stock reservation reached stage 2 awaiting=0; final connect reserve pending\n");
+    }
+}
+
+int WSAAPI RevivalHookWSARecvFrom(
+    SOCKET s, LPWSABUF buffers, DWORD bufferCount, LPDWORD bytesReceived,
+    LPDWORD flags, sockaddr *from, LPINT fromLen,
+    LPWSAOVERLAPPED overlapped,
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE completion)
+{
+    const int result = g_revOriginalWSARecvFrom(
+        s, buffers, bufferCount, bytesReceived, flags, from, fromLen,
+        overlapped, completion);
+
+    if (result == 0 && !overlapped && bufferCount == 1 && buffers
+        && bytesReceived && *bytesReceived == RevivalReserveCheckResponseSize)
+    {
+        RevivalInspectReserveCheckResponse(
+            reinterpret_cast<const uint8_t *>(buffers[0].buf),
+            from, fromLen ? *fromLen : 0);
+    }
+    return result;
+}
+
+void RevivalInstallAcceptWatcher()
+{
+    static bool attempted = false;
+    if (attempted)
+        return;
+    attempted = true;
+
+    HMODULE ws2 = GetModuleHandleA("ws2_32.dll");
+    if (!ws2)
+        ws2 = LoadLibraryA("ws2_32.dll");
+    void *target = ws2
+        ? reinterpret_cast<void *>(GetProcAddress(ws2, "WSARecvFrom"))
+        : nullptr;
+    if (!target)
+    {
+        Platform::Print(
+            "REVIVAL_CLIENT_ACCEPT_WATCH_V1 failed: ws2_32!WSARecvFrom unavailable\n");
+        return;
+    }
+
+    funchook_t *hook = funchook_create();
+    void *bridge = target;
+    if (!hook
+        || funchook_prepare(hook, &bridge,
+            reinterpret_cast<void *>(RevivalHookWSARecvFrom)) != 0
+        || funchook_install(hook, 0) != 0)
+    {
+        Platform::Print(
+            "REVIVAL_CLIENT_ACCEPT_WATCH_V1 failed: funchook install failed\n");
+        return;
+    }
+
+    g_revOriginalWSARecvFrom =
+        reinterpret_cast<RevivalWSARecvFromFn>(bridge);
+    Platform::Print(
+        "REVIVAL_CLIENT_ACCEPT_WATCH_V1 active (stock 0x25 stage watcher)\n");
+}
+
+void RevivalArmAcceptWatcher(
+    uint32_t serverIp, uint16_t serverPort, uint32_t expectedPlayers)
+{
+    g_revAcceptIp.store(serverIp, std::memory_order_relaxed);
+    g_revAcceptPort.store(serverPort, std::memory_order_relaxed);
+    g_revAcceptExpectedPlayers.store(expectedPlayers, std::memory_order_relaxed);
+    g_revAcceptFullyAccepted.store(false, std::memory_order_relaxed);
+    g_revAcceptArmed.store(true, std::memory_order_release);
+    Platform::Print(
+        "matchmaking: armed stock Accept watcher ip=%u.%u.%u.%u port=%u roster=%u\n",
+        (serverIp >> 24) & 0xff, (serverIp >> 16) & 0xff,
+        (serverIp >> 8) & 0xff, serverIp & 0xff,
+        static_cast<unsigned>(serverPort), expectedPlayers);
+}
+
+void RevivalDisarmAcceptWatcher()
+{
+    g_revAcceptArmed.store(false, std::memory_order_release);
+    g_revAcceptFullyAccepted.store(false, std::memory_order_release);
+}
+#else
+void RevivalInstallAcceptWatcher() {}
+void RevivalArmAcceptWatcher(uint32_t, uint16_t, uint32_t) {}
+void RevivalDisarmAcceptWatcher() {}
+#endif
+
 } // namespace
 
 ClientGC::ClientGC(uint64_t steamId)
@@ -87,6 +248,7 @@ ClientGC::ClientGC(uint64_t steamId)
     Graffiti::Initialize();
 
     StartThread();
+    RevivalInstallAcceptWatcher();
 
     Platform::Print("ClientGC spawned for user %llu\n", steamId);
 }
@@ -99,6 +261,11 @@ ClientGC::~ClientGC()
 
 void ClientGC::HandleIdle()
 {
+#ifdef _WIN32
+    if (g_revAcceptFullyAccepted.exchange(false, std::memory_order_acq_rel))
+        SendMatchmakingConnectReserve();
+#endif
+
     if (!m_matchmakingActive)
         return;
 
@@ -563,7 +730,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
-    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
@@ -733,6 +900,8 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     m_matchmakingDirectUdpPort = 0;
     m_matchmakingServerAddress.clear();
     m_matchmakingMap.clear();
+    m_matchmakingFinalReserveSent = false;
+    RevivalDisarmAcceptWatcher();
 
     std::ostringstream request;
     request << "action=start\n"
@@ -795,6 +964,8 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
     m_matchmakingDirectUdpPort = 0;
     m_matchmakingServerAddress.clear();
     m_matchmakingMap.clear();
+    m_matchmakingFinalReserveSent = false;
+    RevivalDisarmAcceptWatcher();
 
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
     update.set_matchmaking(0);
@@ -824,6 +995,39 @@ void ClientGC::MatchmakingHello(GCMessageRead &messageRead)
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, response);
     if (m_matchmakingActive)
         PollMatchmakingBridge();
+}
+
+
+void ClientGC::SendMatchmakingConnectReserve()
+{
+    if (!m_lastMatchmakingReservation || m_matchmakingFinalReserveSent
+        || m_matchmakingServerAddress.empty())
+        return;
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
+    reserve.set_serverid(m_matchmakingServerId ? m_matchmakingServerId : 1);
+    if (m_matchmakingDirectUdpIp)
+        reserve.set_direct_udp_ip(m_matchmakingDirectUdpIp);
+    reserve.set_direct_udp_port(m_matchmakingDirectUdpPort);
+    reserve.set_reservationid(m_lastMatchmakingReservation);
+    if (!m_matchmakingMap.empty())
+        reserve.set_map(m_matchmakingMap);
+    reserve.set_server_address(m_matchmakingServerAddress);
+
+    // Deliberately NO nested reservation here. The first 9107's Competitive
+    // reservation created the stock stage-1 ready-up callback. Once the server
+    // has answered stage 2 / awaiting 0, a second address+cookie 9107 switches
+    // the retail client into its QueueConnect path instead of recreating the
+    // Accept callback.
+    SendMessageToGame(
+        false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
+    m_matchmakingFinalReserveSent = true;
+
+    Platform::Print(
+        "matchmaking: ACCEPT COMPLETE; sent second 9107 for QueueConnect "
+        "reservation=%llu server=%s map=%s\n",
+        m_lastMatchmakingReservation, m_matchmakingServerAddress.c_str(),
+        m_matchmakingMap.c_str());
 }
 
 void ClientGC::PollMatchmakingBridge()
@@ -924,6 +1128,10 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingDirectUdpPort = port;
         m_matchmakingServerAddress = serverAddress;
         m_matchmakingMap = mapName;
+        m_matchmakingFinalReserveSent = false;
+        RevivalArmAcceptWatcher(
+            directUdpIp, static_cast<uint16_t>(port),
+            static_cast<uint32_t>(accountIds.size()));
         Platform::Print(
             "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu route=%s map=%s server=%s game_type=%u version=%u\n",
             reservationId, serverId, reportedServerId ? "steamid+direct" : "synthetic-id+direct-udp",
