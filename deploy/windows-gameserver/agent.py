@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V12"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMP_RUNTIME_V13"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -236,48 +236,74 @@ def installed_maps(csgo_dir: str) -> list[str]:
 def ensure_match_cfg(csgo_dir: str, steam_account_token: str = "") -> None:
     cfg_dir = os.path.join(csgo_dir, "csgo", "cfg")
     os.makedirs(cfg_dir, exist_ok=True)
-    path = os.path.join(cfg_dir, "revival_competitive.cfg")
     token = str(steam_account_token or "").replace('"', '').strip()
-    text = r"""hostname "Kinkerm CS:GO Revival Competitive"
+
+    # Early process/server settings. Gameplay cvars placed here are overwritten
+    # by Host_NewGame/gamemode_competitive.cfg, so keep this file intentionally
+    # small.
+    early_path = os.path.join(cfg_dir, "revival_competitive.cfg")
+    early = r"""hostname "Kinkerm CS:GO Revival Competitive"
 sv_lan 0
 sv_password ""
 sv_cheats 0
 sv_pure 0
 sv_allow_votes 1
-sv_deadtalk 1
 sv_hibernate_when_empty 0
 sv_hibernate_postgame_delay 5
-sv_allow_lobby_connect_only 0
 sv_setsteamaccount "__REVIVAL_STEAM_TOKEN__"
 log on
+"""
+    early = early.replace("__REVIVAL_STEAM_TOKEN__", token)
+    with open(early_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(early)
+
+    # CS:GO loads this AFTER gamemode_competitive.cfg. The server log explicitly
+    # attempts this file on every competitive map, making it the correct final
+    # override point for the revival's matchmaking runtime.
+    late_path = os.path.join(cfg_dir, "gamemode_competitive_server.cfg")
+    late = r"""// CS:GO Revival - final matchmaking overrides
+sv_competitive_official_5v5 1
+deathmatch 0
 
 bot_quota 10
 bot_quota_mode fill
 bot_join_after_player 0
-bot_auto_vacate 1
 bot_join_team any
+
 mp_autokick 0
-mp_autoteambalance 1
-mp_limitteams 2
+mp_autoteambalance 0
+mp_limitteams 0
 mp_friendlyfire 1
-sv_game_mode_flags 0
 mp_maxrounds 30
+mp_halftime 1
 mp_overtime_enable 1
+mp_overtime_maxrounds 6
 mp_match_can_clinch 1
-mp_do_warmup_period 1
-mp_warmuptime 3600
-mp_warmup_pausetimer 1
+mp_ignore_round_win_conditions 0
+mp_timelimit 0
+mp_startmoney 800
+mp_maxmoney 16000
+mp_buytime 20
+mp_buy_anywhere 0
 mp_freezetime 15
 mp_roundtime 1.92
 mp_roundtime_defuse 1.92
+mp_roundtime_hostage 1.92
 mp_match_restart_delay 15
 mp_endmatch_votenextmap 0
 mp_match_end_restart 0
-"""
-    text = text.replace("__REVIVAL_STEAM_TOKEN__", token)
-    with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
 
+// Hold normal matchmaking warmup until the reserved human is actually present.
+// The agent ends it immediately once status/logs confirm that player.
+mp_do_warmup_period 1
+mp_warmuptime 300
+mp_warmuptime_all_players_connected 0
+mp_warmup_pausetimer 1
+"""
+    with open(late_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(late)
+
+    print(f"[agent] wrote late competitive override: {late_path}")
 
 def reservation_paths(csgo_dir: str) -> tuple[str, str]:
     gc_dir = os.path.join(csgo_dir, "csgo_gc")
@@ -429,13 +455,13 @@ def _recv_rcon(sock: socket.socket) -> tuple[int, int, str]:
 
 
 def send_local_rcon(port: int, password: str, command: str) -> str:
-    """Send one command to Source and collect every response packet."""
+    """Send one command to Source and collect response packets until idle."""
     with socket.create_connection(("127.0.0.1", int(port)), timeout=3.0) as sock:
         sock.settimeout(3.0)
         sock.sendall(_rcon_packet(101, 3, password))  # SERVERDATA_AUTH
 
         authed = False
-        for _ in range(3):
+        for _ in range(4):
             request_id, packet_type, _ = _recv_rcon(sock)
             if packet_type == 2:  # SERVERDATA_AUTH_RESPONSE
                 if request_id == -1:
@@ -446,29 +472,20 @@ def send_local_rcon(port: int, password: str, command: str) -> str:
             raise ConnectionError("RCON authentication response not received")
 
         command_id = 102
-        sentinel_id = 103
-        sentinel = "REVIVAL_RCON_DONE_103"
-
         sock.sendall(_rcon_packet(command_id, 2, command))
-        # Source RCON can split long output (notably `status`) across several
-        # packets with the same request id. A second command gives us a reliable
-        # ordering barrier: all command_id packets arrive before sentinel_id.
-        sock.sendall(_rcon_packet(sentinel_id, 2, "echo " + sentinel))
 
         chunks: list[str] = []
-        try:
-            while True:
+        sock.settimeout(0.40)
+        while True:
+            try:
                 request_id, packet_type, text = _recv_rcon(sock)
-                if request_id == command_id:
-                    chunks.append(text)
-                    continue
-                if request_id == sentinel_id:
-                    break
-        except (socket.timeout, ConnectionError):
-            # Commands such as `quit` can intentionally close the socket.
-            pass
+            except socket.timeout:
+                break
+            except ConnectionError:
+                break
+            if request_id == command_id:
+                chunks.append(text)
         return "".join(chunks)
-
 
 def set_above_normal(proc: subprocess.Popen) -> None:
     if os.name != "nt":
@@ -516,15 +533,15 @@ class ServerSlot:
             return
         with self._lock:
             if self.alive() and self.match_id == match_id:
-                sync_server_player_inventories(
-                    self.cfg, assignment, clear_existing=False
-                )
                 new_accounts = {
                     int(x) for x in assignment.get("account_ids", []) if int(x) > 0
                 }
                 added = new_accounts.difference(self.expected_account_ids)
                 self.expected_account_ids.update(new_accounts)
                 if added:
+                    sync_server_player_inventories(
+                        self.cfg, assignment, clear_existing=False
+                    )
                     # Keep the request file current for builds that do support
                     # native 9105 refreshes. In cookie-fallback mode the HTTP
                     # coordinator is the membership authority.
@@ -835,42 +852,40 @@ class ServerSlot:
             password = self.rcon_password
 
         try:
+            # Reassert only the small set that matters at the human-join edge.
+            # The full baseline lives in gamemode_competitive_server.cfg and is
+            # already loaded after Valve's competitive config.
             send_local_rcon(
                 port,
                 password,
                 (
-                    "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
-                    "bot_join_after_player 0; bot_auto_vacate 1; bot_join_team any; "
+                    "sv_competitive_official_5v5 1; deathmatch 0; "
+                    "bot_join_after_player 0; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
-                    "mp_autokick 0; mp_autoteambalance 1; mp_limitteams 2; "
-                    "mp_friendlyfire 1; mp_maxrounds 30; mp_overtime_enable 1; "
-                    "mp_match_can_clinch 1; mp_freezetime 15; "
-                    "mp_roundtime 1.92; mp_roundtime_defuse 1.92; "
-                    "mp_match_restart_delay 15; mp_endmatch_votenextmap 0; "
-                    "mp_match_end_restart 0; mp_do_warmup_period 1; "
+                    "mp_autokick 0; mp_autoteambalance 0; mp_limitteams 0; "
                     "mp_warmup_pausetimer 0; mp_warmup_end"
                 ),
             )
             proof = send_local_rcon(
                 port,
                 password,
-                "bot_quota; bot_quota_mode; bot_stop; bot_freeze; mp_warmup_pausetimer",
+                (
+                    "sv_competitive_official_5v5; deathmatch; "
+                    "bot_quota; bot_quota_mode; "
+                    "mp_maxrounds; mp_friendlyfire; mp_warmup_pausetimer"
+                ),
             )
         except Exception as exc:
-            # Critical: do NOT set started here. Human detection will retry this
-            # on the next heartbeat/log event until Source accepts the commands.
             print(f"[agent] Competitive RCON apply failed; retrying: {exc}")
             return
 
         with self._lock:
-            if self._ended or self.match_id != match_id:
-                return
-            if self.started:
+            if self._ended or self.match_id != match_id or self.started:
                 return
             self.started = True
             self.match_play_started_at = time.monotonic()
 
-        print("[agent] Competitive runtime applied; warmup ended; bot fill enabled")
+        print("[agent] Competitive runtime applied; warmup ended; 5v5 bot fill enabled")
         if proof.strip():
             print("[agent] Competitive cvar proof: " + proof.replace("\n", " | ").strip())
 
@@ -936,7 +951,12 @@ class ServerSlot:
                 self.rcon_password,
                 "status",
             )
-        except Exception:
+        except Exception as exc:
+            now = time.monotonic()
+            last = getattr(self, "_last_status_error_log", 0.0)
+            if now - last >= 10.0:
+                print(f"[agent] RCON status check failed: {exc}")
+                self._last_status_error_log = now
             return
 
         found: set[int] = set()
