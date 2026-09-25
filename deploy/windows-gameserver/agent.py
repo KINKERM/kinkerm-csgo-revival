@@ -72,6 +72,7 @@ def load_config() -> dict:
     cfg.setdefault("public_port", 27015)
     cfg.setdefault("local_port", 27015)
     cfg.setdefault("playit_exe", "")
+    cfg.setdefault("steam_account_token", "")
     cfg.setdefault("extra_srcds_args", "")
     cfg.setdefault("accept_timeout_seconds", 90)
     cfg.setdefault("post_match_grace_seconds", 25)
@@ -127,10 +128,11 @@ def installed_maps(csgo_dir: str) -> list[str]:
     return ordered
 
 
-def ensure_match_cfg(csgo_dir: str) -> None:
+def ensure_match_cfg(csgo_dir: str, steam_account_token: str = "") -> None:
     cfg_dir = os.path.join(csgo_dir, "csgo", "cfg")
     os.makedirs(cfg_dir, exist_ok=True)
     path = os.path.join(cfg_dir, "revival_competitive.cfg")
+    token = str(steam_account_token or "").replace('"', '').strip()
     text = r"""hostname "Kinkerm CS:GO Revival Competitive"
 sv_lan 0
 sv_password ""
@@ -141,7 +143,7 @@ sv_deadtalk 1
 sv_hibernate_when_empty 0
 sv_hibernate_postgame_delay 5
 sv_allow_lobby_connect_only 0
-sv_setsteamaccount ""
+sv_setsteamaccount "__REVIVAL_STEAM_TOKEN__"
 log on
 
 bot_quota 10
@@ -167,6 +169,7 @@ mp_match_restart_delay 15
 mp_endmatch_votenextmap 0
 mp_match_end_restart 0
 """
+    text = text.replace("__REVIVAL_STEAM_TOKEN__", token)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
 
