@@ -425,7 +425,7 @@ def _recv_rcon(sock: socket.socket) -> tuple[int, int, str]:
 
 
 def send_local_rcon(port: int, password: str, command: str) -> str:
-    """Send one command to the local Source server and return its first reply."""
+    """Send one command to Source and collect every response packet."""
     with socket.create_connection(("127.0.0.1", int(port)), timeout=3.0) as sock:
         sock.settimeout(3.0)
         sock.sendall(_rcon_packet(101, 3, password))  # SERVERDATA_AUTH
@@ -441,14 +441,29 @@ def send_local_rcon(port: int, password: str, command: str) -> str:
         if not authed:
             raise ConnectionError("RCON authentication response not received")
 
-        sock.sendall(_rcon_packet(102, 2, command))  # SERVERDATA_EXECCOMMAND
+        command_id = 102
+        sentinel_id = 103
+        sentinel = "REVIVAL_RCON_DONE_103"
+
+        sock.sendall(_rcon_packet(command_id, 2, command))
+        # Source RCON can split long output (notably `status`) across several
+        # packets with the same request id. A second command gives us a reliable
+        # ordering barrier: all command_id packets arrive before sentinel_id.
+        sock.sendall(_rcon_packet(sentinel_id, 2, "echo " + sentinel))
+
+        chunks: list[str] = []
         try:
-            request_id, packet_type, text = _recv_rcon(sock)
-            if request_id == 102:
-                return text
+            while True:
+                request_id, packet_type, text = _recv_rcon(sock)
+                if request_id == command_id:
+                    chunks.append(text)
+                    continue
+                if request_id == sentinel_id:
+                    break
         except (socket.timeout, ConnectionError):
+            # Commands such as `quit` can intentionally close the socket.
             pass
-        return ""
+        return "".join(chunks)
 
 
 def set_above_normal(proc: subprocess.Popen) -> None:
