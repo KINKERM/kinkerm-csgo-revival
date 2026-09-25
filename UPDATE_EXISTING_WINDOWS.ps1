@@ -28,6 +28,8 @@ Write-Host ""
 Write-Host "=== CS:GO Revival safe update ===" -ForegroundColor Cyan
 Write-Host "Repo:       $RevivalRepo"
 Write-Host "csgo_gc:    $CsgoGcSource"
+$csgoGcHead = (& git -C $CsgoGcSource rev-parse HEAD).Trim()
+Write-Host "csgo_gc HEAD: $csgoGcHead"
 Write-Host "CS:GO root: $CsgoDir"
 Write-Host "Backup:     $backup"
 Write-Host ""
@@ -113,7 +115,7 @@ Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "c
 $steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to patch the pinned steam_hook.cpp."
+    throw "Failed to patch the local-compatible steam_hook.cpp."
 }
 
 $clientExe = Join-Path $CsgoGcSource "build\launcher\Release\csgo.exe"
