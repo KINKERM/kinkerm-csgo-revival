@@ -24,6 +24,7 @@ private:
     void MatchmakingReservationResponse(GCMessageRead &messageRead);
     void IncrementKillCountAttribute(GCMessageRead &messageRead);
     void MatchEndRunRewardDrops(GCMessageRead &messageRead);
+    void ProcessRevivalMatchEndTrigger();
 
     bool m_sentWelcome{};
     bool m_sentReservation{};
@@ -31,4 +32,5 @@ private:
     uint32_t m_queueReservationRefreshTicks{};
     std::string m_lastReservationSignature;
     std::string m_lastQueueReservationPayload;
+    uint64_t m_lastSyntheticDropMatchId{};
 };
