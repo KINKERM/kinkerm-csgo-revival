@@ -61,7 +61,9 @@ jobs:
           git -C upstream checkout 06301e7173329723a3506f8345fe23b147bc0881
       - name: Apply complete revival overlay
         shell: pwsh
-        run: Copy-Item -Path 'csgo_gc-patch\*' -Destination 'upstream\csgo_gc\' -Force
+        run: |
+          Copy-Item -Path 'csgo_gc-patch\*' -Destination 'upstream\csgo_gc\' -Force
+          python tools/patch_steam_hook.py upstream/csgo_gc/steam_hook.cpp
       - name: Install Win32 dependencies
         shell: pwsh
         run: |
@@ -81,7 +83,7 @@ jobs:
       - name: Validate pack contents
         shell: pwsh
         run: |
-          python -c "import zipfile; z=zipfile.ZipFile('csgo-revival-pack.zip'); n=set(z.namelist()); req={'csgo_gc.dll','csgo_revival.exe','srcds.exe','csgo_gc/config.txt','csgo/scripts/items/items_game.txt','csgo/panorama/pbin.py','csgo/panorama/layout/mainmenu_play.xml','csgo/panorama/scripts/mainmenu_play.js','csgo/panorama/styles/mainmenu_play.css'}; missing=sorted(req-n); print('missing:', missing); assert not missing"
+          python -c "import zipfile; z=zipfile.ZipFile('csgo-revival-pack.zip'); n=set(z.namelist()); req={'csgo_gc/csgo_gc.dll','csgo_revival.exe','srcds.exe','csgo_gc/config.txt','csgo/scripts/items/items_game.txt','csgo/panorama/pbin.py','csgo/panorama/layout/mainmenu_play.xml','csgo/panorama/scripts/mainmenu_play.js','csgo/panorama/styles/mainmenu_play.css'}; missing=sorted(req-n); print('missing:', missing); assert not missing"
       - uses: actions/upload-artifact@v4
         with:
           name: csgo-revival-pack-${{ github.sha }}
