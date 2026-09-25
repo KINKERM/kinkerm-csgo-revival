@@ -60,6 +60,10 @@ void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
         HandleClientLocalInventoryRequest(id);
         break;
 
+    case GCEvent::RevivalMatchEnd:
+        ProcessRevivalMatchEndTrigger(true);
+        break;
+
     default:
         assert(false);
         break;
@@ -494,27 +498,46 @@ std::string BuildQueuedReservationPayload(
 }
 } // namespace
 
-void ServerGC::ProcessRevivalMatchEndTrigger()
+void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
 {
     constexpr const char *TriggerPath = "csgo_gc/server_match_end_trigger.txt";
-    std::ifstream trigger(TriggerPath, std::ios::binary);
-    if (!trigger.is_open())
-        return;
-
     std::unordered_map<std::string, std::string> end;
-    std::string line;
-    while (std::getline(trigger, line))
+
+    if (nativeIntermission)
     {
-        const size_t eq = line.find('=');
-        if (eq != std::string::npos)
-            end[line.substr(0, eq)] = line.substr(eq + 1);
+        // This runs from the real CCSGameRules::RewardMatchEndDrops edge,
+        // before the scoreboard's item-reveal announcement window can pass.
+        const auto reservationNow = ReadServerReservationFile();
+        auto it = reservationNow.find("match_id");
+        if (it == reservationNow.end() || it->second.empty())
+            return;
+        end["match_id"] = it->second;
+        end["time_played"] = "0";
+        Platform::Print(
+            "REVIVAL_NATIVE_DROP_TIMING_V3 generating at RewardMatchEndDrops match=%s\n",
+            it->second.c_str());
     }
-    trigger.close();
+    else
+    {
+        std::ifstream trigger(TriggerPath, std::ios::binary);
+        if (!trigger.is_open())
+            return;
+
+        std::string line;
+        while (std::getline(trigger, line))
+        {
+            const size_t eq = line.find('=');
+            if (eq != std::string::npos)
+                end[line.substr(0, eq)] = line.substr(eq + 1);
+        }
+        trigger.close();
+    }
 
     const uint64_t matchId = ReservationNumber(end, "match_id");
     if (!matchId || matchId == m_lastSyntheticDropMatchId)
     {
-        std::remove(TriggerPath);
+        if (!nativeIntermission)
+            std::remove(TriggerPath);
         return;
     }
 
@@ -522,7 +545,8 @@ void ServerGC::ProcessRevivalMatchEndTrigger()
     if (ReservationNumber(reservation, "match_id") != matchId)
     {
         // Ignore a stale trigger from a previous srcds allocation.
-        std::remove(TriggerPath);
+        if (!nativeIntermission)
+            std::remove(TriggerPath);
         return;
     }
 
@@ -695,7 +719,10 @@ void ServerGC::ProcessRevivalMatchEndTrigger()
     if (processedAny)
     {
         m_lastSyntheticDropMatchId = matchId;
-        std::remove(TriggerPath);
+        if (!nativeIntermission)
+            std::remove(TriggerPath);
+        else
+            std::remove(TriggerPath); // remove any stale fallback from this match
         Platform::Print(
             "REVIVAL_NATIVE_DROP_REVEAL_V1 processed match=%llu players=%u\n",
             static_cast<unsigned long long>(matchId),
