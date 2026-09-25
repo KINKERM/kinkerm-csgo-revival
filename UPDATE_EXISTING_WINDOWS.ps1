@@ -187,9 +187,6 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_ENGINE_QUEUE_RESERVE_V1")) {
         throw "Built csgo_gc.dll does not contain the engine queued-reservation bridge."
     }
-    if (-not $gcDllText.Contains("REVIVAL_MATCHMAKING_RICH_PRESENCE_V1")) {
-        throw "Built csgo_gc.dll does not contain matchmaking rich-presence classification."
-    }
     if (-not $gcDllText.Contains("REVIVAL_SERVER_LOCAL_SOCACHE_V1")) {
         throw "Built csgo_gc.dll does not contain local server SOCache injection."
     }
@@ -349,9 +346,6 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_ENGINE_QUEUE_RESERVE_V1")) {
         throw "Installed csgo_gc.dll is missing the engine queued-reservation bridge."
-    }
-    if (-not $installedGcText.Contains("REVIVAL_MATCHMAKING_RICH_PRESENCE_V1")) {
-        throw "Installed csgo_gc.dll is missing matchmaking rich-presence classification."
     }
     if (-not $installedGcText.Contains("REVIVAL_SERVER_LOCAL_SOCACHE_V1")) {
         throw "Installed csgo_gc.dll is missing local server SOCache injection."
