@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COOKIE_FALLBACK_V2"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COOKIE_FALLBACK_V3"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -266,7 +266,7 @@ def read_native_reservation_response(csgo_dir: str) -> dict[str, int | str]:
                 if not line or "=" not in line:
                     continue
                 key, value = line.split("=", 1)
-                if key in ("match_id", "reservation_id"):
+                if key in ("match_id", "reservation_id", "server_id"):
                     try:
                         out[key] = int(value)
                     except ValueError:
@@ -342,6 +342,7 @@ class ServerSlot:
         self.match_id = 0
         self.ready_match_id = 0
         self.reservation_id = 0
+        self.server_id = 0
         self.reserved_account_ids: set[int] = set()
         self.ct_score = 0
         self.t_score = 0
@@ -447,6 +448,7 @@ class ServerSlot:
             self.match_id = match_id
             self.ready_match_id = 0
             self.reservation_id = 0
+            self.server_id = 0
             self.reserved_account_ids.clear()
             self.ct_score = 0
             self.t_score = 0
@@ -481,12 +483,14 @@ class ServerSlot:
             if (
                 int(response.get("match_id") or 0) == match_id
                 and int(response.get("reservation_id") or 0) > 0
+                and int(response.get("server_id") or 0) > 0
             ):
                 time.sleep(1.5)
                 with self._lock:
                     if not self.alive() or self.match_id != match_id:
                         return
                     self.reservation_id = int(response["reservation_id"])
+                    self.server_id = int(response["server_id"])
                     self.reserved_account_ids = {
                         int(x) for x in str(response.get("account_ids") or "").split(",")
                         if x.strip().isdigit() and int(x) > 0
@@ -496,7 +500,7 @@ class ServerSlot:
                     self.using_cookie_fallback = False
                     print(
                         f"[agent] native 9106 accepted match {match_id}; "
-                        f"reservation={self.reservation_id}; waiting for "
+                        f"reservation={self.reservation_id}; server_id={self.server_id}; waiting for "
                         "first human to enter (bots fill empty slots)"
                     )
                 return
@@ -667,7 +671,8 @@ class ServerSlot:
         if int(response.get("match_id") or 0) != match_id:
             return
         new_reservation = int(response.get("reservation_id") or 0)
-        if not new_reservation:
+        new_server_id = int(response.get("server_id") or 0)
+        if not new_reservation or not new_server_id:
             return
 
         acknowledged = {
@@ -681,12 +686,13 @@ class ServerSlot:
             membership_changed = acknowledged != self.reserved_account_ids
             self.reserved_account_ids = acknowledged
             self.reservation_id = new_reservation
+            self.server_id = new_server_id
             self.ready_match_id = match_id
             self.using_cookie_fallback = False
             if new_reservation != old_reservation or membership_changed:
                 print(
                     f"[agent] native reservation refreshed for match {match_id}: "
-                    f"reservation={new_reservation}, "
+                    f"reservation={new_reservation}, server_id={new_server_id}, "
                     f"accounts={','.join(str(x) for x in sorted(acknowledged))}"
                 )
 
@@ -742,6 +748,7 @@ class ServerSlot:
         self.proc = None
         self.ready_match_id = 0
         self.reservation_id = 0
+        self.server_id = 0
         self.reserved_account_ids.clear()
         self.match_id = 0
         self.ready_at = 0.0
@@ -805,6 +812,7 @@ def main() -> None:
                 "maps": maps,
                 "ready_match_id": slot.ready_match_id,
                 "reservation_id": slot.reservation_id,
+                "server_id": slot.server_id,
                 "reserved_account_ids": sorted(slot.reserved_account_ids),
                 "started_match_id": slot.match_id if slot.started else 0,
             }
