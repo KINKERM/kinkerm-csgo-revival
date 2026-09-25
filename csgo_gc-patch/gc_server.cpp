@@ -6,6 +6,7 @@
 #include "graffiti.h"
 #include "inventory.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
@@ -532,7 +533,9 @@ void ServerGC::ProcessRevivalMatchEndTrigger()
         {
             BridgeMessage out;
             out.type = write.TypeMasked();
-            out.bytes.assign(write.Data(), write.Data() + write.Size());
+            const auto *begin =
+                static_cast<const uint8_t *>(write.Data());
+            out.bytes.assign(begin, begin + write.Size());
             bridgeMessages.emplace_back(std::move(out));
         };
 
