@@ -61,16 +61,19 @@ if ((-not $updaterTracked) -and (Test-Path $updaterPath)) {
     Write-Host "    Removed conflicting untracked updater after backing it up." -ForegroundColor Yellow
 }
 
-# Decide whether the compiled GC/runtime actually changed before moving HEAD.
-& git -C $RevivalRepo diff --quiet $currentHead "origin/$Branch" -- "csgo_gc-patch"
-$gcDiffExit = $LASTEXITCODE
-if ($gcDiffExit -eq 0) {
-    $gcSourceChanged = $false
-} elseif ($gcDiffExit -eq 1) {
-    $gcSourceChanged = $true
-} else {
-    throw "Could not compare csgo_gc-patch between $currentHead and origin/$Branch"
+# Decide whether the COMPILED GC/runtime matches the target patch tree.
+# Comparing current repo HEAD to origin is not sufficient: the user may have
+# already pulled/reset before running this script while still having older
+# binaries. Persist the tree hash that was actually built instead.
+$targetGcTree = (& git -C $RevivalRepo rev-parse "origin/${Branch}:csgo_gc-patch").Trim()
+if (-not $targetGcTree) { throw "Could not resolve target csgo_gc-patch tree." }
+
+$buildStamp = Join-Path $CsgoGcSource "build\.revival_gc_patch_tree.txt"
+$lastBuiltGcTree = ""
+if (Test-Path $buildStamp) {
+    $lastBuiltGcTree = (Get-Content $buildStamp -Raw -ErrorAction SilentlyContinue).Trim()
 }
+$gcSourceChanged = ($lastBuiltGcTree -ne $targetGcTree)
 
 & git -C $RevivalRepo checkout -B $Branch "origin/$Branch"
 if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
@@ -103,13 +106,23 @@ $didBuild = $false
 if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     Write-Host "[3/6] Building csgo + srcds + csgo_gc (Win32 Release)..." -ForegroundColor Yellow
     if ($gcSourceChanged) {
-        Write-Host "    csgo_gc-patch changed since $currentHead, so a rebuild is required."
+        if ($lastBuiltGcTree) {
+            Write-Host "    Built GC tree $lastBuiltGcTree does not match target $targetGcTree; rebuilding."
+        } else {
+            Write-Host "    No compiled-GC stamp exists yet; rebuilding once to guarantee the DLL/EXEs match."
+        }
     } elseif (-not $existingRuntime) {
         Write-Host "    Existing Release runtime is incomplete, so a rebuild is required."
     }
     Need-Path (Join-Path $CsgoGcSource "build") "Existing CMake build directory"
     & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo srcds csgo_gc
     if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed" }
+    [System.IO.File]::WriteAllText(
+        $buildStamp,
+        $targetGcTree + [Environment]::NewLine,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+    Write-Host "    Recorded built GC patch tree: $targetGcTree" -ForegroundColor DarkGray
     $didBuild = $true
 } elseif ($autoReuseBuild) {
     Write-Host "[3/6] No csgo_gc source changes; reusing your existing Release DLL/EXEs." -ForegroundColor Green
