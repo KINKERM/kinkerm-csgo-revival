@@ -172,6 +172,15 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_CLIENT_READY_FLOW_V1")) {
         throw "Built csgo_gc.dll does not contain the stock match-ready flow fix."
     }
+    if (-not $gcDllText.Contains("REVIVAL_CLIENT_ACCEPT_WATCH_V1")) {
+        throw "Built csgo_gc.dll does not contain the stock Accept stage watcher."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_ACCEPT_ROSTER_V1")) {
+        throw "Built csgo_gc.dll does not contain the server Accept roster path."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_ENGINE_QUEUE_RESERVE_V1")) {
+        throw "Built csgo_gc.dll does not contain the engine queued-reservation bridge."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
@@ -280,6 +289,15 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_CLIENT_READY_FLOW_V1")) {
         throw "Installed csgo_gc.dll is missing the stock match-ready flow fix."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_CLIENT_ACCEPT_WATCH_V1")) {
+        throw "Installed csgo_gc.dll is missing the stock Accept stage watcher."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_SERVER_ACCEPT_ROSTER_V1")) {
+        throw "Installed csgo_gc.dll is missing the server Accept roster path."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_ENGINE_QUEUE_RESERVE_V1")) {
+        throw "Installed csgo_gc.dll is missing the engine queued-reservation bridge."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
