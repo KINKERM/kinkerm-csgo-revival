@@ -709,6 +709,7 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
     {
         // unequip from this slot, itemid not provided so nothing gets equipped
         UnequipItem(classId, slotId, update);
+        WriteToFile();
         return true;
     }
 
@@ -727,6 +728,7 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
         defaultEquip.set_slot_id(slotId);
 
         AddToMultipleObjects(update, defaultEquip);
+        WriteToFile();
 
         return true;
     }
@@ -752,6 +754,7 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
         equippedState->set_new_slot(slotId);
 
         AddToMultipleObjects(update, item);
+        WriteToFile();
 
         return true;
     }
@@ -2330,6 +2333,40 @@ bool Inventory::AddMatchPlaytimeAndCreateCaseDrop(uint32_t seconds,
     Platform::Print("drops: timed case drop %u/2 after %us weekly playtime\n",
         m_caseDropsThisWeek, m_casePlaytimeSeconds);
     return true;
+}
+
+bool Inventory::CreateRandomCollectionMatchDrop(
+    const std::vector<std::string_view> &collectionNames,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    CSOEconItem selected;
+    if (!m_itemSchema.CreateRandomCollectionItem(
+        m_random, collectionNames, ItemOriginCrate, UnacknowledgedDropped, selected))
+    {
+        return false;
+    }
+
+    CSOEconItem &item = CreateItem(selected);
+    ToSingleObject(create, item);
+    ItemToPreviewDataBlock(item, *notification.mutable_iteminfo());
+    notification.mutable_iteminfo()->set_dropreason(0);
+    WriteToFile();
+
+    Platform::Print("drops: revival collection reward item=%llu def=%u\n",
+        item.id(), item.def_index());
+    return true;
+}
+
+bool Inventory::CreateRareCollectionBonusMatchDrop(
+    const std::vector<std::string_view> &collectionNames,
+    uint32_t oneIn,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    if (!oneIn || m_random.Integer<uint32_t>(1, oneIn) != 1)
+        return false;
+    return CreateRandomCollectionMatchDrop(collectionNames, create, notification);
 }
 
 bool Inventory::AddProfileXp(uint32_t amount, uint32_t *levelsGained)
