@@ -68,7 +68,7 @@ try {
 
     $required = @(
         "srcds.exe",
-        "csgo_gc.dll",
+        "csgo_gc\\csgo_gc.dll",
         "csgo_gc\\config.txt",
         "csgo\\scripts\\items\\items_game.txt"
     )
@@ -77,10 +77,15 @@ try {
     }
 
     Copy-Item (Join-Path $temp "srcds.exe") (Join-Path $CsgoDir "srcds.exe") -Force
-    Copy-Item (Join-Path $temp "csgo_gc.dll") (Join-Path $CsgoDir "csgo_gc.dll") -Force
+    $gcRuntimeDir = Join-Path $CsgoDir "csgo_gc"
+    New-Item $gcRuntimeDir -ItemType Directory -Force | Out-Null
+    Copy-Item (Join-Path $temp "csgo_gc\\csgo_gc.dll") (Join-Path $gcRuntimeDir "csgo_gc.dll") -Force
+    Copy-Item (Join-Path $temp "csgo_gc\\config.txt") (Join-Path $gcRuntimeDir "config.txt") -Force
 
-    New-Item (Join-Path $CsgoDir "csgo_gc") -ItemType Directory -Force | Out-Null
-    Copy-Item (Join-Path $temp "csgo_gc\\config.txt") (Join-Path $CsgoDir "csgo_gc\\config.txt") -Force
+    $wrongRootGc = Join-Path $CsgoDir "csgo_gc.dll"
+    if (Test-Path $wrongRootGc) {
+        Remove-Item $wrongRootGc -Force
+    }
 
     $itemsDest = Join-Path $CsgoDir "csgo\\scripts\\items"
     New-Item $itemsDest -ItemType Directory -Force | Out-Null
