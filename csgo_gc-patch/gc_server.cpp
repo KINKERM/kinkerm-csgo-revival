@@ -21,7 +21,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V3 active\n");
+    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V3 active; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
