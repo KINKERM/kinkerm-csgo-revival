@@ -44,7 +44,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_ACTIVE_MATCH_V7"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_COMPETITIVE_V8"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -703,7 +703,17 @@ class ServerSlot:
                     send_local_rcon(
                         int(self.cfg["local_port"]),
                         self.rcon_password,
-                        "mp_warmup_pausetimer 0; mp_warmup_end",
+                        (
+                            "bot_quota_mode fill; bot_quota 10; "
+                            "bot_join_after_player 0; bot_auto_vacate 1; bot_join_team any; "
+                            "mp_autokick 0; mp_autoteambalance 1; mp_limitteams 2; "
+                            "mp_friendlyfire 1; mp_maxrounds 30; mp_overtime_enable 1; "
+                            "mp_match_can_clinch 1; mp_freezetime 15; "
+                            "mp_roundtime 1.92; mp_roundtime_defuse 1.92; "
+                            "mp_match_restart_delay 15; mp_endmatch_votenextmap 0; "
+                            "mp_match_end_restart 0; "
+                            "mp_warmup_pausetimer 0; mp_warmup_end"
+                        ),
                     )
                 except Exception as exc:
                     print(f"[agent] failed to end warmup via RCON: {exc}")
