@@ -107,7 +107,7 @@ Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 & git -C $CsgoGcSource cat-file -e "$PinnedCsgoGcCommit^{commit}" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "    Fetching pinned csgo_gc commit $PinnedCsgoGcCommit..." -ForegroundColor Yellow
-    & git -C $CsgoGcSource fetch origin $PinnedCsgoGcCommit
+    & git -C $CsgoGcSource fetch "https://github.com/mikkokko/csgo_gc.git" $PinnedCsgoGcCommit
     if ($LASTEXITCODE -ne 0) {
         throw "Could not fetch pinned csgo_gc commit $PinnedCsgoGcCommit."
     }
