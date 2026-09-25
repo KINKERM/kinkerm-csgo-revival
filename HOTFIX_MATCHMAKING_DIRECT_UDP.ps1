@@ -52,7 +52,8 @@ $markers = @(
     "REVIVAL_SERVER_PLAYER_AUTH_V1",
     "REVIVAL_SERVER_REWARD_BRIDGE_V1",
     "REVIVAL_CLIENT_REWARD_BRIDGE_V1",
-    "REVIVAL_GUARANTEED_MATCH_DROPS_V1"
+    "REVIVAL_GUARANTEED_MATCH_DROPS_V1",
+    "REVIVAL_SYNTHETIC_MATCH_END_V1"
 )
 foreach ($marker in $markers) {
     if (-not $blob.Contains($marker)) {
