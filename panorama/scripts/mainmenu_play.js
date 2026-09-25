@@ -59,62 +59,81 @@ var PlayMenu = ( function()
 		return _GetDirectChallengeKey() != '';
 	}
 
+	function _GetRevivalValidationMapGroup()
+	{
+		var cfg = m_gameModeConfigs[ 'competitive' ];
+		if ( cfg && cfg.mapgroupsMP )
+		{
+			var groups = Object.keys( cfg.mapgroupsMP );
+			if ( groups.length > 0 )
+				return groups[ 0 ];
+		}
+
+		var fallback = _GetAvailableMapGroups( 'competitive', true );
+		return fallback.length > 0 ? fallback[ 0 ] : '';
+	}
+
+	function _OnRevivalPoolClicked()
+	{
+		var tile = $( '#RevivalPoolTile' );
+		if ( tile )
+			tile.checked = true;
+
+		m_serverSetting = 'official';
+		m_gameModeSetting = 'competitive';
+		m_isWorkshop = false;
+		m_singleSkirmishMapGroup = null;
+		m_serverPrimeSetting = 1;
+		_setAndSaveGameModeFlags( 0 );
+		_ApplySessionSettings();
+	}
+
 	function StartSearch ()
 	{
 		var btnStartSearch = $( '#StartMatchBtn' );
-		btnStartSearch.AddClass( 'pressed' );
 
-		$.DispatchEvent( 'PlaySoundEffect', 'mainmenu_press_GO', 'MOUSE' );
+		m_serverSetting = 'official';
+		m_gameModeSetting = 'competitive';
+		m_isWorkshop = false;
+		m_singleSkirmishMapGroup = null;
+		m_serverPrimeSetting = 1;
+		_SetDirectChallengeKey( '' );
+		_setAndSaveGameModeFlags( 0 );
 
-	  	                                 
-
-		if ( inDirectChallenge() )
+		var validationMapGroup = _GetRevivalValidationMapGroup();
+		if ( !validationMapGroup )
 		{
-			_DirectChallengeStartSearch();
+			btnStartSearch.RemoveClass( 'pressed' );
+			UiToolkitAPI.ShowGenericPopupOk(
+				'Revival Matchmaking',
+				'No valid Competitive mapgroup is available in this client.',
+				'', function () {}, function () {}
+			);
 			return;
 		}
-		
-		if ( m_isWorkshop )
+
+		var tile = $( '#RevivalPoolTile' );
+		if ( tile )
+			tile.checked = true;
+
+		GameInterfaceAPI.SetSettingString(
+			'ui_playsettings_maps_official_competitive',
+			validationMapGroup
+		);
+
+		_ApplySessionSettings();
+		btnStartSearch.AddClass( 'pressed' );
+		$.DispatchEvent( 'PlaySoundEffect', 'mainmenu_press_GO', 'MOUSE' );
+
+		$.Schedule( 0.10, function()
 		{
-			_DisplayWorkshopModePopup();
-		}
-		else
-		{
-
-			                                                                                                                                                       
-
-
-			                                             
-			  
-			if ( m_gameModeSetting !== 'competitive' && GameModeFlags.DoesModeUseFlags( m_gameModeSetting ) && !m_gameModeFlags[ m_serverSetting + m_gameModeSetting ] )                                               
-			{
-				btnStartSearch.RemoveClass( 'pressed' );
-
-				var resumeSearchFnHandle = UiToolkitAPI.RegisterJSCallback( StartSearch );
-				_OnGameModeFlagsBtnClicked( resumeSearchFnHandle );
-
-				return;
-			}
-
-
-			let settings = ( LobbyAPI.IsSessionActive() && !_GetTournamentOpponent() ) ? LobbyAPI.GetSessionSettings() : null;
-			let stage = _GetTournamentStage();
-			                                                                                   
-			                                  
-			   	                                                
-			   	                                       
-			   	                                       
-			   	                                                              
-			    
-			   	            
-			    
-
-			LobbyAPI.StartMatchmaking( MyPersonaAPI.GetMyOfficialTournamentName(),
+			LobbyAPI.StartMatchmaking(
+				MyPersonaAPI.GetMyOfficialTournamentName(),
 				MyPersonaAPI.GetMyOfficialTeamName(),
-				_GetTournamentOpponent(),
-				stage
+				'',
+				_GetTournamentStage()
 			);
-		}
+		} );
 	}
 
 	function _Init()
@@ -793,6 +812,14 @@ var PlayMenu = ( function()
 		var revivalLegacyMapPicker = $( '#RevivalLegacyMapPicker' );
 		if ( revivalLegacyMapPicker )
 			revivalLegacyMapPicker.visible = false;
+		var revivalWorkshopSearch = $( '#WorkshopSearchBar' );
+		if ( revivalWorkshopSearch ) revivalWorkshopSearch.visible = false;
+		var revivalWorkshopVisit = $( '#WorkshopVisitButton' );
+		if ( revivalWorkshopVisit ) revivalWorkshopVisit.visible = false;
+		var revivalLegacySettings = $( '#RevivalLegacySettings' );
+		if ( revivalLegacySettings ) revivalLegacySettings.visible = false;
+		var revivalPoolTile = $( '#RevivalPoolTile' );
+		if ( revivalPoolTile ) revivalPoolTile.checked = true;
 
 		// Full-length Competitive is sv_game_mode_flags 0. The revival has no
 		// short-match/unranked selector, so always normalize stale sessions.
@@ -814,6 +841,12 @@ var PlayMenu = ( function()
 		var isHost = LobbyAPI.BIsHost();
 		var isSearching = _IsSearching();
 		var isEnabled = !isSearching && isHost ? true : false;
+		var revivalPoolTileState = $( '#RevivalPoolTile' );
+		if ( revivalPoolTileState )
+		{
+			revivalPoolTileState.checked = true;
+			revivalPoolTileState.enabled = isEnabled;
+		}
 
 		if ( m_isWorkshop )
 		{
@@ -1305,6 +1338,15 @@ var PlayMenu = ( function()
 	{
 		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
 		{
+			var legacyPicker = $( '#RevivalLegacyMapPicker' );
+			if ( legacyPicker ) legacyPicker.visible = false;
+			$( '#WorkshopSearchBar' ).visible = false;
+			$( '#WorkshopVisitButton' ).visible = false;
+			$( '#GameModeSelectionRadios' ).visible = true;
+			return;
+		}
+		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
+		{
 			var revivalLegacyMapPicker = $( '#RevivalLegacyMapPicker' );
 			if ( revivalLegacyMapPicker )
 				revivalLegacyMapPicker.visible = false;
@@ -1694,11 +1736,17 @@ var PlayMenu = ( function()
 
 	function _SaveMapSelectionToCustomPreset ( bSilent = false )
 	{
-		                                
+		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
+		{
+			var revivalMapGroup = _GetRevivalValidationMapGroup();
+			if ( revivalMapGroup )
+				GameInterfaceAPI.SetSettingString( 'ui_playsettings_custom_preset', revivalMapGroup );
+			return;
+		}
+
 		if ( inDirectChallenge() )
 			return;
-		
-		var selectedMaps = _GetSelectedMapsForServerTypeAndGameMode( m_serverSetting, m_gameModeSetting, true );
+				var selectedMaps = _GetSelectedMapsForServerTypeAndGameMode( m_serverSetting, m_gameModeSetting, true );
 		if ( selectedMaps === "" )
 		{
 			if ( !bSilent )
@@ -2815,7 +2863,7 @@ var PlayMenu = ( function()
 			// Stock Panorama only needs a valid mapgroup. The revival backend
 			// ignores this and chooses randomly from the laptop's installed pool.
 			selectedMaps = ( serverType === 'official' && gameMode === 'competitive' )
-				? 'mg_active'
+				? _GetRevivalValidationMapGroup()
 				: _GetSelectedMapsForServerTypeAndGameMode( serverType, gameMode );
 		}	
 
@@ -2851,7 +2899,7 @@ var PlayMenu = ( function()
 		                                                                                                                                
 		                                                                                                                                      
 		                                                                                       
-		if ( selectedMaps.startsWith( "random_" ) )
+		if ( selectedMaps && selectedMaps.startsWith( "random_" ) )
 		{
 			var arrMapGroups = _GetAvailableMapGroups( gameMode, false );
 			var idx = 1 + Math.floor( ( Math.random() * ( arrMapGroups.length - 1 ) ) );
@@ -3440,6 +3488,7 @@ var PlayMenu = ( function()
 		OnChooseClanKeyBtn			: _OnChooseClanKeyBtn,
 		OnPlayerNameChangedUpdate	: _OnPlayerNameChangedUpdate,
 		OnPrivateQueuesUpdate		: _OnPrivateQueuesUpdate,
+		OnRevivalPoolClicked		: _OnRevivalPoolClicked,
 	};
 
 } )();
