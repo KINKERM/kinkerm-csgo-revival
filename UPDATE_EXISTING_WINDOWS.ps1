@@ -67,7 +67,11 @@ if ((-not $updaterTracked) -and (Test-Path $updaterPath)) {
 # already pulled/reset before running this script while still having older
 # binaries. Persist the tree hash that was actually built instead.
 $targetGcTree = (& git -C $RevivalRepo rev-parse "origin/${Branch}:csgo_gc-patch").Trim()
-if (-not $targetGcTree) { throw "Could not resolve target csgo_gc-patch tree." }
+$targetHookPatch = (& git -C $RevivalRepo rev-parse "origin/${Branch}:tools/patch_steam_hook.py").Trim()
+if ((-not $targetGcTree) -or (-not $targetHookPatch)) {
+    throw "Could not resolve target GC patch inputs."
+}
+$targetGcTree = "$targetGcTree-$targetHookPatch"
 
 $buildStamp = Join-Path $CsgoGcSource "build\.revival_gc_patch_tree.txt"
 $lastBuiltGcTree = ""
@@ -95,7 +99,21 @@ $head = (& git -C $RevivalRepo rev-parse HEAD).Trim()
 Write-Host "    HEAD = $head"
 
 Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
+
+# Keep steam_hook.cpp from this pinned csgo_gc checkout. Newer upstream versions
+# use a different proxy/C++ layout and do not compile in this tree.
+& git -C $CsgoGcSource checkout -- "csgo_gc/steam_hook.cpp"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not restore the pinned csgo_gc steam_hook.cpp."
+}
+
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
+
+$steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
+& py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to patch the pinned steam_hook.cpp."
+}
 
 $clientExe = Join-Path $CsgoGcSource "build\launcher\Release\csgo.exe"
 $serverExe = Join-Path $CsgoGcSource "build\launcher\Release\srcds.exe"
