@@ -33,6 +33,7 @@ private:
     void MatchmakingPing(GCMessageRead &messageRead);
     void MatchmakingHello(GCMessageRead &messageRead);
     void PollMatchmakingBridge();
+    void SendMatchmakingConnectReserve();
     void ClientRequestNewMission(GCMessageRead &messageRead);
     void ClientRedeemMissionReward(GCMessageRead &messageRead);
     void SetItemPositions(GCMessageRead &messageRead);
@@ -79,4 +80,5 @@ private:
     uint32_t m_matchmakingDirectUdpPort{};
     std::string m_matchmakingServerAddress;
     std::string m_matchmakingMap;
+    bool m_matchmakingFinalReserveSent{};
 };
