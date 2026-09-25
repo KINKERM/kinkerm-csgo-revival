@@ -73,6 +73,7 @@ class MatchmakingCoordinator:
             "public_port": 27015,
             "last_seen": 0.0,
             "ready_match_id": 0,
+            "reserved_account_ids": [],
             "maps": [],
         }
         self._assignment: dict[str, Any] | None = None
@@ -129,7 +130,19 @@ class MatchmakingCoordinator:
         # booting. Exposing the internal "allocating" phase makes legacy CS:GO
         # display "Matchmaking unavailable, retrying..." even though the laptop
         # is online and actively starting the server.
-        client_state = "searching" if match.state == "allocating" else match.state
+        acknowledged = {
+            int(x) for x in self._server.get("reserved_account_ids", [])
+            if str(x).isdigit()
+        }
+        native_ready_for_player = (
+            match.reservation_id > 0
+            and player.account_id in acknowledged
+        )
+        client_state = (
+            "searching"
+            if match.state == "allocating" or not native_ready_for_player
+            else match.state
+        )
         state: dict[str, Any] = {
             "state": client_state,
             "match_id": match.match_id,
@@ -140,7 +153,7 @@ class MatchmakingCoordinator:
             "server_available": len(match.players) < MAX_HUMANS,
             "game_type": 8,
         }
-        if match.state == "allocating":
+        if client_state == "searching":
             ids = self._match_account_ids(match)
             state.update({
                 "waiting_account_ids": ids,
@@ -224,6 +237,7 @@ class MatchmakingCoordinator:
         map_name = self._choose_map_locked()
         match = Match(match_id, 0, players, map_name)
         self._matches[match_id] = match
+        self._server["reserved_account_ids"] = []
 
         self._assignment = {
             "match_id": match_id,
@@ -310,6 +324,13 @@ class MatchmakingCoordinator:
             if isinstance(maps, list):
                 self._server["maps"] = [
                     str(m) for m in maps if str(m).strip()
+                ]
+
+            reserved_accounts = body.get("reserved_account_ids")
+            if isinstance(reserved_accounts, list):
+                self._server["reserved_account_ids"] = [
+                    int(x) for x in reserved_accounts
+                    if str(x).isdigit() and int(x) > 0
                 ]
 
             started_match_id = int(body.get("started_match_id") or 0)
@@ -406,6 +427,7 @@ class MatchmakingCoordinator:
             ):
                 self._assignment = None
             self._server["ready_match_id"] = 0
+            self._server["reserved_account_ids"] = []
             self._try_form_locked()
             return steamids
 
