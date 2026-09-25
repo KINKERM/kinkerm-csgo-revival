@@ -13,6 +13,12 @@
 #include <string>
 #include <unordered_map>
 
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 // yuck!! needed for CSteamID (construct full id from account id)
 #include "steam/steamclientpublic.h"
 
@@ -158,6 +164,31 @@ void ServerGC::HandleClientSOCacheUnsubscribe(uint64_t steamId)
 
 void ServerGC::HandleClientLocalInventoryRequest(uint64_t steamId)
 {
+    // This event is posted directly from ISteamGameServer::BeginAuthSession.
+    // Publish an authoritative local presence marker before touching inventory
+    // data so the Python agent can never time out a player Source already
+    // authenticated, even if log tailing/RCON status formatting changes.
+    const uint32_t accountId = static_cast<uint32_t>(steamId & 0xFFFFFFFFull);
+    const std::string authDir = "csgo_gc/server_auth";
+#ifdef _WIN32
+    _mkdir(authDir.c_str());
+#else
+    mkdir(authDir.c_str(), 0755);
+#endif
+    const std::string authPath =
+        authDir + "/" + std::to_string(accountId) + ".txt";
+    {
+        std::ofstream auth(authPath, std::ios::binary | std::ios::trunc);
+        if (auth.is_open())
+        {
+            auth << steamId << "\n";
+            auth.flush();
+            Platform::Print(
+                "REVIVAL_SERVER_PLAYER_AUTH_V1 account=%u steamid=%llu\n",
+                accountId, static_cast<unsigned long long>(steamId));
+        }
+    }
+
     const std::string path =
         "csgo_gc/server_players/" + std::to_string(steamId) + ".txt";
 
