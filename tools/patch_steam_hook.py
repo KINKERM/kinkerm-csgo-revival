@@ -9,6 +9,7 @@ MARKER = "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1"
 SERVER_ID_MARKER = "REVIVAL_SERVER_ID_EXPORT_V1"
 QUEUE_RESERVE_MARKER = "REVIVAL_ENGINE_QUEUE_RESERVE_V1"
 PLATFORM_INTERFACE_MARKER = "REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1"
+LOCAL_SOCACHE_AUTH_MARKER = "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1"
 
 
 def main() -> int:
@@ -253,6 +254,22 @@ static bool RevivalDispatchReserveServerForQueuedGame(
 '''
         patched = patched[:m.start()] + server_case_new + patched[m.end():]
 
+    if LOCAL_SOCACHE_AUTH_MARKER not in patched:
+        auth_anchor = (
+            "            s_serverGC->m_networking.ClientConnected("
+            "steamID.ConvertToUint64(), pAuthTicket, cbAuthTicket);"
+        )
+        if auth_anchor not in patched:
+            print("[patch_steam_hook] ERROR: BeginAuthSession ClientConnected anchor missing")
+            return 11
+        auth_new = auth_anchor + (
+            "\n            s_serverGC->m_gc.PostToGC("
+            "GCEvent::ClientLocalInventoryRequest, steamID.ConvertToUint64(), nullptr, 0);"
+            "\n            Platform::Print(\"REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1 player=%llu\\\\n\", "
+            "steamID.ConvertToUint64());"
+        )
+        patched = patched.replace(auth_anchor, auth_new, 1)
+
     path.write_text(patched, encoding="utf-8", newline="\n")
 
     verify = path.read_text(encoding="utf-8")
@@ -261,6 +278,7 @@ static bool RevivalDispatchReserveServerForQueuedGame(
     expected_offline_log = f'Platform::Print("{MARKER} active\\n");'
     if (MARKER not in verify or SERVER_ID_MARKER not in verify
             or QUEUE_RESERVE_MARKER not in verify
+            or LOCAL_SOCACHE_AUTH_MARKER not in verify
             or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
             or PLATFORM_INTERFACE_MARKER not in pc_verify):
