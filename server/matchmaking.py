@@ -71,6 +71,7 @@ class MatchmakingCoordinator:
             "agent_id": "",
             "public_host": "",
             "public_port": 27015,
+            "server_version": 0,
             "last_seen": 0.0,
             "ready_match_id": 0,
             "reserved_account_ids": [],
@@ -149,6 +150,7 @@ class MatchmakingCoordinator:
             "reservation_id": match.reservation_id,
             "map": match.map_name,
             "account_ids": self._match_account_ids(match),
+            "server_version": int(self._server.get("server_version") or 0),
             "server_online": self._server_online_locked(),
             "server_available": len(match.players) < MAX_HUMANS,
             "game_type": 8,
@@ -319,6 +321,7 @@ class MatchmakingCoordinator:
             )
             self._server["public_host"] = str(body.get("public_host") or "")
             self._server["public_port"] = int(body.get("public_port") or 27015)
+            self._server["server_version"] = int(body.get("server_version") or 0)
             self._server["last_seen"] = time.time()
             maps = body.get("maps")
             if isinstance(maps, list):
