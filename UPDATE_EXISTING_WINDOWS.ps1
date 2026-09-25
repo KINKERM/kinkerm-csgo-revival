@@ -166,6 +166,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V3")) {
         throw "Built csgo_gc.dll does not contain the current client cookie-reservation fix."
     }
+    if (-not $gcDllText.Contains("REVIVAL_CLIENT_DIRECT_UDP_V1")) {
+        throw "Built csgo_gc.dll does not contain the direct-UDP matchmaking reserve fix."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
@@ -268,6 +271,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_CLIENT_COOKIE_RESERVE_V3")) {
         throw "Installed csgo_gc.dll is missing the current client cookie-reservation fix."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_CLIENT_DIRECT_UDP_V1")) {
+        throw "Installed csgo_gc.dll is missing the direct-UDP matchmaking reserve fix."
     }
 
     Write-Host "    Installed runtime hashes match freshly built outputs." -ForegroundColor Green
