@@ -102,19 +102,26 @@ Write-Host "    HEAD = $head"
 Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 
 # Keep steam_hook.cpp from the exact csgo_gc revision this revival targets.
-# Do NOT restore from the local checkout HEAD: users may have moved csgo_gc_clean
-# to a newer upstream revision whose Steam proxy layout is incompatible.
-& git -C $CsgoGcSource cat-file -e "$PinnedCsgoGcCommit^{commit}" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "    Fetching pinned csgo_gc commit $PinnedCsgoGcCommit..." -ForegroundColor Yellow
-    & git -C $CsgoGcSource fetch "https://github.com/mikkokko/csgo_gc.git" $PinnedCsgoGcCommit
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not fetch pinned csgo_gc commit $PinnedCsgoGcCommit."
-    }
+# Do NOT probe the local object database first: Windows PowerShell can promote
+# git's stderr from a missing-object probe to a terminating NativeCommandError
+# before our fallback logic runs. Fetch canonical master first so the pinned
+# commit is guaranteed to be present, then restore the one compatible file.
+Write-Host "    Syncing canonical pinned csgo_gc history..." -ForegroundColor DarkGray
+$oldErrorPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& git -C $CsgoGcSource fetch --no-tags "https://github.com/mikkokko/csgo_gc.git" master
+$fetchExit = $LASTEXITCODE
+$ErrorActionPreference = $oldErrorPreference
+if ($fetchExit -ne 0) {
+    throw "Could not fetch canonical csgo_gc master history."
 }
 
+$oldErrorPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & git -C $CsgoGcSource checkout $PinnedCsgoGcCommit -- "csgo_gc/steam_hook.cpp"
-if ($LASTEXITCODE -ne 0) {
+$checkoutExit = $LASTEXITCODE
+$ErrorActionPreference = $oldErrorPreference
+if ($checkoutExit -ne 0) {
     throw "Could not restore steam_hook.cpp from pinned csgo_gc commit $PinnedCsgoGcCommit."
 }
 
