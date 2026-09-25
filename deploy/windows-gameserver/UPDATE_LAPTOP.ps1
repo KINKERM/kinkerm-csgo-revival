@@ -122,7 +122,10 @@ foreach ($marker in @(
     "REVIVAL_SERVER_ID_EXPORT_V1",
     "REVIVAL_CLIENT_COOKIE_RESERVE_V3",
     "REVIVAL_CLIENT_DIRECT_UDP_V1",
-    "REVIVAL_CLIENT_READY_FLOW_V1"
+    "REVIVAL_CLIENT_READY_FLOW_V1",
+    "REVIVAL_CLIENT_ACCEPT_WATCH_V1",
+    "REVIVAL_SERVER_ACCEPT_ROSTER_V1",
+    "REVIVAL_ENGINE_QUEUE_RESERVE_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
