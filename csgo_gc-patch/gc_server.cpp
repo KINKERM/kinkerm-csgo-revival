@@ -23,7 +23,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -361,6 +361,26 @@ uint64_t ReservationNumber(
     const unsigned long long value = std::strtoull(it->second.c_str(), &end, 10);
     return end && *end == '\0' ? static_cast<uint64_t>(value) : fallback;
 }
+
+std::string BuildQueuedReservationPayload(
+    uint64_t cookie, uint64_t matchId,
+    const CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve &reserve)
+{
+    char header[96];
+    snprintf(header, sizeof(header), "Q%llx,%llx,1:",
+        static_cast<unsigned long long>(cookie),
+        static_cast<unsigned long long>(matchId ? matchId : cookie));
+
+    std::string payload = header;
+    char token[24];
+    for (int i = 0; i < reserve.account_ids_size(); ++i)
+    {
+        // ReserveServerForQueuedGame parses the roster as hexadecimal AccountIDs.
+        snprintf(token, sizeof(token), "[%x]", reserve.account_ids(i));
+        payload += token;
+    }
+    return payload;
+}
 } // namespace
 
 void ServerGC::SendMatchmakingReservation()
@@ -380,23 +400,64 @@ void ServerGC::SendMatchmakingReservation()
         static_cast<uint32_t>(ReservationNumber(kv, "server_version", 0)));
 
     auto accounts = kv.find("account_ids");
-
-    // The initial 9105 creates the native reservation. If the laptop agent
-    // later expands account_ids for a drop-in human, resend 9105 with the same
-    // match so Source refreshes sv_mmqueue_reservation's allowed account list.
-    // Do not spam the game server when the file has not changed.
     const std::string accountText =
         accounts != kv.end() ? accounts->second : std::string{};
+
+    if (accounts != kv.end())
+    {
+        std::istringstream stream(accounts->second);
+        std::string part;
+        while (std::getline(stream, part, ','))
+        {
+            char *parseEnd = nullptr;
+            const unsigned long value = std::strtoul(part.c_str(), &parseEnd, 10);
+            if (parseEnd && *parseEnd == '\0' && value && value <= UINT32_MAX)
+                reserve.add_account_ids(static_cast<uint32_t>(value));
+        }
+    }
+
+    if (!reserve.account_ids_size())
+    {
+        Platform::Print("matchmaking server: reservation %llu has no accounts; refusing reservation\n",
+            matchId);
+        return;
+    }
+
+    // The 9105/9106 exchange alone does NOT arm the public Legacy engine's
+    // queued-reservation state. The stock client enters "Confirming match" and
+    // sends A2S_RESERVE_CHECK (0x21); only ReserveServerForQueuedGame with a Q
+    // roster makes server.dll answer 0x25 with the real ready-up stages.
+    //
+    // This HostEvent is drained from SteamGameServer_RunCallbacks on the main
+    // thread. Refresh every ~8 seconds (HandleIdle calls this about every 2s)
+    // so sv_mmqueue_reservation_timeout cannot expire while the Accept UI is up.
+    const std::string queuePayload =
+        BuildQueuedReservationPayload(GameServerCookieId, matchId, reserve);
+    const bool queueChanged = queuePayload != m_lastQueueReservationPayload;
+    if (queueChanged || ++m_queueReservationRefreshTicks >= 4)
+    {
+        PostToHost(HostEvent::ReserveServerForQueuedGame, matchId,
+            queuePayload.data(), static_cast<uint32_t>(queuePayload.size()));
+        m_lastQueueReservationPayload = queuePayload;
+        m_queueReservationRefreshTicks = 0;
+        Platform::Print(
+            queueChanged
+                ? "matchmaking server: queued engine Q reservation match=%llu roster=%d payload=%s\n"
+                : "matchmaking server: refreshing engine Q reservation match=%llu roster=%d payload=%s\n",
+            matchId, reserve.account_ids_size(), queuePayload.c_str());
+    }
+
+    // The native GC request is still useful for Source's normal bookkeeping,
+    // account filtering and match-end messages. Resend if the membership or
+    // request metadata changed; otherwise stop retrying after a valid 9106.
     const std::string signature =
         std::to_string(matchId) + "|" +
         std::to_string(ReservationNumber(kv, "game_type", 8)) + "|" +
         std::to_string(ReservationNumber(kv, "server_version", 0)) + "|" +
         accountText;
+
     if (m_sentReservation && signature == m_lastReservationSignature)
     {
-        // Stop retrying only after our own 9106 handler has persisted a real
-        // reservation id for this exact match. Until then, retrying is required
-        // because early 9105 messages can be consumed before server.dll is ready.
         std::ifstream response("csgo_gc/server_reservation_response.txt", std::ios::binary);
         uint64_t responseMatch = 0;
         uint64_t responseReservation = 0;
@@ -408,9 +469,9 @@ void ServerGC::SendMatchmakingReservation()
                 continue;
             const std::string key = line.substr(0, eq);
             const std::string value = line.substr(eq + 1);
-            char *end = nullptr;
-            const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
-            if (!end || *end != '\0')
+            char *parseEnd = nullptr;
+            const unsigned long long parsed = std::strtoull(value.c_str(), &parseEnd, 10);
+            if (!parseEnd || *parseEnd != '\0')
                 continue;
             if (key == "match_id")
                 responseMatch = static_cast<uint64_t>(parsed);
@@ -420,26 +481,6 @@ void ServerGC::SendMatchmakingReservation()
 
         if (responseMatch == matchId && responseReservation)
             return;
-    }
-
-    if (accounts != kv.end())
-    {
-        std::istringstream stream(accounts->second);
-        std::string part;
-        while (std::getline(stream, part, ','))
-        {
-            char *end = nullptr;
-            const unsigned long value = std::strtoul(part.c_str(), &end, 10);
-            if (end && *end == '\0' && value && value <= UINT32_MAX)
-                reserve.add_account_ids(static_cast<uint32_t>(value));
-        }
-    }
-
-    if (!reserve.account_ids_size())
-    {
-        Platform::Print("matchmaking server: reservation %llu has no accounts; refusing 9105\n",
-            matchId);
-        return;
     }
 
     GCMessageWrite write{ RevivalMsgMatchmakingGC2ServerReserve, reserve };
