@@ -157,7 +157,7 @@ Write-Host "    Verified current matchmaking DLL markers on laptop." -Foreground
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_REWARDS_V18")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_COMP_RUNTIME_V17"
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_REWARDS_V18"
 }
 Write-Host "    Verified current Competitive/match-result laptop agent." -ForegroundColor Green
 
