@@ -478,12 +478,35 @@ class MatchmakingCoordinator:
                         self._queue.append(player)
                         self._states[player.steamid] = {"state": "searching"}
             else:
+                ct_score = int(result.get("ct_score") or 0)
+                t_score = int(result.get("t_score") or 0)
+                teams_raw = result.get("player_teams")
+                teams = teams_raw if isinstance(teams_raw, dict) else {}
                 for player in match.players:
+                    team = str(teams.get(str(player.account_id)) or "").upper()
+                    tied = ct_score == t_score
+                    won = (
+                        (team == "CT" and ct_score > t_score)
+                        or (team == "TERRORIST" and t_score > ct_score)
+                    )
+                    if team == "CT":
+                        rounds_won = ct_score
+                    elif team == "TERRORIST":
+                        rounds_won = t_score
+                    else:
+                        rounds_won = max(ct_score, t_score)
+
+                    player_result = dict(result)
+                    player_result["player_team"] = team
+                    player_result["won"] = bool(won)
+                    player_result["tied"] = bool(tied)
+                    player_result["rounds_won"] = int(rounds_won)
+
                     self._states[player.steamid] = {
                         "state": "idle",
                         "last_match_id": match.match_id,
                         "last_map": match.map_name,
-                        "result": result,
+                        "result": player_result,
                     }
 
             if (
