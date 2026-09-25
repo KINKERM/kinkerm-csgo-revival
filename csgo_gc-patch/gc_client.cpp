@@ -140,6 +140,16 @@ void RevivalInspectReserveCheckResponse(
     const uint16_t expectedPort = g_revAcceptPort.load(std::memory_order_relaxed);
     const uint32_t actualIp = ntohl(fromIn->sin_addr.s_addr);
     const uint16_t actualPort = ntohs(fromIn->sin_port);
+
+    Platform::Print(
+        "REVIVAL_CLIENT_ACCEPT_WATCH_V1 raw 0x25 from=%u.%u.%u.%u:%u expected=%u.%u.%u.%u:%u\n",
+        (actualIp >> 24) & 0xff, (actualIp >> 16) & 0xff,
+        (actualIp >> 8) & 0xff, actualIp & 0xff,
+        static_cast<unsigned>(actualPort),
+        (expectedIp >> 24) & 0xff, (expectedIp >> 16) & 0xff,
+        (expectedIp >> 8) & 0xff, expectedIp & 0xff,
+        static_cast<unsigned>(expectedPort));
+
     if ((expectedIp && actualIp != expectedIp)
         || (expectedPort && actualPort != expectedPort))
         return;
@@ -746,7 +756,7 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
-    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
+    Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
     CMsgClientHello hello;
     if (!messageRead.ReadProtobuf(hello))
