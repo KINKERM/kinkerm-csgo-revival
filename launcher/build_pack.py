@@ -144,6 +144,7 @@ def main() -> None:
             b"REVIVAL_GUARANTEED_MATCH_DROPS_V1",
             b"REVIVAL_SYNTHETIC_MATCH_END_V1",
             b"REVIVAL_NATIVE_DROP_REVEAL_V1",
+            b"REVIVAL_NATIVE_DROP_RETRY_V2",
             b"REVIVAL_NATIVE_DROP_BUNDLE_V1",
             b"REVIVAL_SERVER_DROP_IMPORT_V1",
         ):
