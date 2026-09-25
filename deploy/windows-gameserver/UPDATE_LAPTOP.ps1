@@ -150,7 +150,7 @@ Write-Host "    Verified current matchmaking DLL markers on laptop." -Foreground
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_ACCEPT_FLOW_V6")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_ACCEPT_FLOW_V5"
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_ACCEPT_FLOW_V6"
 }
 Write-Host "    Verified current Accept-flow laptop agent." -ForegroundColor Green
 
