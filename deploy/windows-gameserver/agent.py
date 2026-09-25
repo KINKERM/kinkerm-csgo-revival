@@ -39,6 +39,12 @@ MAP_POOL = (
     "cs_office", "cs_agency", "cs_italy", "cs_insertion", "cs_insertion2",
 )
 
+# Same hardcoded gscookieid used by the injected GC in CMsgCStrike15Welcome.
+# Public/community CS:GO DS builds can report an empty 9106 after welcome and
+# never turn our 9105 into a Valve-style queued reservation. Source's built-in
+# R<pointer> fallback and the client GC both use this exact cookie.
+REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
+
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
     re.compile(r'Game Over:', re.I),
@@ -342,6 +348,8 @@ class ServerSlot:
         self.expected_account_ids: set[int] = set()
         self.connected_account_ids: set[int] = set()
         self.ready_at = 0.0
+        self.source_match_started_at = 0.0
+        self.using_cookie_fallback = False
         self.started = False
         self._lock = threading.RLock()
         self._ended = False
@@ -365,13 +373,14 @@ class ServerSlot:
                 added = new_accounts.difference(self.expected_account_ids)
                 self.expected_account_ids.update(new_accounts)
                 if added:
-                    # Keep the request file current. If ServerGC has not read
-                    # it yet, early drop-ins become part of the initial native
-                    # reservation. Never delete a 9106 response for a live
-                    # server while doing this.
+                    # Keep the request file current for builds that do support
+                    # native 9105 refreshes. In cookie-fallback mode the HTTP
+                    # coordinator is the membership authority.
                     write_native_reservation(
                         self.cfg["csgo_dir"], assignment, clear_response=False
                     )
+                    if self.using_cookie_fallback:
+                        self.reserved_account_ids.update(added)
                     print(
                         "[agent] drop-in player(s) added to live match "
                         f"{match_id}: {', '.join(str(x) for x in sorted(added))}"
@@ -446,16 +455,19 @@ class ServerSlot:
             }
             self.connected_account_ids.clear()
             self.ready_at = 0.0
+            self.source_match_started_at = 0.0
+            self.using_cookie_fallback = False
             self.started = False
             self._ended = False
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
             threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
 
     def _mark_ready_after_boot(self) -> None:
-        # Do not advertise the server until the injected ServerGC has sent native
-        # 9105 to srcds and captured srcds' native 9106 reservation response.
-        # This guarantees clients receive the exact reservation id the game
-        # server accepted instead of a coordinator-invented cookie.
+        # Prefer a populated native 9106 when a server build provides one.
+        # The public/community CS:GO DS reports an empty 9106 after GC welcome
+        # and does not create a Valve-style queued reservation from our 9105.
+        # Once Source has reached Match_Start, use the exact gscookieid already
+        # installed into the engine by CMsgCStrike15Welcome.
         deadline = time.monotonic() + 80.0
         while time.monotonic() < deadline:
             time.sleep(0.5)
@@ -463,14 +475,13 @@ class ServerSlot:
                 if not self.alive() or not self.match_id:
                     return
                 match_id = self.match_id
+                source_started_at = self.source_match_started_at
 
             response = read_native_reservation_response(self.cfg["csgo_dir"])
             if (
                 int(response.get("match_id") or 0) == match_id
                 and int(response.get("reservation_id") or 0) > 0
             ):
-                # Give Source a little extra time after accepting the reservation
-                # to finish its map/network startup on slow hardware.
                 time.sleep(1.5)
                 with self._lock:
                     if not self.alive() or self.match_id != match_id:
@@ -482,6 +493,7 @@ class ServerSlot:
                     }
                     self.ready_match_id = match_id
                     self.ready_at = time.monotonic()
+                    self.using_cookie_fallback = False
                     print(
                         f"[agent] native 9106 accepted match {match_id}; "
                         f"reservation={self.reservation_id}; waiting for "
@@ -489,17 +501,37 @@ class ServerSlot:
                     )
                 return
 
+            if source_started_at and time.monotonic() - source_started_at >= 2.5:
+                with self._lock:
+                    if not self.alive() or self.match_id != match_id:
+                        return
+                    self.reservation_id = REVIVAL_GAME_SERVER_COOKIE_ID
+                    self.reserved_account_ids = set(self.expected_account_ids)
+                    self.ready_match_id = match_id
+                    self.ready_at = time.monotonic()
+                    self.using_cookie_fallback = True
+                    print(
+                        f"[agent] community DS cookie reservation ready for match {match_id}; "
+                        f"reservation={self.reservation_id}; accounts="
+                        + ",".join(str(x) for x in sorted(self.reserved_account_ids))
+                    )
+                return
+
         if self.alive():
-            print("[agent] srcds is alive but native 9106 never arrived; "
-                  "keeping the process up for diagnostics until coordinator timeout")
+            print("[agent] srcds never reached a usable matchmaking-ready state")
         else:
-            print("[agent] srcds exited before native 9106 reservation response")
+            print("[agent] srcds exited before matchmaking became ready")
 
     def _handle_server_log_line(self, line: str) -> None:
         line = line.rstrip()
         if not line:
             return
         print("[srcds-log] " + line)
+
+        if 'triggered "Match_Start"' in line:
+            with self._lock:
+                if not self.source_match_started_at:
+                    self.source_match_started_at = time.monotonic()
 
         m = TEAM_SCORE_RE.search(line)
         if m:
@@ -650,6 +682,7 @@ class ServerSlot:
             self.reserved_account_ids = acknowledged
             self.reservation_id = new_reservation
             self.ready_match_id = match_id
+            self.using_cookie_fallback = False
             if new_reservation != old_reservation or membership_changed:
                 print(
                     f"[agent] native reservation refreshed for match {match_id}: "
@@ -712,6 +745,8 @@ class ServerSlot:
         self.reserved_account_ids.clear()
         self.match_id = 0
         self.ready_at = 0.0
+        self.source_match_started_at = 0.0
+        self.using_cookie_fallback = False
         self.started = False
         self.expected_account_ids.clear()
         self.connected_account_ids.clear()
