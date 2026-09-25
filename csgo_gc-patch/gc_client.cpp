@@ -6,11 +6,15 @@
 #include <fstream>
 
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <winsock2.h>
 #include <windows.h>
 #include <funchook.h>
