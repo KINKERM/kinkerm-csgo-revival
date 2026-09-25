@@ -609,7 +609,7 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
             if (m_inventory.CreateRareCollectionBonusMatchDrop(
-                CobblestoneCollection, 100, create, drop))
+                CobblestoneCollection, 20, create, drop))
             {
                 SendMessageToGame(true, k_ESOMsg_Create, create);
                 SendMessageToGame(false,
@@ -1122,6 +1122,20 @@ void ClientGC::ProcessBridgeMatchEnd(
     const uint64_t matchId = BridgeU64(state, "last_match_id", 0);
     if (!matchId || matchId == m_lastBridgeRewardedMatch)
         return;
+
+    // If the real server 9136 already arrived through either Steam P2P or the
+    // direct reward relay, it already applied XP/rank/drops. Mark this backend
+    // result consumed without issuing a second reward package.
+    if (m_lastMatchmakingReservation
+        && m_lastRewardedReservation == m_lastMatchmakingReservation)
+    {
+        m_lastBridgeRewardedMatch = matchId;
+        Platform::Print(
+            "REVIVAL_MATCH_END_BRIDGE_V1 native 9136 already processed; "
+            "fallback skipped for match=%llu\n",
+            matchId);
+        return;
+    }
 
     auto reasonIt = state.find("result_reason");
     if (reasonIt == state.end() || reasonIt->second != "game_over")
