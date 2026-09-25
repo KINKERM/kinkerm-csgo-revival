@@ -30,8 +30,8 @@ frequency and gives a weak CPU far less frametime headroom. Stable 64 tick is
 better than an unstable 128-tick server.
 
 There is no honest way to guarantee perfect server frametime before testing the
-specific Celeron and its thermals. This setup minimizes the load: exactly one
-srcds process, no bots, ABOVE_NORMAL process priority, no extra match instances.
+specific Celeron and its thermals. This setup minimizes the load: exactly one srcds process, bots only for empty
+human slots, ABOVE_NORMAL process priority, no extra match instances.
 
 WHAT MUST ALREADY EXIST
 -----------------------
@@ -54,7 +54,7 @@ WHAT MUST ALREADY EXIST
        build\launcher\Release\srcds.exe
            -> <laptop csgo_dir>\srcds.exe
        build\csgo_gc\Release\csgo_gc.dll
-           -> <laptop csgo_dir>\csgo_gc\csgo_gc.dll
+           -> <laptop csgo_dir>\csgo_gc.dll
 
    Also keep the revival GC data beside the DLL, especially config.txt and the
    schema files your normal revival pack already installs.
@@ -161,8 +161,8 @@ playit_exe:
     Optional. Leave "" if you prefer to start playit yourself.
 
 accept_timeout_seconds:
-    How long the match waits for all ten players after the real srcds
-    reservation has been accepted. Default 90.
+    How long the freshly-created server waits for its FIRST human after the
+    real srcds reservation has been accepted. Default 90.
 
 post_match_grace_seconds:
     Keep 25. This leaves srcds alive after Game_Over so final GC packets,
@@ -219,7 +219,8 @@ WHAT HAPPENS WHEN PLAYERS QUEUE
 IMPORTANT CONSOLE LINES
 -----------------------
 On the LAPTOP srcds console, a healthy reservation should include:
-    matchmaking server: sent native 9105 match=... accounts=10 ...
+    matchmaking server: sent native 9105 match=... accounts=1 ...
+    matchmaking server: refreshed native 9105 match=... accounts=2 ...
     matchmaking server: native 9106 accepted match=... reservation=... map=...
 
 In the LAPTOP agent console:
