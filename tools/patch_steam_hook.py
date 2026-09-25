@@ -402,6 +402,7 @@ static RevivalRewardMatchEndDropsFn s_revOriginalRewardMatchEndDrops = nullptr;
 static RevivalRecordPlayerItemDropFn s_revRecordPlayerItemDrop = nullptr;
 static void *s_revGameRules = nullptr;
 static bool s_revNativeDropRevealInstalled = false;
+static bool s_revNativeDropRevealUnsupported = false;
 
 static void __fastcall Hk_RevivalRewardMatchEndDrops(
     void *gameRules, void *, bool aborted)
@@ -427,6 +428,8 @@ static bool RevivalInstallNativeDropRevealHooks()
 {
     if (s_revNativeDropRevealInstalled)
         return true;
+    if (s_revNativeDropRevealUnsupported)
+        return false;
 
     static uint32_t retryCount = 0;
 
@@ -478,6 +481,7 @@ static bool RevivalInstallNativeDropRevealHooks()
             "REVIVAL_NATIVE_DROP_REVEAL_V1 funchook_prepare rejected reward target: %s; keeping reward bridge alive\n",
             funchook_error_message(nativeHook));
         funchook_destroy(nativeHook);
+        s_revNativeDropRevealUnsupported = true;
         return false;
     }
 
@@ -487,6 +491,7 @@ static bool RevivalInstallNativeDropRevealHooks()
         Platform::Print(
             "REVIVAL_NATIVE_DROP_REVEAL_V1 funchook_install failed: %s; keeping reward bridge alive\n",
             funchook_error_message(nativeHook));
+        s_revNativeDropRevealUnsupported = true;
         return false;
     }
 
