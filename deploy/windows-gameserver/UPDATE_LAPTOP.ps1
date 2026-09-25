@@ -142,7 +142,8 @@ foreach ($marker in @(
     "REVIVAL_SERVER_ACCEPT_ROSTER_V1",
     "REVIVAL_ENGINE_QUEUE_RESERVE_V1",
     "REVIVAL_SERVER_LOCAL_SOCACHE_V1",
-    "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1"
+    "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1",
+    "REVIVAL_MATCH_END_BRIDGE_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
@@ -151,10 +152,10 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_SOCACHE_V9")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_SOCACHE_V9"
+if (-not $agentText.Contains("REVIVAL_AGENT_MATCH_RESULT_V10")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_MATCH_RESULT_V10"
 }
-Write-Host "    Verified current Accept-flow laptop agent." -ForegroundColor Green
+Write-Host "    Verified current Competitive/match-result laptop agent." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
