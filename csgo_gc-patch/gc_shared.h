@@ -10,6 +10,9 @@ enum class HostEvent
     // srcds only: buffer is a NUL-free IVEngineServer::ReserveServerForQueuedGame payload.
     // steam_hook drains this on the engine/main callback thread.
     ReserveServerForQueuedGame,
+    // srcds only: serialized CEconItemPreviewDataBlock; steam_hook records it
+    // into CCSGameRules so the stock end-match scoreboard reveal owns the UI.
+    RecordPlayerItemDrop,
 };
 
 enum class GCEvent
