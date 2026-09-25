@@ -34,6 +34,8 @@ var PlayMenu = ( function()
 	                     
 	var m_challengeKey = '';
 	var m_revivalPendingStart = false;
+	var m_revivalValidationMapGroup = '';
+	var k_revivalPoolMapGroup = 'mg_revival_pool';
 	var m_popupChallengeKeyEntryValidate = null;
 
 	var k_workshopModes = {
@@ -62,32 +64,9 @@ var PlayMenu = ( function()
 
 	function _GetRevivalValidationMapGroup()
 	{
-		var cfg = m_gameModeConfigs[ 'competitive' ];
-		if ( cfg && cfg.mapgroupsMP )
-		{
-			var groups = Object.keys( cfg.mapgroupsMP );
-			if ( groups.length > 0 )
-				return groups[ 0 ];
-		}
-
-		var fallback = _GetAvailableMapGroups( 'competitive', true );
-		return fallback.length > 0 ? fallback[ 0 ] : '';
+		return m_revivalValidationMapGroup;
 	}
 
-	function _OnRevivalPoolClicked()
-	{
-		var tile = $( '#RevivalPoolTile' );
-		if ( tile )
-			tile.checked = true;
-
-		m_serverSetting = 'official';
-		m_gameModeSetting = 'competitive';
-		m_isWorkshop = false;
-		m_singleSkirmishMapGroup = null;
-		m_serverPrimeSetting = 1;
-		_setAndSaveGameModeFlags( 0 );
-		_ApplySessionSettings();
-	}
 	function _StartRevivalMatchmakingNow()
 	{
 		if ( !m_revivalPendingStart )
@@ -125,9 +104,6 @@ var PlayMenu = ( function()
 			);
 			return;
 		}
-
-		var tile = $( '#RevivalPoolTile' );
-		if ( tile ) tile.checked = true;
 
 		GameInterfaceAPI.SetSettingString(
 			'ui_playsettings_maps_official_competitive',
@@ -199,8 +175,35 @@ var PlayMenu = ( function()
 			}
 		};
 
+		var competitiveCfg = m_gameModeConfigs[ 'competitive' ];
+		if ( competitiveCfg && competitiveCfg.mapgroupsMP )
+		{
+			var stockCompetitiveGroups = Object.keys( competitiveCfg.mapgroupsMP );
+			if ( stockCompetitiveGroups.length > 0 )
+				m_revivalValidationMapGroup = stockCompetitiveGroups[ 0 ];
+		}
+
 		GetMGDetails = function( mg )
 		{
+			if ( mg === k_revivalPoolMapGroup )
+			{
+				return {
+					nameID: 'Revival Maps',
+					grouptype: '',
+					maps: {
+						de_dust2: 1,
+						de_mirage: 1,
+						de_inferno: 1,
+						de_nuke: 1,
+						de_overpass: 1,
+						de_vertigo: 1,
+						de_train: 1,
+						de_cache: 1,
+						de_cbble: 1,
+						de_ancient: 1
+					}
+				};
+			}
 			return cfg.mapgroups[ mg ];
 		};
 
@@ -840,10 +843,6 @@ var PlayMenu = ( function()
 		if ( revivalWorkshopSearch ) revivalWorkshopSearch.visible = false;
 		var revivalWorkshopVisit = $( '#WorkshopVisitButton' );
 		if ( revivalWorkshopVisit ) revivalWorkshopVisit.visible = false;
-		var revivalLegacySettings = $( '#RevivalLegacySettings' );
-		if ( revivalLegacySettings ) revivalLegacySettings.visible = false;
-		var revivalPoolTile = $( '#RevivalPoolTile' );
-		if ( revivalPoolTile ) revivalPoolTile.checked = true;
 
 		// Full-length Competitive is sv_game_mode_flags 0. The revival has no
 		// short-match/unranked selector, so always normalize stale sessions.
@@ -865,12 +864,6 @@ var PlayMenu = ( function()
 		var isHost = LobbyAPI.BIsHost();
 		var isSearching = _IsSearching();
 		var isEnabled = !isSearching && isHost ? true : false;
-		var revivalPoolTileState = $( '#RevivalPoolTile' );
-		if ( revivalPoolTileState )
-		{
-			revivalPoolTileState.checked = true;
-			revivalPoolTileState.enabled = isEnabled;
-		}
 
 		if ( m_isWorkshop )
 		{
@@ -1284,6 +1277,8 @@ var PlayMenu = ( function()
 
 	function _GetAvailableMapGroups( gameMode, isPlayingOnValveOfficial )
 	{
+		if ( gameMode === 'competitive' && isPlayingOnValveOfficial )
+			return [ k_revivalPoolMapGroup ];
 		                                   
 		var gameModeCfg = m_gameModeConfigs[ gameMode ];
 		if ( gameModeCfg === undefined )
@@ -1313,6 +1308,12 @@ var PlayMenu = ( function()
 	function _OnActivateMapOrMapGroupButton( mapgroupButton )
 	{
 		var mapGroupNameClicked = mapgroupButton.GetAttributeString( "mapname", '' );
+		if ( mapGroupNameClicked === k_revivalPoolMapGroup )
+		{
+			mapgroupButton.checked = true;
+			_ApplySessionSettings();
+			return;
+		}
 		if ( $.GetContextPanel().BHasClass( 'play-menu__lobbymapveto_activated' ) && mapGroupNameClicked !== 'mg_lobby_mapveto' )
 		{	                                                                
 			return;
@@ -1360,16 +1361,6 @@ var PlayMenu = ( function()
 
 	function _ShowActiveMapSelectionTab( isEnabled )
 	{
-		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
-		{
-			var legacyPicker = $( '#RevivalLegacyMapPicker' );
-			if ( legacyPicker ) legacyPicker.visible = false;
-			$( '#WorkshopSearchBar' ).visible = false;
-			$( '#WorkshopVisitButton' ).visible = false;
-			$( '#GameModeSelectionRadios' ).visible = true;
-			return;
-		}
-
 		var panelID = m_activeMapGroupSelectionPanelID;
 
 		for ( var key in m_mapSelectionButtonContainers )
@@ -1755,9 +1746,7 @@ var PlayMenu = ( function()
 	{
 		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
 		{
-			var revivalMapGroup = _GetRevivalValidationMapGroup();
-			if ( revivalMapGroup )
-				GameInterfaceAPI.SetSettingString( 'ui_playsettings_custom_preset', revivalMapGroup );
+			GameInterfaceAPI.SetSettingString( 'ui_playsettings_custom_preset', k_revivalPoolMapGroup );
 			return;
 		}
 
@@ -2183,6 +2172,15 @@ var PlayMenu = ( function()
 
 	function _SelectMapButtonsFromSettings( settings )
 	{
+		if ( m_serverSetting === 'official' && m_gameModeSetting === 'competitive' )
+		{
+			var revivalTiles = _GetMapListForServerTypeAndGameMode( m_activeMapGroupSelectionPanelID );
+			revivalTiles.forEach( function( e )
+			{
+				e.checked = e.GetAttributeString( "mapname", "" ) === k_revivalPoolMapGroup;
+			} );
+			return;
+		}
 		                                                                 
 		var mapsGroups = settings.game.mapgroupname.split( ',' );
 		var aListMaps = _GetMapListForServerTypeAndGameMode( m_activeMapGroupSelectionPanelID );
@@ -2562,6 +2560,8 @@ var PlayMenu = ( function()
 	                                                         
 	function _GetSelectedMapsForServerTypeAndGameMode( serverType, gameMode, bDontToggleMaps = false )
 	{
+		if ( serverType === 'official' && gameMode === 'competitive' )
+			return k_revivalPoolMapGroup;
 		var isPlayingOnValveOfficial = _IsValveOfficialServer( serverType );
 		                                                                         
 		                                                                        
@@ -3516,7 +3516,6 @@ var PlayMenu = ( function()
 		OnChooseClanKeyBtn			: _OnChooseClanKeyBtn,
 		OnPlayerNameChangedUpdate	: _OnPlayerNameChangedUpdate,
 		OnPrivateQueuesUpdate		: _OnPrivateQueuesUpdate,
-		OnRevivalPoolClicked		: _OnRevivalPoolClicked,
 	};
 
 } )();
