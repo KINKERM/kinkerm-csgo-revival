@@ -41,7 +41,8 @@ $markers = @(
     "REVIVAL_SERVER_RESERVATION_RETRY_V4",
     "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1",
     "REVIVAL_CLIENT_COOKIE_RESERVE_V3",
-    "REVIVAL_CLIENT_DIRECT_UDP_V1"
+    "REVIVAL_CLIENT_DIRECT_UDP_V1",
+    "REVIVAL_CLIENT_READY_FLOW_V1"
 )
 foreach ($marker in $markers) {
     if (-not $blob.Contains($marker)) {
