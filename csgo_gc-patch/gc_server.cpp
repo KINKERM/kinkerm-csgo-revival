@@ -8,11 +8,13 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #ifdef _WIN32
 #include <direct.h>
