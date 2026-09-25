@@ -1991,8 +1991,8 @@ ToggleButton.play-menu-option-btn:selected Label
 }
 
 
-/* CS:GO Revival: one shared ranked Competitive queue. */
-.revival-single-queue
+/* CS:GO Revival single map-pool tile. */
+.revival-pool-stage
 {
     width: 100%;
     height: fill-parent-flow( 1.0 );
@@ -2000,67 +2000,94 @@ ToggleButton.play-menu-option-btn:selected Label
     vertical-align: center;
 }
 
-.revival-single-queue__card
+.revival-pool-tile
 {
-    width: 78%;
-    min-height: 360px;
+    width: 300px;
+    height: 440px;
     horizontal-align: center;
     vertical-align: center;
     flow-children: down;
-    padding: 38px 52px;
-    background-color: #101820df;
-    border: 1px solid #ffffff18;
-    box-shadow: 0px 8px 24px 0px #00000088;
+    background-color: #131a20;
+    border: 2px solid #cbd7df;
+    box-shadow: 0px 8px 22px 0px #00000099;
+    transition-property: brightness, transform, border;
+    transition-duration: 0.12s;
 }
 
-.revival-single-queue__icon
+.revival-pool-tile:hover
 {
-    width: 64px;
-    height: 64px;
-    horizontal-align: center;
-    wash-color: #d9e7f5;
-    margin-bottom: 12px;
+    brightness: 1.18;
+    transform: scale3d( 1.015, 1.015, 1.0 );
 }
 
-.revival-single-queue__title
+.revival-pool-art
+{
+    width: 100%;
+    height: 355px;
+    flow-children: down;
+    padding: 18px 14px 12px 14px;
+    background-color: gradient( linear, 0% 0%, 100% 100%, from( #394955 ), color-stop( .48, #202a31 ), to( #10161b ) );
+}
+
+.revival-pool-badge
+{
+    horizontal-align: right;
+    width: 30px;
+    height: 30px;
+    text-align: center;
+    font-size: 24px;
+    color: #182025;
+    background-color: #eef4f7;
+    border-radius: 2px;
+}
+
+.revival-pool-icon
+{
+    width: 84px;
+    height: 84px;
+    horizontal-align: center;
+    margin-top: 14px;
+    wash-color: #f2f5f7;
+}
+
+.revival-pool-mapgrid
+{
+    width: 100%;
+    margin-top: 22px;
+    horizontal-align: center;
+    text-align: center;
+    font-family: stratum2Font;
+    font-size: 15px;
+    line-height: 25px;
+    letter-spacing: 0.5px;
+    color: #d7e0e6;
+}
+
+.revival-pool-footer
+{
+    width: 100%;
+    height: 85px;
+    flow-children: down;
+    padding-top: 13px;
+    background-color: #11171c;
+}
+
+.revival-pool-title
 {
     horizontal-align: center;
     font-family: stratum2Font;
-    font-size: 34px;
+    font-size: 25px;
     font-weight: bold;
-    letter-spacing: 3px;
+    letter-spacing: 1.5px;
     color: white;
 }
 
-.revival-single-queue__subtitle
+.revival-pool-subtitle
 {
     horizontal-align: center;
-    margin-top: 8px;
+    margin-top: 3px;
     font-family: stratum2Font;
-    font-size: 20px;
-    color: #9fc6e8;
+    font-size: 14px;
     letter-spacing: 1px;
-}
-
-.revival-single-queue__body
-{
-    width: 88%;
-    horizontal-align: center;
-    text-align: center;
-    margin-top: 28px;
-    font-family: stratum2Font;
-    font-size: 19px;
-    color: #d7dce1;
-}
-
-.revival-single-queue__maps
-{
-    width: 92%;
-    horizontal-align: center;
-    text-align: center;
-    margin-top: 28px;
-    font-family: stratum2Font;
-    font-size: 17px;
-    line-height: 24px;
-    color: #aeb8c2;
+    color: #9bb5c7;
 }
