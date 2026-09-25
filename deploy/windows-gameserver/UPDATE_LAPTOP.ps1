@@ -37,6 +37,20 @@ if (-not (Test-Path $agentConfig)) {
     throw "server_agent.json is missing from $AgentDir. This updater is for an already-configured laptop."
 }
 
+# Existing installs created before the native Accept flow used 90 seconds.
+# Keep user settings, but never let the pre-join reservation die before the
+# stock ready/accept/connect sequence has time to finish.
+$agentConfigJson = Get-Content $agentConfig -Raw | ConvertFrom-Json
+$currentAcceptTimeout = 0
+if ($null -ne $agentConfigJson.accept_timeout_seconds) {
+    $currentAcceptTimeout = [double]$agentConfigJson.accept_timeout_seconds
+}
+if ($currentAcceptTimeout -lt 300) {
+    $agentConfigJson.accept_timeout_seconds = 300
+    $agentConfigJson | ConvertTo-Json -Depth 20 | Set-Content $agentConfig -Encoding UTF8
+    Write-Host "    Raised accept_timeout_seconds to 300 seconds." -ForegroundColor Green
+}
+
 Write-Host "[1/4] Stopping old laptop agent/server..." -ForegroundColor Yellow
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
@@ -135,7 +149,7 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_ACCEPT_FLOW_V5")) {
+if (-not $agentText.Contains("REVIVAL_AGENT_ACCEPT_FLOW_V6")) {
     throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_ACCEPT_FLOW_V5"
 }
 Write-Host "    Verified current Accept-flow laptop agent." -ForegroundColor Green
