@@ -483,14 +483,13 @@ class ServerSlot:
             if (
                 int(response.get("match_id") or 0) == match_id
                 and int(response.get("reservation_id") or 0) > 0
-                and int(response.get("server_id") or 0) > 0
             ):
                 time.sleep(1.5)
                 with self._lock:
                     if not self.alive() or self.match_id != match_id:
                         return
                     self.reservation_id = int(response["reservation_id"])
-                    self.server_id = int(response["server_id"])
+                    self.server_id = int(response.get("server_id") or 0)
                     self.reserved_account_ids = {
                         int(x) for x in str(response.get("account_ids") or "").split(",")
                         if x.strip().isdigit() and int(x) > 0
@@ -500,15 +499,16 @@ class ServerSlot:
                     self.using_cookie_fallback = False
                     print(
                         f"[agent] native 9106 accepted match {match_id}; "
-                        f"reservation={self.reservation_id}; server_id={self.server_id}; waiting for "
+                        f"reservation={self.reservation_id}; server_id={self.server_id or 'direct-udp'}; waiting for "
                         "first human to enter (bots fill empty slots)"
                     )
                 return
 
-            # Do not invent readiness in Python. The injected server GC owns
-            # the empty-9106 fallback and must also publish the real Steam game
-            # server ID. Advertising the match before server_id exists makes the
-            # client's 9107 reservation impossible to turn into game/mmqueue.
+            # The injected server GC owns the empty-9106 cookie fallback.
+            # A Steam gameserver ID is optional for our direct-UDP/Playit route;
+            # community servers may have no master connection and therefore no
+            # valid Steam server identity. The reservation cookie is the
+            # readiness barrier here.
             if source_started_at and time.monotonic() - source_started_at >= 2.5:
                 if not response:
                     continue
@@ -664,7 +664,7 @@ class ServerSlot:
             return
         new_reservation = int(response.get("reservation_id") or 0)
         new_server_id = int(response.get("server_id") or 0)
-        if not new_reservation or not new_server_id:
+        if not new_reservation:
             return
 
         acknowledged = {
@@ -684,7 +684,7 @@ class ServerSlot:
             if new_reservation != old_reservation or membership_changed:
                 print(
                     f"[agent] native reservation refreshed for match {match_id}: "
-                    f"reservation={new_reservation}, server_id={new_server_id}, "
+                    f"reservation={new_reservation}, server_id={new_server_id or 'direct-udp'}, "
                     f"accounts={','.join(str(x) for x in sorted(acknowledged))}"
                 )
 
