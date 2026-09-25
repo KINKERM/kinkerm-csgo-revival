@@ -131,6 +131,7 @@ def main() -> None:
             b"REVIVAL_CLIENT_DIRECT_UDP_V1",
             b"REVIVAL_CLIENT_READY_FLOW_V1",
             b"REVIVAL_CLIENT_ACCEPT_WATCH_V1",
+            b"REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2",
             b"REVIVAL_SERVER_ACCEPT_ROSTER_V1",
             b"REVIVAL_ENGINE_QUEUE_RESERVE_V1",
         ):
