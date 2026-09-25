@@ -829,11 +829,12 @@ void ClientGC::PollMatchmakingBridge()
 
         update.mutable_global_stats()->set_players_searching(
             static_cast<uint32_t>(BridgeU64(state, "players_searching", waiting.size())));
-        update.mutable_global_stats()->set_servers_online(
-            BridgeU64(state, "server_online", 0) ? 1 : 0);
-        update.mutable_global_stats()->set_servers_available(
-            BridgeU64(state, "server_online", 0) && phase == "searching" ? 1 : 0);
-        update.mutable_global_stats()->set_search_time_avg(5);
+        const bool serverOnline = BridgeU64(state, "server_online", 0) != 0;
+        const bool serverAvailable = BridgeU64(
+            state, "server_available", serverOnline ? 1 : 0) != 0;
+        update.mutable_global_stats()->set_servers_online(serverOnline ? 1 : 0);
+        update.mutable_global_stats()->set_servers_available(serverAvailable ? 1 : 0);
+        update.mutable_global_stats()->set_search_time_avg(1);
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
         return;
     }
