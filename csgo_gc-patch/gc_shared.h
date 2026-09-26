@@ -7,6 +7,9 @@ enum class HostEvent
     Message, // id contains the message type, buffer contains the payload
     NetMessage, // id contains the recipient steam id, buffer contains the payload
     MicroTransactionResponse, // runs MicroTxnAuthorizationResponse_t, no arguments
+    // client only: raw protobuf Source usermessage; id is CS_UM_* message id.
+    // steam_hook dispatches this on the client's main callback thread.
+    ClientUserMessage,
     // srcds only: buffer is a NUL-free IVEngineServer::ReserveServerForQueuedGame payload.
     // steam_hook drains this on the engine/main callback thread.
     ReserveServerForQueuedGame,
