@@ -324,6 +324,9 @@ public:
         AttributeStickerScale5 = 135,
         AttributeStickerRotation5 = 136,
 
+        // Native Operation inventory lookup uses these exact schema ids.
+        // "season access" is attribute 71; "quest id" is 168.
+        AttributeSeasonAccess = 71,
         AttributeMusicId = 166,
         AttributeQuestId = 168,
 
