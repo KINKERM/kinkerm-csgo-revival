@@ -2982,30 +2982,91 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
     // source of truth for selection/display.
     if (selected->expression.rfind("QQ:", 0) == 0)
     {
+        const std::vector<uint32_t> children =
+            m_itemSchema.QuestGraphChildren(selected->id);
+
+        uint32_t roundChildId = 0;
+        uint32_t matchChildId = 0;
+        uint32_t roundGoal = 21;
+        for (uint32_t childId : children)
+        {
+            const QuestDefinition *child =
+                m_itemSchema.GetQuestDefinition(childId);
+            if (!child)
+            {
+                continue;
+            }
+
+            if (child->expression.find("%act_win_round%")
+                != std::string::npos)
+            {
+                roundChildId = childId;
+                if (child->Goal())
+                    roundGoal = child->Goal();
+            }
+            if (child->expression.find("%act_win_match%")
+                != std::string::npos)
+            {
+                matchChildId = childId;
+            }
+        }
+
         const uint64_t roundTotal =
             static_cast<uint64_t>(state.repeatableRounds) + roundsWon;
-        const bool completed = wonMatch || roundTotal >= 21u;
+        const bool completed =
+            (wonMatch && matchChildId != 0)
+            || (roundChildId != 0 && roundTotal >= roundGoal);
 
         if (!completed)
         {
             state.repeatableRounds = static_cast<uint32_t>(
-                std::min<uint64_t>(roundTotal, 20u));
+                std::min<uint64_t>(
+                    roundTotal,
+                    roundGoal > 0 ? roundGoal - 1 : 0));
+
+            // Mirror the accumulator into the real Riptide round-win child
+            // quest. Panorama's stock graph then shows e.g. 14/21 instead of
+            // the mission looking frozen while the revival tracks it privately.
+            if (roundChildId)
+            {
+                OperationQuestProgressState &roundState =
+                    m_operationQuestProgress[roundChildId];
+                roundState.progress = state.repeatableRounds;
+                roundState.bonusPoints = 0;
+                AddOperationQuestState(roundChildId, update);
+                AddOperationSeasonalState(update);
+            }
+
             WriteToFile();
             Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V2 quest=%u map=%s rounds=%u/21 awaiting completion\n",
+                "REVIVAL_REPEATABLE_MISSIONS_V3 quest=%u map=%s rounds=%u/%u awaiting completion\n",
                 selected->id, std::string(mapName).c_str(),
-                state.repeatableRounds);
-            return false;
+                state.repeatableRounds, roundGoal);
+            return roundChildId != 0;
         }
 
+        // Clear both real child branches before completing the parent. The
+        // parent itself wraps back to zero in ApplyOperationQuestProgress(), so
+        // after the reward animation the original mission UI is immediately
+        // ready for another run.
         state.repeatableRounds = 0;
+        for (uint32_t childId : children)
+        {
+            OperationQuestProgressState &childState =
+                m_operationQuestProgress[childId];
+            childState.progress = 0;
+            childState.bonusPoints = 0;
+            childState.repeatableRounds = 0;
+            AddOperationQuestState(childId, update);
+        }
+
         const bool changed = ApplyOperationQuestProgress(
             selected->id, 1, 0, update);
 
         Platform::Print(
-            "REVIVAL_REPEATABLE_MISSIONS_V2 quest=%u map=%s completed via %s\n",
+            "REVIVAL_REPEATABLE_MISSIONS_V3 quest=%u map=%s completed via %s\n",
             selected->id, std::string(mapName).c_str(),
-            wonMatch ? "match-win" : "21-rounds");
+            wonMatch ? "match-win" : "round-goal");
         return changed;
     }
 
