@@ -2395,9 +2395,23 @@ bool Inventory::ImportServerCreatedItem(const CMsgSOSingleObject &create)
     }
 
     const uint64_t itemId = incoming.id();
-    if (m_items.find(itemId) != m_items.end())
+    auto existing = m_items.find(itemId);
+    if (existing != m_items.end())
     {
-        // Idempotent bridge retry: the exact item is already persisted.
+        if (existing->second.SerializeAsString() == incoming.SerializeAsString())
+        {
+            // Idempotent bridge retry: the exact authoritative item is already
+            // persisted.
+            return true;
+        }
+
+        const uint32_t oldDef = existing->second.def_index();
+        existing->second = incoming;
+        WriteToFile();
+        Platform::Print(
+            "REVIVAL_SERVER_DROP_IMPORT_V2 corrected item=%llu def=%u->%u account=%u\n",
+            static_cast<unsigned long long>(itemId), oldDef,
+            incoming.def_index(), incoming.account_id());
         return true;
     }
 
