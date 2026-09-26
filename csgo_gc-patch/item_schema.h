@@ -133,6 +133,10 @@ struct QuestDefinition
     uint32_t id{};
     std::vector<uint32_t> thresholds;
     uint32_t operationalPoints{};
+    std::string gameMode;
+    std::string map;
+    std::string mapGroup;
+    std::string expression;
 
     uint32_t Goal() const
     {
@@ -181,6 +185,11 @@ public:
     const QuestDefinition *GetQuestDefinition(uint32_t questId) const;
     const OperationMissionCard *GetOperationMissionCardForQuest(uint32_t questId) const;
     const OperationMissionCard *GetOperationMissionCard(uint32_t cardId) const;
+
+    // Revival repeatable Competitive missions: derive the single supported map
+    // for the currently selected Riptide card. Only maps in the curated queue
+    // are ever returned.
+    std::string PreferredOperationMissionMap(uint32_t cardId) const;
 
     // for case opening FIXME: do we want to keep this here???
     bool CreateItemFromLootListItem(Random &random,
