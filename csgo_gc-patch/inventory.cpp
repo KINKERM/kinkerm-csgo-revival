@@ -2888,15 +2888,11 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
             ? UINT32_MAX : static_cast<uint32_t>(earnedSum);
 
         // Coin tiers still use Valve's Riptide mission-earned thresholds:
-        // 33 Silver, 66 Gold, 100 Diamond. Purchased stars remain wallet-only.
-        if (completedCycles > 0)
-        {
-            const uint64_t completedSum =
-                static_cast<uint64_t>(m_operationMissionsCompleted)
-                + completedCycles;
-            m_operationMissionsCompleted = completedSum > UINT32_MAX
-                ? UINT32_MAX : static_cast<uint32_t>(completedSum);
-        }
+        // 33 Silver, 66 Gold, 100 Diamond. The stock Operation UI compares
+        // SeasonalOperations.missions_completed against those same thresholds,
+        // so publish earned mission stars here rather than a raw completion
+        // count. Purchased/spent stars never alter this lifetime value.
+        m_operationMissionsCompleted = m_operationEarnedStars;
 
         const uint32_t targetCoinDef = OperationCoinDefForEarnedStars();
         if (targetCoinDef && coin->def_index() != targetCoinDef)
