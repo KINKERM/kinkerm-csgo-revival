@@ -342,15 +342,6 @@ var OperationUtil = ( function () {
 		}
 		var numQuestGraphType = MissionsAPI.GetQuestGraphType( missionId );
 		var missionGoal = MissionsAPI.GetQuestPoints( missionId, "goal" );
-		var opPointsPerSegment = parseInt(
-			MissionsAPI.GetQuestDefinitionField( missionId, 'operational_points' )
-		) || 0;
-		if ( gameMode && gameMode.startsWith( 'competitive' ) && opPointsPerSegment > 0 )
-		{
-			// Stock Riptide Competitive missions paid three stars. The revival
-			// grants one extra completion star and shows it directly in the same UI.
-			opPointsPerSegment += 1;
-		}
 		return {
 			missionId: missionId,
 			missionItemId: InventoryAPI.GetQuestItemIDFromQuestID( missionId ),
@@ -358,7 +349,7 @@ var OperationUtil = ( function () {
 			missionDesc: MissionsAPI.GetQuestDefinitionField( missionId, "loc_description" ),
 			nMissionSegments: MissionsAPI.GetQuestPoints( missionId, 'count' ),
 			nMissionPointsRemaining: MissionsAPI.GetQuestPoints( missionId, "remaining" ),
-			nOpPointsPerSegment: opPointsPerSegment,
+			nOpPointsPerSegment: MissionsAPI.GetQuestDefinitionField( missionId, 'operational_points' ),
 			isReplayable: ( gameMode === 'cooperative' || gameMode === 'coopmission' ),
 			isSingleMatch: MissionsAPI.GetQuestDefinitionField( missionId, "singlematch" ) === '1' ? true : false,
 			missionGoal: MissionsAPI.GetQuestPoints( missionId, "goal" ),
