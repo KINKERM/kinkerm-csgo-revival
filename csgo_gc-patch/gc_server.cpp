@@ -681,6 +681,9 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         rankBody.insert(
             rankBody.end(), rankingBytes.begin(), rankingBytes.end());
 
+        rankBody.push_back(0x10); // field 2, varint match_id
+        appendVarint(matchId);
+
         std::vector<uint8_t> rankPacket;
         const uint32_t rankType =
             RevivalMsgMatchmakingGC2ServerRankUpdate | ProtobufMask;
