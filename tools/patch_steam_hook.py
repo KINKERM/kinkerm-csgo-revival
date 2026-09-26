@@ -439,10 +439,42 @@ static void __fastcall Hk_RevivalRewardMatchEndDrops(
 
     if (!aborted && s_serverGC)
     {
-        s_serverGC->m_gc.PostToGC(
-            GCEvent::RevivalMatchEnd, 0, nullptr, 0);
+        // Generate the exact reward bundle NOW, on the native intermission edge,
+        // then drain the resulting RecordPlayerItemDrop events before Source's
+        // original RewardMatchEndDrops broadcasts SendPlayerItemDrops.
+        s_serverGC->m_gc.ProcessRevivalMatchEndTrigger(true);
+
+        std::vector<EventData> nativeEvents;
+        s_serverGC->m_gc.GetHostEvents(nativeEvents);
+        for (EventData &event : nativeEvents)
+        {
+            switch ((HostEvent)event.type)
+            {
+            case HostEvent::Message:
+                s_serverGC->m_messageQueue.AddMessage(
+                    (uint32_t)event.id, std::move(event.buffer));
+                break;
+            case HostEvent::NetMessage:
+                s_serverGC->m_networking.SendMessage(
+                    event.id, event.buffer.data(),
+                    static_cast<uint32_t>(event.buffer.size()));
+                break;
+            case HostEvent::ReserveServerForQueuedGame:
+                RevivalDispatchReserveServerForQueuedGame(event.id, event.buffer);
+                break;
+            case HostEvent::RecordPlayerItemDrop:
+                RevivalRecordPlayerItemDrop(event.buffer);
+                break;
+            default:
+                Platform::Print(
+                    "REVIVAL_NATIVE_DROP_REVEAL_V1 unexpected native host event=%u\n",
+                    (uint32_t)event.type);
+                break;
+            }
+        }
+
         Platform::Print(
-            "REVIVAL_NATIVE_DROP_TIMING_V3 queued native intermission rewards\n");
+            "REVIVAL_NATIVE_DROP_TIMING_V3 generated and recorded before native reveal\n");
     }
 
     if (s_revOriginalRewardMatchEndDrops)
@@ -578,9 +610,10 @@ static bool RevivalRecordPlayerItemDrop(
             callback_anchor,
             callback_anchor
             + "\n\n#ifdef _WIN32\n"
+            + "    RevivalInstallNativeDropRevealHooks();\n"
             + "    static bool s_revNativeHookCrashGuardLogged = false;\n"
             + "    if (!s_revNativeHookCrashGuardLogged) {\n"
-            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 crash-guard active; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 reward bridge remains enabled\\n\");\n"
+            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 hardened native hook enabled; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 safeguards active\\n\");\n"
             + "        s_revNativeHookCrashGuardLogged = true;\n"
             + "    }\n"
             + "#endif",
@@ -591,10 +624,9 @@ static bool RevivalRecordPlayerItemDrop(
         if install_anchor not in patched:
             print("[patch_steam_hook] ERROR: SteamGameServer_RunCallbacks install anchor missing")
             return 15
-        # Do not invoke the optional raw server.dll detour on the old compatible
-        # dedicated-server tree. The proper 9136/9137 reward bridge, guaranteed
-        # drops, persistence, XP/rank processing, and server reward spool remain
-        # enabled. This only removes the crash-prone extra CCSGameRules detour.
+        # The native hook is retried safely from SteamGameServer_RunCallbacks.
+        # Signature matching is executable-section-only and unique-match-only;
+        # funchook failures are non-fatal and permanently disable further retries.
 
 
         reserve_case_anchor = '''            case HostEvent::ReserveServerForQueuedGame:
