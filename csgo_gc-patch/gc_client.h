@@ -81,6 +81,7 @@ private:
     uint64_t m_lastMatchmakingReservation{};
     uint64_t m_lastRewardedReservation{};
     uint64_t m_lastRewardedMatchId{};
+    uint64_t m_lastOperationMissionMatchId{};
     uint64_t m_lastMissionProgressMatchId{};
     uint64_t m_lastUiDispatchedMatchId{};
     // Non-zero while a direct-UDP revival match owns item generation.
