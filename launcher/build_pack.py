@@ -28,9 +28,23 @@ import argparse
 import os
 import sys
 import zipfile
+import importlib.util
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+
+TRADEUP_PATCHER = os.path.join(REPO, "tools", "patch_tradeup_items_game.py")
+
+
+def _load_tradeup_patcher():
+    spec = importlib.util.spec_from_file_location(
+        "revival_tradeup_items_game", TRADEUP_PATCHER
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load trade-up patcher: {TRADEUP_PATCHER}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 # csgo_gc runtime files, per platform. The GC library is essential; the launcher
 # executables replace csgo.exe / srcds.exe / csgo_linux64 etc.
@@ -155,6 +169,7 @@ def main() -> None:
             b"REVIVAL_NATIVE_DROP_TIMING_V3",
             b"REVIVAL_NATIVE_DROP_BUNDLE_V1",
             b"REVIVAL_SERVER_DROP_IMPORT_V1",
+            b"REVIVAL_COVERT_TRADEUP_V1",
         ):
             if marker not in dll_blob:
                 print(f"[build_pack] ERROR: stale csgo_gc.dll, missing {marker.decode()}")
@@ -176,8 +191,20 @@ def main() -> None:
         print(f"[build_pack] added {len(runtime)} runtime file(s) in launcher layout")
         zf.write(args.config, "csgo_gc/config.txt")
         print("[build_pack] added csgo_gc/config.txt")
-        zf.write(args.items_game, "csgo/scripts/items/items_game.txt")
-        print("[build_pack] added csgo/scripts/items/items_game.txt")
+        with open(args.items_game, "r", encoding="utf-8") as fh:
+            items_text = fh.read()
+        try:
+            tradeup_patcher = _load_tradeup_patcher()
+            patched_items, _ = tradeup_patcher.patch_text(items_text)
+        except Exception as exc:
+            print(f"[build_pack] ERROR: 5-Covert items_game patch failed: {exc}")
+            sys.exit(6)
+        if tradeup_patcher.MARKER not in patched_items:
+            print("[build_pack] ERROR: patched items_game is missing covert trade-up marker")
+            sys.exit(6)
+        zf.writestr("csgo/scripts/items/items_game.txt", patched_items)
+        print("[build_pack] added patched csgo/scripts/items/items_game.txt "
+              "(REVIVAL_COVERT_TRADEUP_V1)")
         pbin_tool = os.path.join(REPO, "tools", "pbin.py")
         if not os.path.isfile(pbin_tool):
             print(f"[build_pack] ERROR: missing Panorama PBIN tool: {pbin_tool}")
