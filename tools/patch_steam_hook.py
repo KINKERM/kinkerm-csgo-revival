@@ -15,6 +15,7 @@ NATIVE_DROP_RETRY_MARKER = "REVIVAL_NATIVE_DROP_RETRY_V2"
 NATIVE_DROP_CRASH_GUARD_MARKER = "REVIVAL_NATIVE_DROP_CRASH_GUARD_V1"
 NATIVE_DROP_TIMING_MARKER = "REVIVAL_NATIVE_DROP_TIMING_V3"
 PLATFORM_PATTERN_MARKER = "REVIVAL_PLATFORM_FIND_PATTERN_V1"
+PLATFORM_FATAL_LOG_MARKER = "REVIVAL_PLATFORM_FATAL_LOG_V1"
 RICH_PRESENCE_MARKER = "REVIVAL_MATCHMAKING_RICH_PRESENCE_V1"
 
 
@@ -187,6 +188,29 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
 
 '''
         pc = pc.replace(close_anchor, helper + close_anchor, 1)
+        platform_cpp.write_text(pc, encoding="utf-8", newline="\n")
+
+    pc = platform_cpp.read_text(encoding="utf-8")
+    if PLATFORM_FATAL_LOG_MARKER not in pc:
+        fatal_anchor = (
+            '    MessageBoxA(nullptr, buffer, "csgo_gc", MB_OK | MB_ICONERROR);\n'
+            '    ExitProcess(1);'
+        )
+        if fatal_anchor not in pc:
+            print("[patch_steam_hook] ERROR: Platform::Error fatal anchor missing")
+            return 20
+        fatal_new = (
+            '    FILE *fatal = fopen("gc_fatal.txt", "a");\n'
+            '    if (fatal)\n'
+            '    {\n'
+            '        fprintf(fatal, "REVIVAL_PLATFORM_FATAL_LOG_V1 %s\\n", buffer);\n'
+            '        fflush(fatal);\n'
+            '        fclose(fatal);\n'
+            '    }\n'
+            '    MessageBoxA(nullptr, buffer, "csgo_gc", MB_OK | MB_ICONERROR);\n'
+            '    ExitProcess(1);'
+        )
+        pc = pc.replace(fatal_anchor, fatal_new, 1)
         platform_cpp.write_text(pc, encoding="utf-8", newline="\n")
 
     pc = platform_cpp.read_text(encoding="utf-8")
@@ -630,7 +654,8 @@ static bool RevivalRecordPlayerItemDrop(
             or "ResolveModuleInterface" not in ph_verify
             or "FindModulePattern" not in ph_verify
             or PLATFORM_INTERFACE_MARKER not in pc_verify
-            or PLATFORM_PATTERN_MARKER not in pc_verify):
+            or PLATFORM_PATTERN_MARKER not in pc_verify
+            or PLATFORM_FATAL_LOG_MARKER not in pc_verify):
         print("[patch_steam_hook] ERROR: marker verification failed after write")
         return 4
 
