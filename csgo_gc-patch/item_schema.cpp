@@ -845,7 +845,7 @@ uint32_t ItemSchema::PreferredOperationMissionQuest(
     uint32_t cardId, std::string_view actualMap) const
 {
     const OperationMissionCard *card = GetOperationMissionCard(cardId);
-    if (!card || !RevivalCompetitiveMissionMapSupported(actualMap))
+    if (!card || actualMap.empty())
     {
         return 0;
     }
@@ -858,7 +858,9 @@ uint32_t ItemSchema::PreferredOperationMissionQuest(
             continue;
         }
 
-        // Week 1 Premier-style mission is valid on any curated queue map.
+        // Premier-style Riptide missions are valid on any map selected by the
+        // revival's Competitive queue. Do not restrict the native HUD quest to
+        // the older eight-map helper list.
         if (quest->map == "lobby_mapveto")
         {
             return questId;
