@@ -226,6 +226,18 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_SERVER_DROP_IMPORT_V1")) {
         throw "Built csgo_gc.dll does not contain exact server item persistence."
     }
+    if (-not $gcDllText.Contains("REVIVAL_PROGRESS_BUNDLE_V2")) {
+        throw "Built csgo_gc.dll does not contain authoritative profile progression bundle V2."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_ITEM_AUTHORITY_V1")) {
+        throw "Built csgo_gc.dll does not contain server-authoritative match item generation."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_DROP_IMPORT_V2")) {
+        throw "Built csgo_gc.dll does not correct conflicting local drop objects."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_RANK_STATE_V2")) {
+        throw "Built csgo_gc.dll does not refresh post-match native ranking state."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
