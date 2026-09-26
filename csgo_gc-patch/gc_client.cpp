@@ -52,13 +52,15 @@ void RevivalAppendLengthDelimited(
     out.insert(out.end(), begin, begin + size);
 }
 
-bool RevivalDispatchEndMatchUi(
+bool RevivalBuildEndMatchUiMessages(
     uint32_t accountId,
     uint32_t oldRank, uint32_t newRank, uint32_t wins,
     uint32_t oldLevel, uint32_t oldXp,
     uint32_t oldProfileWeek, uint32_t oldWeeklyBaseXp,
     uint32_t newProfileWeek, uint32_t newWeeklyBaseXp,
-    uint32_t awardedXp)
+    uint32_t awardedXp,
+    std::vector<uint8_t> &rankMsg,
+    std::vector<uint8_t> &xpMsg)
 {
 #ifdef _WIN32
     // Build the exact CCSUsrMsg_ServerRankUpdate wire payload:
@@ -73,7 +75,7 @@ bool RevivalDispatchEndMatchUi(
     rankInner.push_back(0x20); // num_wins = 4
     RevivalAppendVarint(rankInner, wins);
 
-    std::vector<uint8_t> rankMsg;
+    rankMsg.clear();
     RevivalAppendLengthDelimited(
         rankMsg, 0x0A, rankInner.data(), rankInner.size());
 
@@ -150,28 +152,22 @@ bool RevivalDispatchEndMatchUi(
 
     std::string xpInner;
     xp.SerializeToString(&xpInner);
-    std::vector<uint8_t> xpMsg;
+    xpMsg.clear();
     RevivalAppendLengthDelimited(
         xpMsg, 0x0A, xpInner.data(), xpInner.size());
 
-    const bool rankOk = Platform::DispatchClientUserMessage(
-        RevivalUserMsgServerRankUpdate, 0,
-        rankMsg.data(), static_cast<uint32_t>(rankMsg.size()));
-    const bool xpOk = Platform::DispatchClientUserMessage(
-        RevivalUserMsgXpUpdate, 0,
-        xpMsg.data(), static_cast<uint32_t>(xpMsg.size()));
-
     Platform::Print(
-        "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V1 rank52=%d xp65=%d "
+        "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V1 built rank52=%zu xp65=%zu "
         "old_rank=%u new_rank=%u wins=%u old_level=%u old_xp=%u award=%u\n",
-        rankOk ? 1 : 0, xpOk ? 1 : 0,
+        rankMsg.size(), xpMsg.size(),
         oldRank, newRank, wins, oldLevel, oldXp, awardedXp);
-    return rankOk && xpOk;
+    return !rankMsg.empty() && !xpMsg.empty();
 #else
     (void)accountId; (void)oldRank; (void)newRank; (void)wins;
     (void)oldLevel; (void)oldXp; (void)oldProfileWeek;
     (void)oldWeeklyBaseXp; (void)newProfileWeek;
     (void)newWeeklyBaseXp; (void)awardedXp;
+    (void)rankMsg; (void)xpMsg;
     return false;
 #endif
 }
@@ -1416,13 +1412,30 @@ void ClientGC::PollRewardBridge()
                 return;
             }
 
-            RevivalDispatchEndMatchUi(
-                AccountId(),
-                oldRank, rank, wins,
-                oldLevel, oldXp,
-                oldProfileWeek, oldWeeklyBaseXp,
-                profileWeek, weeklyBaseXp,
-                awardedXp);
+            std::vector<uint8_t> rankUiMessage;
+            std::vector<uint8_t> xpUiMessage;
+            if (RevivalBuildEndMatchUiMessages(
+                    AccountId(),
+                    oldRank, rank, wins,
+                    oldLevel, oldXp,
+                    oldProfileWeek, oldWeeklyBaseXp,
+                    profileWeek, weeklyBaseXp,
+                    awardedXp,
+                    rankUiMessage, xpUiMessage))
+            {
+                PostToHost(
+                    HostEvent::ClientUserMessage,
+                    RevivalUserMsgServerRankUpdate,
+                    rankUiMessage.data(),
+                    static_cast<uint32_t>(rankUiMessage.size()));
+                PostToHost(
+                    HostEvent::ClientUserMessage,
+                    RevivalUserMsgXpUpdate,
+                    xpUiMessage.data(),
+                    static_cast<uint32_t>(xpUiMessage.size()));
+                Platform::Print(
+                    "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V1 queued stock 52+65\n");
+            }
 
             CMsgSOMultipleObjects profileUpdate;
             m_inventory.BuildProfilePersonaUpdate(profileUpdate);
