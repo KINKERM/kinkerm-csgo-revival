@@ -895,10 +895,21 @@ class ServerSlot:
         m = TEAM_SCORE_RE.search(line)
         if m:
             score = int(m.group(2))
-            if m.group(1).upper() == "CT":
-                self.ct_score = score
-            else:
-                self.t_score = score
+            side = m.group(1).upper()
+            changed = False
+            with self._lock:
+                if side == "CT":
+                    changed = self.ct_score != score
+                    self.ct_score = score
+                else:
+                    changed = self.t_score != score
+                    self.t_score = score
+                match_id = self.match_id
+            if changed and match_id:
+                print(
+                    f"[agent] REVIVAL_LIVE_OPERATION_ROUNDS_V1 "
+                    f"match={match_id} score={self.ct_score}-{self.t_score}"
+                )
 
         seen_account_id = account_id_from_text(line)
         if seen_account_id:
@@ -1467,6 +1478,16 @@ def main() -> None:
                 "server_id": slot.server_id,
                 "reserved_account_ids": sorted(slot.reserved_account_ids),
                 "started_match_id": slot.match_id if slot.started else 0,
+                # Live score/team data lets the desktop GC mirror Operation
+                # round-win progress during the match instead of waiting for
+                # the final MatchEndRunRewardDrops fallback.
+                "ct_score": slot.ct_score,
+                "t_score": slot.t_score,
+                "player_teams": {
+                    str(account_id): team
+                    for account_id, team in slot.player_teams.items()
+                    if account_id in slot.expected_account_ids
+                },
             }
             try:
                 reply = post_json(base + "/matchmaking/server/heartbeat", body)
