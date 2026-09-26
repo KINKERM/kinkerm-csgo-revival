@@ -193,6 +193,11 @@ public:
     std::string PreferredOperationMissionMap() const;
     uint32_t PreferredOperationMissionQuest(std::string_view actualMap) const;
 
+    // Publish the mission quest through the Operation coin's native "quest id"
+    // attribute. CS:GO's GameStateAPI.GetActiveQuestID() reads this path.
+    bool SetOperationActiveQuest(uint32_t questId,
+        CMsgSOMultipleObjects &update);
+
     // Persistent CS:GO profile progression. One profile rank is 5000 XP and
     // rank 40 is the pre-service-medal cap used by the legacy client.
     uint32_t ProfileLevel() const { return m_profileLevel; }
