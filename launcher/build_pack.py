@@ -108,6 +108,16 @@ def main() -> None:
             print(f"[build_pack] missing {what}: {path}")
             sys.exit(1)
 
+    unusual_loot_lists = os.path.join(args.csgo_gc_dir, "csgo_gc", "unusual_loot_lists.txt")
+    if not os.path.isfile(unusual_loot_lists):
+        fallback = os.path.join(args.csgo_gc_dir, "unusual_loot_lists.txt")
+        if os.path.isfile(fallback):
+            unusual_loot_lists = fallback
+        else:
+            print("[build_pack] ERROR: missing csgo_gc/unusual_loot_lists.txt; "
+                  "the Valve-style 5-Covert client schema needs the rare-special pools.")
+            sys.exit(6)
+
     runtime = harvest(args.csgo_gc_dir)
     gc_lib = [n for n in runtime if n in GC_LIBS]
     launchers = [n for n in runtime if n in LAUNCHERS]
@@ -195,7 +205,11 @@ def main() -> None:
             items_text = fh.read()
         try:
             tradeup_patcher = _load_tradeup_patcher()
-            patched_items, _ = tradeup_patcher.patch_text(items_text)
+            with open(unusual_loot_lists, "r", encoding="utf-8") as fh:
+                unusual_text = fh.read()
+            patched_items, _, tradeup_stats = tradeup_patcher.patch_text(
+                items_text, unusual_text
+            )
         except Exception as exc:
             print(f"[build_pack] ERROR: 5-Covert items_game patch failed: {exc}")
             sys.exit(6)
@@ -204,7 +218,9 @@ def main() -> None:
             sys.exit(6)
         zf.writestr("csgo/scripts/items/items_game.txt", patched_items)
         print("[build_pack] added patched csgo/scripts/items/items_game.txt "
-              "(REVIVAL_COVERT_TRADEUP_V1)")
+              f"({tradeup_patcher.MARKER}, {tradeup_stats['mapped_item_sets']} mapped case sets)")
+        zf.write(unusual_loot_lists, "csgo_gc/unusual_loot_lists.txt")
+        print("[build_pack] added csgo_gc/unusual_loot_lists.txt")
         pbin_tool = os.path.join(REPO, "tools", "pbin.py")
         if not os.path.isfile(pbin_tool):
             print(f"[build_pack] ERROR: missing Panorama PBIN tool: {pbin_tool}")
