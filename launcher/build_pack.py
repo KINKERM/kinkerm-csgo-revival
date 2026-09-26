@@ -232,7 +232,9 @@ def main() -> None:
             sys.exit(6)
         zf.writestr("csgo/scripts/items/items_game.txt", patched_items)
         print("[build_pack] added patched csgo/scripts/items/items_game.txt "
-              f"({tradeup_patcher.MARKER}, {tradeup_stats['mapped_item_sets']} mapped case sets)")
+              f"({tradeup_patcher.MARKER}, "
+              f"removed_old_recipes={tradeup_stats['removed_old_recipes']}, "
+              f"added_recipes={tradeup_stats['added_recipes']})")
         zf.write(unusual_loot_lists, "csgo_gc/unusual_loot_lists.txt")
         print("[build_pack] added csgo_gc/unusual_loot_lists.txt")
         pbin_tool = os.path.join(REPO, "tools", "pbin.py")
