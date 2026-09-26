@@ -90,7 +90,7 @@ def _recipe_block(recipe_id: int, quality: str) -> str:
 \t\t\t"di_A"\t\t"5"
 \t\t\t"di_B"\t\t"#RI_R6p"
 \t\t\t"do_A"\t\t"1"
-\t\t\t"do_B"\t\t"#RI_R7"
+\t\t\t"do_B"\t\t"#Rarity_Unusual"
 \t\t\t"all_same_class"\t\t"0"
 \t\t\t"always_known"\t\t"1"
 \t\t\t"premium_only"\t\t"0"
