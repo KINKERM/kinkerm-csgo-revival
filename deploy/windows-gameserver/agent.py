@@ -45,12 +45,14 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V25"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V26"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
     re.compile(r'Game Over:', re.I),
     re.compile(r'Match_End', re.I),
+    re.compile(r'Going to intermission', re.I),
+    re.compile(r'GAMEPHASE_MATCH_ENDED', re.I),
 )
 TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
 STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
@@ -912,20 +914,29 @@ class ServerSlot:
                 self._player_entered(seen_account_id)
 
         if any(p.search(line) for p in GAME_OVER_PATTERNS):
+            print(f"[agent] native intermission detected: {line.strip()}")
             self._report_end_once(
                 "game_over",
                 grace=float(self.cfg.get("post_match_grace_seconds", 70)),
             )
 
     def _reader(self) -> None:
-        """Tail Source's normal L*.log files; srcds owns a real Win32 console."""
+        """Tail both Source L*.log and console.log.
+
+        Some legacy CS:GO builds emit the authoritative transition to
+        intermission only to the console stream, not the L*.log file. Rewards
+        must not depend on one logging backend happening to contain Game_Over.
+        """
         proc = self.proc
         if proc is None:
             return
 
         logs_dir = os.path.join(self.cfg["csgo_dir"], "csgo", "logs")
+        console_path = os.path.join(self.cfg["csgo_dir"], "csgo", "console.log")
         current_path = ""
         position = 0
+        console_position = 0
+        console_announced = False
 
         def newest_match_log() -> str:
             try:
@@ -950,7 +961,7 @@ class ServerSlot:
             except OSError:
                 return ""
 
-        def drain() -> None:
+        def drain_match_log() -> None:
             nonlocal current_path, position
             path = newest_match_log()
             if not path:
@@ -960,9 +971,6 @@ class ServerSlot:
                 position = 0
                 print(f"[agent] reading Source match log: {os.path.basename(path)}")
             try:
-                # Track a byte offset explicitly. TextIO iteration + tell() is
-                # unreliable on growing Windows log files and could silently
-                # kill/rewind the old tailer before the human join line arrived.
                 with open(path, "rb") as fh:
                     fh.seek(position)
                     while True:
@@ -976,11 +984,37 @@ class ServerSlot:
             except Exception as exc:
                 print(f"[agent] Source log tail error: {exc}")
 
+        def drain_console_log() -> None:
+            nonlocal console_position, console_announced
+            try:
+                if not os.path.isfile(console_path):
+                    return
+                if not console_announced:
+                    print("[agent] reading Source console.log for native intermission")
+                    console_announced = True
+                with open(console_path, "rb") as fh:
+                    size = os.fstat(fh.fileno()).st_size
+                    if size < console_position:
+                        console_position = 0
+                    fh.seek(console_position)
+                    while True:
+                        raw = fh.readline()
+                        if not raw:
+                            break
+                        console_position = fh.tell()
+                        self._handle_server_log_line(
+                            raw.decode("utf-8", errors="replace")
+                        )
+            except Exception as exc:
+                print(f"[agent] Source console tail error: {exc}")
+
         while proc.poll() is None:
-            drain()
+            drain_match_log()
+            drain_console_log()
             time.sleep(0.20)
 
-        drain()
+        drain_match_log()
+        drain_console_log()
         code = proc.wait()
         # A disappeared SRCDS is diagnostic-worthy regardless of exit code.
         # Only suppress the report when ServerSlot.stop() explicitly asked it
