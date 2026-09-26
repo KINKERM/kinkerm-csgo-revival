@@ -635,6 +635,10 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
 
         const RankId oldRank = inventory.CompetitiveRank();
         const uint32_t oldWins = inventory.CompetitiveWins();
+        const uint32_t oldProfileLevel = inventory.ProfileLevel();
+        const uint32_t oldProfileXp = inventory.ProfileXp();
+        const uint32_t oldWeeklyBaseXp = inventory.WeeklyBaseXp();
+
         const uint32_t baseXp = std::min<uint32_t>(roundsWon, 30u) * 30u;
         uint32_t levelsGained = 0;
         const uint32_t awardedXp =
@@ -643,16 +647,73 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         if (haveTeam)
             inventory.ApplyCompetitiveMatchResult(won, tied);
 
-        // 9166: the same GC->gameserver XP notification Valve used. SRCDS
-        // converts this to CCSUsrMsg_XpUpdate for the end-match level/XP UI.
+        // 9166 carries the PRE-AWARD level/xp plus individual reward chunks.
+        // The stock client animates those chunks forward from current_xp.
         CMsgGCCstrike15_v2_GC2ServerNotifyXPRewarded xpNotice;
         xpNotice.set_account_id(accountId);
-        xpNotice.set_current_xp(inventory.ProfileXp());
-        xpNotice.set_current_level(inventory.ProfileLevel());
+        xpNotice.set_current_xp(oldProfileXp);
+        xpNotice.set_current_level(oldProfileLevel);
+
         if (awardedXp)
         {
-            XpProgressData *progress = xpNotice.add_xp_progress_data();
-            progress->set_xp_points(awardedXp);
+            const uint64_t start = oldWeeklyBaseXp;
+            const uint64_t end = start + baseXp;
+
+            auto overlap = [](uint64_t begin, uint64_t finish,
+                              uint64_t lo, uint64_t hi) -> uint64_t
+            {
+                const uint64_t a = std::max(begin, lo);
+                const uint64_t b = std::min(finish, hi);
+                return b > a ? b - a : 0;
+            };
+
+            auto cumulativeBonus = [](uint64_t raw) -> uint64_t
+            {
+                const uint64_t triple = std::min<uint64_t>(raw * 3, 3500);
+                const uint64_t secondRaw = raw > 1167 ? raw - 1167 : 0;
+                const uint64_t single =
+                    std::min<uint64_t>(secondRaw, 1500);
+                return triple + single;
+            };
+
+            const uint32_t normalBase = static_cast<uint32_t>(
+                overlap(start, end, 0, 6167));
+            const uint32_t reducedBase =
+                baseXp > normalBase ? baseXp - normalBase : 0;
+            const uint32_t reducedAward =
+                static_cast<uint32_t>(
+                    (static_cast<uint64_t>(reducedBase) * 175u) / 1000u);
+            const uint32_t bonusAward = static_cast<uint32_t>(
+                cumulativeBonus(end) - cumulativeBonus(start));
+
+            if (normalBase)
+            {
+                XpProgressData *progress = xpNotice.add_xp_progress_data();
+                progress->set_xp_points(normalBase);
+                progress->set_xp_category(2); // CompetitiveRoundWins
+            }
+            if (reducedAward)
+            {
+                XpProgressData *progress = xpNotice.add_xp_progress_data();
+                progress->set_xp_points(reducedAward);
+                progress->set_xp_category(52); // CompetitiveRoundWinsReduced
+            }
+            if (bonusAward)
+            {
+                XpProgressData *progress = xpNotice.add_xp_progress_data();
+                progress->set_xp_points(bonusAward);
+                progress->set_xp_category(3); // BonusBoost
+            }
+
+            // Rounding at the reduced-XP boundary can theoretically leave a
+            // tiny difference. Preserve the authoritative persisted award.
+            uint32_t encoded = normalBase + reducedAward + bonusAward;
+            if (encoded < awardedXp)
+            {
+                XpProgressData *progress = xpNotice.add_xp_progress_data();
+                progress->set_xp_points(awardedXp - encoded);
+                progress->set_xp_category(2);
+            }
         }
         GCMessageWrite xpWrite{
             RevivalMsgGC2ServerNotifyXPRewarded, xpNotice };
@@ -672,6 +733,9 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         ranking.set_account_id(accountId);
         ranking.set_rank_id(inventory.CompetitiveRank());
         ranking.set_wins(inventory.CompetitiveWins());
+        ranking.set_rank_change(
+            inventory.CompetitiveRank() > oldRank ? 1.0f
+            : (inventory.CompetitiveRank() < oldRank ? -1.0f : 0.0f));
         ranking.set_rank_type_id(RankTypeCompetitive);
 
         std::string rankingBytes;
@@ -912,6 +976,14 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             "REVIVAL_NATIVE_DROP_REVEAL_V1 processed match=%llu players=%u\n",
             static_cast<unsigned long long>(matchId),
             static_cast<unsigned>(accountIds.size()));
+
+        // Refresh 9105 immediately with the POST-MATCH rank/win values.
+        // CCSPlayerResource reads m_iCompetitiveRanking/m_iCompetitiveWins
+        // from sm_QueuedServerReservation, and ServerRankRevealAll uses those
+        // values for the stock placement-progress display.
+        SendMatchmakingReservation();
+        Platform::Print(
+            "REVIVAL_NATIVE_RANK_STATE_V2 refreshed post-match ranking state\n");
     }
 }
 
@@ -934,6 +1006,7 @@ void ServerGC::SendMatchmakingReservation()
     auto accounts = kv.find("account_ids");
     const std::string accountText =
         accounts != kv.end() ? accounts->second : std::string{};
+    std::string rankingSignature;
 
     if (accounts != kv.end())
     {
@@ -968,6 +1041,11 @@ void ServerGC::SendMatchmakingReservation()
                     ranking->set_wins(inventory.CompetitiveWins());
                     ranking->set_rank_type_id(RankTypeCompetitive);
 
+                    rankingSignature +=
+                        std::to_string(accountId) + ":" +
+                        std::to_string(
+                            static_cast<uint32_t>(inventory.CompetitiveRank())) +
+                        ":" + std::to_string(inventory.CompetitiveWins()) + ";";
                 }
             }
         }
@@ -1012,7 +1090,7 @@ void ServerGC::SendMatchmakingReservation()
         std::to_string(matchId) + "|" +
         std::to_string(ReservationNumber(kv, "game_type", 8)) + "|" +
         std::to_string(ReservationNumber(kv, "server_version", 0)) + "|" +
-        accountText;
+        accountText + "|" + rankingSignature;
 
     if (m_sentReservation && signature == m_lastReservationSignature)
     {
