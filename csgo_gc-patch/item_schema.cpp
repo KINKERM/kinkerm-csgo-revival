@@ -689,6 +689,59 @@ const OperationMissionCard *ItemSchema::GetOperationMissionCard(uint32_t cardId)
     return nullptr;
 }
 
+static bool RevivalCompetitiveMissionMapSupported(std::string_view mapName)
+{
+    static const std::vector<std::string_view> Supported{
+        "de_dust2",
+        "de_mirage",
+        "de_cache",
+        "de_cbble",
+        "de_inferno",
+        "de_ancient",
+        "de_nuke",
+        "cs_insertion2",
+    };
+
+    return std::find(Supported.begin(), Supported.end(), mapName)
+        != Supported.end();
+}
+
+std::string ItemSchema::PreferredOperationMissionMap(uint32_t cardId) const
+{
+    const OperationMissionCard *card = GetOperationMissionCard(cardId);
+    if (!card)
+    {
+        return {};
+    }
+
+    for (uint32_t questId : card->questIds)
+    {
+        const QuestDefinition *quest = GetQuestDefinition(questId);
+        if (!quest || quest->gameMode.find("competitive") != 0)
+        {
+            continue;
+        }
+
+        if (RevivalCompetitiveMissionMapSupported(quest->map))
+        {
+            return quest->map;
+        }
+
+        // Old mission definitions commonly encode a specific map as
+        // "mg_de_dust2"/"mg_de_cache" instead of using the map field.
+        if (quest->mapGroup.rfind("mg_", 0) == 0)
+        {
+            const std::string candidate = quest->mapGroup.substr(3);
+            if (RevivalCompetitiveMissionMapSupported(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    return {};
+}
+
 
 bool ItemSchema::CreateItemFromLootListItem(Random &random,
     const LootListItem &lootListItem,
@@ -1112,6 +1165,10 @@ void ItemSchema::ParseQuests(const KeyValue *questsKey)
         quest.id = id;
         quest.operationalPoints = questKey.GetNumber<uint32_t>("operational_points", 0);
         quest.thresholds = ParsePositiveUintList(questKey.GetString("points"));
+        quest.gameMode = std::string{ questKey.GetString("gamemode") };
+        quest.map = std::string{ questKey.GetString("map") };
+        quest.mapGroup = std::string{ questKey.GetString("mapgroup") };
+        quest.expression = std::string{ questKey.GetString("expression") };
 
         // Tournament/challenge quests can live in the same table but are not
         // Operation-star missions. Keep only definitions that have both a goal
