@@ -148,7 +148,16 @@ function LaunchMission ()
         // Process-local handoff for the in-game HUD. Source exposes cvars
         // through GameInterfaceAPI across Panorama layout/context changes,
         // unlike LobbyAPI session data and the retired active-quest cache.
+        // Set through the engine command path as well as the UI settings API.
+        // ClientCmd_Unrestricted is the underlying implementation of
+        // GameInterfaceAPI.ConsoleCommand, so this avoids any Panorama settings
+        // alias/cache issue while keeping a readable value for the HUD context.
         GameInterfaceAPI.SetSettingString( 'con_filter_text_out', 'REVIVALQ:' + nQuestId );
+        GameInterfaceAPI.ConsoleCommand(
+            'con_filter_text_out "REVIVALQ:' + nQuestId + '"' );
+        $.Msg( '[revival operation] cvar handoff=' +
+            GameInterfaceAPI.GetSettingString( 'con_filter_text_out' ) );
+
         GameInterfaceAPI.ConsoleCommand(
             'con_logfile "revival_mission_select.log"; echo ' +
             revivalSelection + '; con_logfile ""' );
