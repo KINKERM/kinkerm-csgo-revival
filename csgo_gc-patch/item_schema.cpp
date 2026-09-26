@@ -532,6 +532,26 @@ static bool IsRevivalOnlyContainer(std::string_view internalName)
         || lower.find("gold_tradeup") != std::string::npos
         || lower.find("gold trade") != std::string::npos;
 }
+
+static bool LooksLikeSouvenirPackage(
+    const ItemInfo &info,
+    const MatchDropLootTraits &traits)
+{
+    if (!traits.hasPaintedWeapon)
+    {
+        return false;
+    }
+
+    if (traits.hasTournamentQuality
+        || info.m_quality == ItemSchema::QualityTournament)
+    {
+        return true;
+    }
+
+    const std::string lower = LowerAscii(info.m_name);
+    return lower.find("souvenir") != std::string::npos
+        || lower.find("tournament") != std::string::npos;
+}
 }
 
 void ItemSchema::BuildMatchDropContainerPools()
@@ -574,7 +594,7 @@ void ItemSchema::BuildMatchDropContainerPools()
 
         // Souvenir packages contain painted weapons with tournament quality.
         // They are also kept completely separate from the ordinary case roll.
-        if (traits.hasPaintedWeapon && traits.hasTournamentQuality)
+        if (LooksLikeSouvenirPackage(info, traits))
         {
             if (Is2014To2017Container(info.m_name, info.m_firstSaleDate))
             {
