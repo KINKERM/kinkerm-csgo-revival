@@ -28,6 +28,153 @@ constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
 
+constexpr int RevivalUserMsgServerRankUpdate = 52;
+constexpr int RevivalUserMsgXpUpdate = 65;
+
+void RevivalAppendVarint(std::vector<uint8_t> &out, uint64_t value)
+{
+    while (value >= 0x80)
+    {
+        out.push_back(static_cast<uint8_t>((value & 0x7Fu) | 0x80u));
+        value >>= 7;
+    }
+    out.push_back(static_cast<uint8_t>(value));
+}
+
+void RevivalAppendLengthDelimited(
+    std::vector<uint8_t> &out, uint8_t fieldTag,
+    const void *data, size_t size)
+{
+    out.push_back(fieldTag);
+    RevivalAppendVarint(out, size);
+    const auto *begin = reinterpret_cast<const uint8_t *>(data);
+    out.insert(out.end(), begin, begin + size);
+}
+
+bool RevivalDispatchEndMatchUi(
+    uint32_t accountId,
+    uint32_t oldRank, uint32_t newRank, uint32_t wins,
+    uint32_t oldLevel, uint32_t oldXp,
+    uint32_t oldProfileWeek, uint32_t oldWeeklyBaseXp,
+    uint32_t newProfileWeek, uint32_t newWeeklyBaseXp,
+    uint32_t awardedXp)
+{
+#ifdef _WIN32
+    // Build the exact CCSUsrMsg_ServerRankUpdate wire payload:
+    // repeated RankUpdate rank_update = 1.
+    std::vector<uint8_t> rankInner;
+    rankInner.push_back(0x08); // account_id = 1
+    RevivalAppendVarint(rankInner, accountId);
+    rankInner.push_back(0x10); // rank_old = 2
+    RevivalAppendVarint(rankInner, oldRank);
+    rankInner.push_back(0x18); // rank_new = 3
+    RevivalAppendVarint(rankInner, newRank);
+    rankInner.push_back(0x20); // num_wins = 4
+    RevivalAppendVarint(rankInner, wins);
+
+    std::vector<uint8_t> rankMsg;
+    RevivalAppendLengthDelimited(
+        rankMsg, 0x0A, rankInner.data(), rankInner.size());
+
+    // Build the exact CCSUsrMsg_XpUpdate payload. The end-of-match Panorama
+    // reads current_level/current_xp as PRE-AWARD state and animates each
+    // xp_progress_data chunk from there.
+    CMsgGCCstrike15_v2_GC2ServerNotifyXPRewarded xp;
+    xp.set_account_id(accountId);
+    xp.set_current_xp(oldXp);
+    xp.set_current_level(oldLevel);
+
+    const uint64_t weeklyStart =
+        oldProfileWeek == newProfileWeek ? oldWeeklyBaseXp : 0u;
+    const uint64_t weeklyEnd = newWeeklyBaseXp;
+    const uint32_t baseXp = weeklyEnd >= weeklyStart
+        ? static_cast<uint32_t>(
+            std::min<uint64_t>(weeklyEnd - weeklyStart, UINT32_MAX))
+        : 0u;
+
+    auto overlap = [](uint64_t begin, uint64_t finish,
+                      uint64_t lo, uint64_t hi) -> uint64_t
+    {
+        const uint64_t a = std::max(begin, lo);
+        const uint64_t b = std::min(finish, hi);
+        return b > a ? b - a : 0;
+    };
+    auto cumulativeBonus = [](uint64_t raw) -> uint64_t
+    {
+        const uint64_t triple = std::min<uint64_t>(raw * 3, 3500);
+        const uint64_t secondRaw = raw > 1167 ? raw - 1167 : 0;
+        const uint64_t single = std::min<uint64_t>(secondRaw, 1500);
+        return triple + single;
+    };
+
+    if (awardedXp)
+    {
+        const uint32_t normalBase = static_cast<uint32_t>(
+            overlap(weeklyStart, weeklyEnd, 0, 6167));
+        const uint32_t reducedBase =
+            baseXp > normalBase ? baseXp - normalBase : 0;
+        const uint32_t reducedAward = static_cast<uint32_t>(
+            (static_cast<uint64_t>(reducedBase) * 175u) / 1000u);
+        const uint32_t bonusAward = static_cast<uint32_t>(
+            cumulativeBonus(weeklyEnd) - cumulativeBonus(weeklyStart));
+
+        if (normalBase)
+        {
+            auto *p = xp.add_xp_progress_data();
+            p->set_xp_points(normalBase);
+            p->set_xp_category(2); // CompetitiveRoundWins
+        }
+        if (reducedAward)
+        {
+            auto *p = xp.add_xp_progress_data();
+            p->set_xp_points(reducedAward);
+            p->set_xp_category(52); // CompetitiveRoundWinsReduced
+        }
+        if (bonusAward)
+        {
+            auto *p = xp.add_xp_progress_data();
+            p->set_xp_points(bonusAward);
+            p->set_xp_category(3); // BonusBoost
+        }
+
+        const uint32_t encoded =
+            normalBase + reducedAward + bonusAward;
+        if (encoded < awardedXp)
+        {
+            auto *p = xp.add_xp_progress_data();
+            p->set_xp_points(awardedXp - encoded);
+            p->set_xp_category(2);
+        }
+    }
+
+    std::string xpInner;
+    xp.SerializeToString(&xpInner);
+    std::vector<uint8_t> xpMsg;
+    RevivalAppendLengthDelimited(
+        xpMsg, 0x0A, xpInner.data(), xpInner.size());
+
+    const bool rankOk = Platform::DispatchClientUserMessage(
+        RevivalUserMsgServerRankUpdate, 0,
+        rankMsg.data(), static_cast<uint32_t>(rankMsg.size()));
+    const bool xpOk = Platform::DispatchClientUserMessage(
+        RevivalUserMsgXpUpdate, 0,
+        xpMsg.data(), static_cast<uint32_t>(xpMsg.size()));
+
+    Platform::Print(
+        "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V1 rank52=%d xp65=%d "
+        "old_rank=%u new_rank=%u wins=%u old_level=%u old_xp=%u award=%u\n",
+        rankOk ? 1 : 0, xpOk ? 1 : 0,
+        oldRank, newRank, wins, oldLevel, oldXp, awardedXp);
+    return rankOk && xpOk;
+#else
+    (void)accountId; (void)oldRank; (void)newRank; (void)wins;
+    (void)oldLevel; (void)oldXp; (void)oldProfileWeek;
+    (void)oldWeeklyBaseXp; (void)newProfileWeek;
+    (void)newWeeklyBaseXp; (void)awardedXp;
+    return false;
+#endif
+}
+
 bool WriteMatchmakingBridgeFile(const char *path, const std::string &text)
 {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -553,19 +700,24 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         const uint32_t baseXp = static_cast<uint32_t>(baseXp64);
 
         uint32_t levelsGained = 0;
-        const uint32_t awardedXp =
-            m_inventory.ApplyWeeklyProfileXp(baseXp, &levelsGained);
-
-        if (awardedXp)
+        uint32_t awardedXp = 0;
+        if (!serverAuthoritativeItems)
         {
-            CMsgSOMultipleObjects profileUpdate;
-            m_inventory.BuildProfilePersonaUpdate(profileUpdate);
-            SendMessageToGame(true, k_ESOMsg_UpdateMultiple, profileUpdate);
+            awardedXp =
+                m_inventory.ApplyWeeklyProfileXp(baseXp, &levelsGained);
 
-            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
-            BuildMatchmakingHello(profileHello);
-            SendMessageToGame(false,
-                k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
+            if (awardedXp)
+            {
+                CMsgSOMultipleObjects profileUpdate;
+                m_inventory.BuildProfilePersonaUpdate(profileUpdate);
+                SendMessageToGame(true, k_ESOMsg_UpdateMultiple, profileUpdate);
+
+                CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
+                BuildMatchmakingHello(profileHello);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
+                    profileHello);
+            }
         }
 
         if (!serverAuthoritativeItems)
@@ -679,7 +831,8 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
         const uint32_t roundsWon = baseXp / 30;
         const bool tied = !won && roundsWon == 15;
-        if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
+        if (!serverAuthoritativeItems
+            && m_inventory.ApplyCompetitiveMatchResult(won, tied))
         {
             SendRankUpdate();
         }
@@ -1246,6 +1399,13 @@ void ClientGC::PollRewardBridge()
                 return;
             }
 
+            const uint32_t oldLevel = m_inventory.ProfileLevel();
+            const uint32_t oldXp = m_inventory.ProfileXp();
+            const uint32_t oldProfileWeek = m_inventory.ProfileWeek();
+            const uint32_t oldWeeklyBaseXp = m_inventory.WeeklyBaseXp();
+            const uint32_t oldRank =
+                static_cast<uint32_t>(m_inventory.CompetitiveRank());
+
             if (!m_inventory.ImportRevivalProfile(
                     level, xp, profileWeek, weeklyBaseXp,
                     weeklyRewardClaimed != 0,
@@ -1254,6 +1414,14 @@ void ClientGC::PollRewardBridge()
             {
                 return;
             }
+
+            RevivalDispatchEndMatchUi(
+                AccountId(),
+                oldRank, rank, wins,
+                oldLevel, oldXp,
+                oldProfileWeek, oldWeeklyBaseXp,
+                profileWeek, weeklyBaseXp,
+                awardedXp);
 
             CMsgSOMultipleObjects profileUpdate;
             m_inventory.BuildProfilePersonaUpdate(profileUpdate);
