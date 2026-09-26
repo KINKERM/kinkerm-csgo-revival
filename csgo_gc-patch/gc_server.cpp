@@ -33,7 +33,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -408,7 +408,7 @@ void ServerGC::SendServerWelcome()
 
 namespace
 {
-constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;
+constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;\nconstexpr uint32_t RevivalMsgMatchmakingGC2ServerRankUpdate = 9116;\nconstexpr uint32_t RevivalMsgMatchEndRewardDropsNotification = 9137;\nconstexpr uint32_t RevivalMsgGC2ServerNotifyXPRewarded = 9166;
 constexpr const char *ServerReservationPath = "csgo_gc/server_reservation.txt";
 
 std::unordered_map<std::string, std::string> ReadServerReservationFile()
@@ -590,6 +590,83 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
 
         Inventory inventory{ steamId, inventoryPath };
 
+        const uint32_t ctScore = static_cast<uint32_t>(
+            std::min<uint64_t>(ReservationNumber(end, "ct_score"), UINT32_MAX));
+        const uint32_t tScore = static_cast<uint32_t>(
+            std::min<uint64_t>(ReservationNumber(end, "t_score"), UINT32_MAX));
+        const bool tied = ctScore == tScore;
+
+        std::string team;
+        auto teamIt = end.find("team_" + std::to_string(accountId));
+        if (teamIt != end.end())
+            team = teamIt->second;
+
+        uint32_t roundsWon = std::max(ctScore, tScore);
+        bool won = false;
+        bool haveTeam = false;
+        if (team == "CT")
+        {
+            haveTeam = true;
+            roundsWon = ctScore;
+            won = ctScore > tScore;
+        }
+        else if (team == "TERRORIST")
+        {
+            haveTeam = true;
+            roundsWon = tScore;
+            won = tScore > ctScore;
+        }
+
+        const RankId oldRank = inventory.CompetitiveRank();
+        const uint32_t oldWins = inventory.CompetitiveWins();
+        const uint32_t baseXp = std::min<uint32_t>(roundsWon, 30u) * 30u;
+        uint32_t levelsGained = 0;
+        const uint32_t awardedXp =
+            inventory.ApplyWeeklyProfileXp(baseXp, &levelsGained);
+
+        if (haveTeam)
+            inventory.ApplyCompetitiveMatchResult(won, tied);
+
+        // 9166: the same GC->gameserver XP notification Valve used. SRCDS
+        // converts this to CCSUsrMsg_XpUpdate for the end-match level/XP UI.
+        CMsgGCCstrike15_v2_GC2ServerNotifyXPRewarded xpNotice;
+        xpNotice.set_account_id(accountId);
+        xpNotice.set_current_xp(inventory.ProfileXp());
+        xpNotice.set_current_level(inventory.ProfileLevel());
+        if (awardedXp)
+        {
+            XpProgressData *progress = xpNotice.add_xp_progress_data();
+            progress->set_xp_points(awardedXp);
+        }
+        GCMessageWrite xpWrite{
+            RevivalMsgGC2ServerNotifyXPRewarded, xpNotice };
+        PostToHost(
+            HostEvent::Message, xpWrite.TypeMasked(),
+            xpWrite.Data(), xpWrite.Size());
+
+        // 9116: updated Competitive ranking. The 9105 reservation now carries
+        // the pre-match rank, so SRCDS can build the native old->new transition.
+        CMsgGCCStrike15_v2_MatchmakingGC2ServerRankUpdate rankNotice;
+        rankNotice.set_match_id(matchId);
+        PlayerRankingInfo *ranking = rankNotice.add_rankings();
+        ranking->set_account_id(accountId);
+        ranking->set_rank_id(inventory.CompetitiveRank());
+        ranking->set_wins(inventory.CompetitiveWins());
+        ranking->set_rank_type_id(RankTypeCompetitive);
+        GCMessageWrite rankWrite{
+            RevivalMsgMatchmakingGC2ServerRankUpdate, rankNotice };
+        PostToHost(
+            HostEvent::Message, rankWrite.TypeMasked(),
+            rankWrite.Data(), rankWrite.Size());
+
+        Platform::Print(
+            "REVIVAL_NATIVE_ENDMATCH_UI_V1 queued 9166+9116 account=%u xp=%u level=%u rank=%u->%u wins=%u->%u team=%s\n",
+            accountId, awardedXp, inventory.ProfileLevel(),
+            static_cast<uint32_t>(oldRank),
+            static_cast<uint32_t>(inventory.CompetitiveRank()),
+            oldWins, inventory.CompetitiveWins(),
+            team.empty() ? "UNKNOWN" : team.c_str());
+
         struct BridgeMessage
         {
             uint32_t type{};
@@ -614,16 +691,24 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             if (!drop.has_iteminfo())
                 return;
 
-            const std::string preview = drop.iteminfo().SerializeAsString();
-            PostToHost(
-                HostEvent::RecordPlayerItemDrop, drop.iteminfo().accountid(),
-                preview.data(), static_cast<uint32_t>(preview.size()));
-
             GCMessageWrite createWrite{ k_ESOMsg_Create, create };
             GCMessageWrite dropWrite{
-                k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop };
+                RevivalMsgMatchEndRewardDropsNotification, drop };
+
+            // This is the real Valve server path. SRCDS has a native 9137 job
+            // which calls CSGameRules()->RecordPlayerItemDrop(iteminfo), and
+            // later SendPlayerItemDropsToClient() drives the DROPS tab.
+            PostToHost(
+                HostEvent::Message, dropWrite.TypeMasked(),
+                dropWrite.Data(), dropWrite.Size());
+
             queueMessage(createWrite);
             queueMessage(dropWrite);
+
+            Platform::Print(
+                "REVIVAL_NATIVE_ENDMATCH_UI_V1 queued native 9137 account=%u item=%llu\n",
+                drop.iteminfo().accountid(),
+                static_cast<unsigned long long>(drop.iteminfo().itemid()));
         };
 
         for (int i = 0; i < 2; ++i)
