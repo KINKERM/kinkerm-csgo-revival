@@ -237,6 +237,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_PROGRESS_CACHE_V1")) {
         throw "Built csgo_gc.dll does not seed Operation quest progress SOCache on mission activation."
     }
+    if (-not $gcDllText.Contains("REVIVAL_LIVE_OPERATION_ROUNDS_V1")) {
+        throw "Built csgo_gc.dll does not contain live Operation round-win progression."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -440,6 +443,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_OPERATION_PROGRESS_CACHE_V1")) {
         throw "Installed csgo_gc.dll is missing Operation quest progress SOCache seeding."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_LIVE_OPERATION_ROUNDS_V1")) {
+        throw "Installed csgo_gc.dll is missing live Operation round-win progression."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
