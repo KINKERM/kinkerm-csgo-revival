@@ -75,6 +75,7 @@ private:
     std::vector<uint64_t> m_transactionItemIds;
 
     bool m_matchmakingActive{};
+    bool m_matchmakingIgnoreNextNonAbandonStop{};
     uint32_t m_matchmakingGameType{ 8 };
     uint32_t m_matchmakingClientVersion{};
     uint64_t m_lastMatchmakingReservation{};
