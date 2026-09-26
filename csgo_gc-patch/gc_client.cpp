@@ -1412,29 +1412,33 @@ void ClientGC::PollRewardBridge()
                 return;
             }
 
-            std::vector<uint8_t> rankUiMessage;
-            std::vector<uint8_t> xpUiMessage;
-            if (RevivalBuildEndMatchUiMessages(
-                    AccountId(),
-                    oldRank, rank, wins,
-                    oldLevel, oldXp,
-                    oldProfileWeek, oldWeeklyBaseXp,
-                    profileWeek, weeklyBaseXp,
-                    awardedXp,
-                    rankUiMessage, xpUiMessage))
+            if (matchId != m_lastUiDispatchedMatchId)
             {
-                PostToHost(
-                    HostEvent::ClientUserMessage,
-                    RevivalUserMsgServerRankUpdate,
-                    rankUiMessage.data(),
-                    static_cast<uint32_t>(rankUiMessage.size()));
-                PostToHost(
-                    HostEvent::ClientUserMessage,
-                    RevivalUserMsgXpUpdate,
-                    xpUiMessage.data(),
-                    static_cast<uint32_t>(xpUiMessage.size()));
-                Platform::Print(
-                    "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V1 queued stock 52+65\n");
+                std::vector<uint8_t> rankUiMessage;
+                std::vector<uint8_t> xpUiMessage;
+                if (RevivalBuildEndMatchUiMessages(
+                        AccountId(),
+                        oldRank, rank, wins,
+                        oldLevel, oldXp,
+                        oldProfileWeek, oldWeeklyBaseXp,
+                        profileWeek, weeklyBaseXp,
+                        awardedXp,
+                        rankUiMessage, xpUiMessage))
+                {
+                    PostToHost(
+                        HostEvent::ClientUserMessage,
+                        RevivalUserMsgServerRankUpdate,
+                        rankUiMessage.data(),
+                        static_cast<uint32_t>(rankUiMessage.size()));
+                    PostToHost(
+                        HostEvent::ClientUserMessage,
+                        RevivalUserMsgXpUpdate,
+                        xpUiMessage.data(),
+                        static_cast<uint32_t>(xpUiMessage.size()));
+                    m_lastUiDispatchedMatchId = matchId;
+                    Platform::Print(
+                        "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V2 late fallback queued stock 52+65\n");
+                }
             }
 
             CMsgSOMultipleObjects profileUpdate;
@@ -1539,6 +1543,15 @@ void ClientGC::ProcessCompletedMatchBridge(
         "REVIVAL_SYNTHETIC_MATCH_END_V1 match=%llu rounds=%u time=%u won=%u tied=%u\n",
         matchId, roundsWon, timePlayed, won ? 1u : 0u, tied ? 1u : 0u);
 
+    // Snapshot the PRE-MATCH values before applying the synthetic result.
+    // The stock XP/rank end-screen usermessages must describe old -> new state.
+    const uint32_t uiOldLevel = m_inventory.ProfileLevel();
+    const uint32_t uiOldXp = m_inventory.ProfileXp();
+    const uint32_t uiOldProfileWeek = m_inventory.ProfileWeek();
+    const uint32_t uiOldWeeklyBaseXp = m_inventory.WeeklyBaseXp();
+    const uint32_t uiOldRank =
+        static_cast<uint32_t>(m_inventory.CompetitiveRank());
+
     // Legacy Competitive XP is driven primarily by rounds won. Use the same
     // 30-XP-per-round base that the real 9136 handler derives.
     const uint32_t baseXp = roundsWon * 30u;
@@ -1565,6 +1578,42 @@ void ClientGC::ProcessCompletedMatchBridge(
 
     if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
         SendRankUpdate();
+
+    // Populate the stock Panorama end-match buffers BEFORE EndOfMatch_Show.
+    // Waiting for the later reward bundle was too late: the item-drop reveal
+    // had already started and the XP/skillgroup panels stayed hidden.
+    if (matchId != m_lastUiDispatchedMatchId)
+    {
+        std::vector<uint8_t> rankUiMessage;
+        std::vector<uint8_t> xpUiMessage;
+        if (RevivalBuildEndMatchUiMessages(
+                AccountId(),
+                uiOldRank,
+                static_cast<uint32_t>(m_inventory.CompetitiveRank()),
+                m_inventory.CompetitiveWins(),
+                uiOldLevel, uiOldXp,
+                uiOldProfileWeek, uiOldWeeklyBaseXp,
+                m_inventory.ProfileWeek(), m_inventory.WeeklyBaseXp(),
+                awardedXp,
+                rankUiMessage, xpUiMessage))
+        {
+            PostToHost(
+                HostEvent::ClientUserMessage,
+                RevivalUserMsgServerRankUpdate,
+                rankUiMessage.data(),
+                static_cast<uint32_t>(rankUiMessage.size()));
+            PostToHost(
+                HostEvent::ClientUserMessage,
+                RevivalUserMsgXpUpdate,
+                xpUiMessage.data(),
+                static_cast<uint32_t>(xpUiMessage.size()));
+            m_lastUiDispatchedMatchId = matchId;
+            Platform::Print(
+                "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V2 early queued stock 52+65 "
+                "match=%llu\n",
+                static_cast<unsigned long long>(matchId));
+        }
+    }
 
     // Mark the backend-completed match as consumed before the next 500 ms poll.
     // A late genuine 9136 carrying the same match id will then be deduplicated.
