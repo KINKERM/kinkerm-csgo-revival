@@ -676,19 +676,46 @@ class MatchmakingCoordinator:
                 t_score = int(result.get("t_score") or 0)
                 teams_raw = result.get("player_teams")
                 teams = teams_raw if isinstance(teams_raw, dict) else {}
+                rounds_raw = result.get("player_rounds_won")
+                rounds_by_player = (
+                    rounds_raw if isinstance(rounds_raw, dict) else {}
+                )
+                won_raw = result.get("player_won")
+                won_by_player = won_raw if isinstance(won_raw, dict) else {}
+                tied_raw = result.get("player_tied")
+                tied_by_player = tied_raw if isinstance(tied_raw, dict) else {}
+
                 for player in match.players:
-                    team = str(teams.get(str(player.account_id)) or "").upper()
-                    tied = ct_score == t_score
-                    won = (
-                        (team == "CT" and ct_score > t_score)
-                        or (team == "TERRORIST" and t_score > ct_score)
-                    )
-                    if team == "CT":
+                    key = str(player.account_id)
+                    team = str(teams.get(key) or "").upper()
+
+                    # V37 agent reports player-centric results from logical
+                    # squads, which survive the MR8 CT/T halftime swap. Prefer
+                    # those values; retain the old side-score fallback only for
+                    # older agents during rolling updates.
+                    if key in rounds_by_player:
+                        rounds_won = max(
+                            0, int(rounds_by_player.get(key) or 0)
+                        )
+                    elif team == "CT":
                         rounds_won = ct_score
                     elif team == "TERRORIST":
                         rounds_won = t_score
                     else:
                         rounds_won = max(ct_score, t_score)
+
+                    if key in won_by_player:
+                        won = bool(won_by_player.get(key))
+                    else:
+                        won = (
+                            (team == "CT" and ct_score > t_score)
+                            or (team == "TERRORIST" and t_score > ct_score)
+                        )
+
+                    if key in tied_by_player:
+                        tied = bool(tied_by_player.get(key))
+                    else:
+                        tied = ct_score == t_score
 
                     player_result = dict(result)
                     player_result["player_team"] = team
