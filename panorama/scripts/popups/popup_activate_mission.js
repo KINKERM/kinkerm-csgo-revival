@@ -144,6 +144,11 @@ function LaunchMission ()
         // backend/cache path to persist the mission.
         var revivalSelection = 'REVIVAL_MISSION_SELECT_V1 ' +
             nSeasonAccess + ' ' + nRequestedMissonCardId + ' ' + nQuestId;
+
+        // Process-local handoff for the in-game HUD. Source exposes cvars
+        // through GameInterfaceAPI across Panorama layout/context changes,
+        // unlike LobbyAPI session data and the retired active-quest cache.
+        GameInterfaceAPI.SetSettingString( 'con_filter_text_out', 'REVIVALQ:' + nQuestId );
         GameInterfaceAPI.ConsoleCommand(
             'con_logfile "revival_mission_select.log"; echo ' +
             revivalSelection + '; con_logfile ""' );
