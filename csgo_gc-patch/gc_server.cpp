@@ -33,7 +33,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_OPERATION_END_AUTHORITY_V1 active; REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -620,7 +620,7 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             std::min<uint64_t>(ReservationNumber(end, "ct_score"), UINT32_MAX));
         const uint32_t tScore = static_cast<uint32_t>(
             std::min<uint64_t>(ReservationNumber(end, "t_score"), UINT32_MAX));
-        const bool tied = ctScore == tScore;
+        bool tied = ctScore == tScore;
 
         std::string team;
         auto teamIt = end.find("team_" + std::to_string(accountId));
@@ -630,7 +630,29 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         uint32_t roundsWon = std::max(ctScore, tScore);
         bool won = false;
         bool haveTeam = false;
-        if (team == "CT")
+
+        // The V37 agent writes player-centric results from logical squads.
+        // Prefer them so MR8 halftime cannot turn a real winner into a loss or
+        // replace accumulated round wins with the player's final CT/T score.
+        const std::string accountSuffix = std::to_string(accountId);
+        const std::string roundsKey = "rounds_" + accountSuffix;
+        const std::string wonKey = "won_" + accountSuffix;
+        const std::string tiedKey = "tied_" + accountSuffix;
+        const bool havePlayerResult =
+            end.find(roundsKey) != end.end()
+            && end.find(wonKey) != end.end()
+            && end.find(tiedKey) != end.end();
+
+        if (havePlayerResult)
+        {
+            roundsWon = static_cast<uint32_t>(
+                std::min<uint64_t>(
+                    ReservationNumber(end, roundsKey.c_str()), UINT32_MAX));
+            won = ReservationNumber(end, wonKey.c_str()) != 0;
+            tied = ReservationNumber(end, tiedKey.c_str()) != 0;
+            haveTeam = true;
+        }
+        else if (team == "CT")
         {
             haveTeam = true;
             roundsWon = ctScore;
@@ -827,7 +849,8 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         if (mapIt != reservation.end())
             matchMap = mapIt->second;
 
-        if (!matchMap.empty()
+        if (!nativeIntermission
+            && !matchMap.empty()
             && inventory.PreferredOperationMissionQuest(matchMap) != 0)
         {
             CMsgGCCStrike15_v2_MatchEndRunRewardDrops missionRun;
