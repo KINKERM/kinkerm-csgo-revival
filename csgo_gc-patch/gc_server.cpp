@@ -915,11 +915,7 @@ void ServerGC::SendMatchmakingReservation()
                     ranking->set_rank_id(inventory.CompetitiveRank());
                     ranking->set_wins(inventory.CompetitiveWins());
                     ranking->set_rank_type_id(RankTypeCompetitive);
-                    Platform::Print(
-                        "REVIVAL_NATIVE_ENDMATCH_UI_V1 reserve rank account=%u rank=%u wins=%u\n",
-                        accountId,
-                        static_cast<uint32_t>(inventory.CompetitiveRank()),
-                        inventory.CompetitiveWins());
+
                 }
             }
         }
@@ -949,11 +945,12 @@ void ServerGC::SendMatchmakingReservation()
             queuePayload.data(), static_cast<uint32_t>(queuePayload.size()));
         m_lastQueueReservationPayload = queuePayload;
         m_queueReservationRefreshTicks = 0;
-        Platform::Print(
-            queueChanged
-                ? "matchmaking server: queued engine Q reservation match=%llu roster=%d payload=%s\n"
-                : "matchmaking server: refreshing engine Q reservation match=%llu roster=%d payload=%s\n",
-            matchId, reserve.account_ids_size(), queuePayload.c_str());
+        if (queueChanged)
+        {
+            Platform::Print(
+                "matchmaking server: queued engine Q reservation match=%llu roster=%d\n",
+                matchId, reserve.account_ids_size());
+        }
     }
 
     // The native GC request is still useful for Source's normal bookkeeping,
