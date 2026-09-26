@@ -39,6 +39,20 @@ $tradeupPatcher = Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py"
 Need-Path $tradeupPatcher "Trade-up schema patcher"
 & py -3 -m py_compile $tradeupPatcher
 if ($LASTEXITCODE -ne 0) { throw "Trade-up schema patcher failed Python syntax preflight." }
+
+# Full-schema preflight: exercise the exact legacy repeated client_loot_lists /
+# item_sets layout before touching the installed game.
+$repoItemsGame = Join-Path $RevivalRepo "items_game.txt"
+Need-Path $repoItemsGame "Repository items_game.txt"
+$tradeupPreflight = Join-Path $env:TEMP "revival_tradeup_items_game_preflight.txt"
+Remove-Item $tradeupPreflight -Force -ErrorAction SilentlyContinue
+& py -3 $tradeupPatcher $repoItemsGame --unusual-loot-lists $unusualLootLists --output $tradeupPreflight
+if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up full-schema preflight failed." }
+& py -3 $tradeupPatcher $tradeupPreflight --check
+if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up preflight output failed validation." }
+Remove-Item $tradeupPreflight -Force -ErrorAction SilentlyContinue
+Write-Host "    Full legacy schema preflight passed." -ForegroundColor Green
+
 & py -3 $tradeupPatcher $itemsGame --unusual-loot-lists $unusualLootLists
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
 & py -3 $tradeupPatcher $itemsGame --check
