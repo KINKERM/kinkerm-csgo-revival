@@ -497,6 +497,11 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
     }
 
+    const bool serverAuthoritativeItems =
+        m_revivalAuthoritativeMatchId
+        && ((matchId && matchId == m_revivalAuthoritativeMatchId)
+            || (!matchId && reservationId == GameServerCookieId));
+
     // Direct-UDP revival uses the same GC-welcome cookie as reservation id on
     // every match, so reservationid alone is NOT a valid transaction key.
     // Prefer the real queued match id carried by serverinfo.reservation.
@@ -563,6 +568,8 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                 k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, profileHello);
         }
 
+        if (!serverAuthoritativeItems)
+        {
         // Legacy profile-rank reward: at most once per Wednesday reset and only
         // after actually crossing a 5000-XP profile-rank boundary.
         if (levelsGained)
@@ -645,6 +652,15 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                 SendMessageToGame(false,
                     k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
             }
+        }
+
+        } // !serverAuthoritativeItems
+        else
+        {
+            Platform::Print(
+                "REVIVAL_SERVER_ITEM_AUTHORITY_V1 skipped client item reroll match=%llu\n",
+                static_cast<unsigned long long>(
+                    matchId ? matchId : m_revivalAuthoritativeMatchId));
         }
 
         // The server reports Competitive wins using the same Steam-user-stat
@@ -1251,7 +1267,11 @@ void ClientGC::PollRewardBridge()
             SendRankUpdate();
 
             if (matchId)
+            {
                 m_lastRewardedMatchId = matchId;
+                if (matchId == m_revivalAuthoritativeMatchId)
+                    m_revivalAuthoritativeMatchId = 0;
+            }
 
             Platform::Print(
                 "REVIVAL_PROGRESS_BUNDLE_V2 applied match=%llu awarded_xp=%u levels=%u level=%u xp=%u rank=%u wins=%u\n",
@@ -1471,6 +1491,7 @@ void ClientGC::PollMatchmakingBridge()
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
 
         m_lastMatchmakingReservation = reservationId;
+        m_revivalAuthoritativeMatchId = matchId;
         m_matchmakingIgnoreNextNonAbandonStop = false;
         m_matchmakingServerId = serverId;
         m_matchmakingDirectUdpIp = directUdpIp;
