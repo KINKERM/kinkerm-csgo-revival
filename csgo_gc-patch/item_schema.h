@@ -32,6 +32,7 @@ public:
     uint32_t m_quality;
     uint32_t m_level;
     uint32_t m_supplyCrateSeries; // cases only
+    bool m_hasTournamentEvent;
 
     // kludge for coupons so we can buy stuff from the store
     bool m_isCoupon;
