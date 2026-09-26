@@ -16,14 +16,14 @@ from typing import Any
 
 
 DEFAULT_MAP_POOL = (
-    "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_overpass",
-    "de_vertigo", "de_train", "de_cache", "de_cbble", "de_ancient",
-    "de_anubis", "de_tuscan", "de_canals", "de_breach", "de_basalt",
-    "de_abbey", "de_austria", "de_biome", "de_blackgold", "de_chlorine",
-    "de_engage", "de_grind", "de_lite", "de_mocha", "de_mutiny",
-    "de_ruby", "de_seaside", "de_shipped", "de_studio", "de_subzero",
-    "de_swamp", "de_thrill", "de_zoo",
-    "cs_office", "cs_agency", "cs_italy", "cs_insertion", "cs_insertion2",
+    "de_dust2",
+    "de_mirage",
+    "de_cache",
+    "de_cbble",
+    "de_inferno",
+    "de_ancient",
+    "de_nuke",
+    "cs_insertion2",
 )
 
 MAX_HUMANS = 10
