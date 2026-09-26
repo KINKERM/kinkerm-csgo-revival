@@ -505,6 +505,16 @@ std::string BuildQueuedReservationPayload(
 
 void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
 {
+    bool expected = false;
+    if (!m_processingRevivalMatchEnd.compare_exchange_strong(expected, true))
+        return;
+
+    struct MatchEndProcessingGuard
+    {
+        std::atomic_bool &flag;
+        ~MatchEndProcessingGuard() { flag.store(false); }
+    } processingGuard{ m_processingRevivalMatchEnd };
+
     constexpr const char *TriggerPath = "csgo_gc/server_match_end_trigger.txt";
     std::unordered_map<std::string, std::string> end;
 
