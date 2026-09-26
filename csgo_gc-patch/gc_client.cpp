@@ -1174,16 +1174,97 @@ void ClientGC::PollRewardBridge()
     // Remove first so a crash/re-entry cannot apply the same local spool twice.
     std::remove(MatchmakingRewardPath);
 
-    static const char BundleMagic[8] = { 'R','V','M','S','G','V','1','\0' };
-    if (payload.size() >= 12
-        && std::memcmp(payload.data(), BundleMagic, sizeof(BundleMagic)) == 0)
-    {
-        size_t offset = sizeof(BundleMagic);
-        uint32_t count = 0;
-        std::memcpy(&count, payload.data() + offset, sizeof(count));
-        offset += sizeof(count);
+    static const char BundleMagicV1[8] = { 'R','V','M','S','G','V','1','\0' };
+    static const char BundleMagicV2[8] = { 'R','V','M','S','G','V','2','\0' };
+    const bool bundleV1 = payload.size() >= 12
+        && std::memcmp(payload.data(), BundleMagicV1, sizeof(BundleMagicV1)) == 0;
+    const bool bundleV2 = payload.size() >= 76
+        && std::memcmp(payload.data(), BundleMagicV2, sizeof(BundleMagicV2)) == 0;
 
-        if (!count || count > 64)
+    if (bundleV1 || bundleV2)
+    {
+        size_t offset = 8;
+        uint32_t count = 0;
+
+        if (bundleV2)
+        {
+            auto readU32 = [&payload, &offset](uint32_t &value) -> bool
+            {
+                if (offset + sizeof(value) > payload.size())
+                    return false;
+                std::memcpy(&value, payload.data() + offset, sizeof(value));
+                offset += sizeof(value);
+                return true;
+            };
+            auto readI32 = [&payload, &offset](int32_t &value) -> bool
+            {
+                if (offset + sizeof(value) > payload.size())
+                    return false;
+                std::memcpy(&value, payload.data() + offset, sizeof(value));
+                offset += sizeof(value);
+                return true;
+            };
+
+            uint64_t matchId = 0;
+            if (offset + sizeof(matchId) > payload.size())
+                return;
+            std::memcpy(&matchId, payload.data() + offset, sizeof(matchId));
+            offset += sizeof(matchId);
+
+            uint32_t level = 0, xp = 0, profileWeek = 0, weeklyBaseXp = 0;
+            uint32_t weeklyRewardClaimed = 0, casePlaytime = 0, caseDrops = 0;
+            uint32_t nextCaseDrop = 0, rank = 0, wins = 0, matches = 0;
+            uint32_t awardedXp = 0, levelsGained = 0;
+            int32_t rating = 0;
+
+            if (!readU32(level) || !readU32(xp)
+                || !readU32(profileWeek) || !readU32(weeklyBaseXp)
+                || !readU32(weeklyRewardClaimed)
+                || !readU32(casePlaytime) || !readU32(caseDrops)
+                || !readU32(nextCaseDrop) || !readU32(rank)
+                || !readU32(wins) || !readI32(rating)
+                || !readU32(matches) || !readU32(awardedXp)
+                || !readU32(levelsGained) || !readU32(count))
+            {
+                Platform::Print("REVIVAL_PROGRESS_BUNDLE_V2 truncated profile header\n");
+                return;
+            }
+
+            if (!m_inventory.ImportRevivalProfile(
+                    level, xp, profileWeek, weeklyBaseXp,
+                    weeklyRewardClaimed != 0,
+                    casePlaytime, caseDrops, nextCaseDrop,
+                    static_cast<RankId>(rank), wins, rating, matches))
+            {
+                return;
+            }
+
+            CMsgSOMultipleObjects profileUpdate;
+            m_inventory.BuildProfilePersonaUpdate(profileUpdate);
+            SendMessageToGame(true, k_ESOMsg_UpdateMultiple, profileUpdate);
+
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
+            BuildMatchmakingHello(profileHello);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
+                profileHello);
+            SendRankUpdate();
+
+            if (matchId)
+                m_lastRewardedMatchId = matchId;
+
+            Platform::Print(
+                "REVIVAL_PROGRESS_BUNDLE_V2 applied match=%llu awarded_xp=%u levels=%u level=%u xp=%u rank=%u wins=%u\n",
+                static_cast<unsigned long long>(matchId), awardedXp,
+                levelsGained, level, xp, rank, wins);
+        }
+        else
+        {
+            std::memcpy(&count, payload.data() + offset, sizeof(count));
+            offset += sizeof(count);
+        }
+
+        if (count > 64)
         {
             Platform::Print(
                 "REVIVAL_NATIVE_DROP_BUNDLE_V1 invalid message count=%u\n", count);
@@ -1217,8 +1298,6 @@ void ClientGC::PollRewardBridge()
                     m_inventory.ImportServerCreatedItem(create);
             }
 
-            // Feed the exact server-generated SO Create / 9137 through the same
-            // local SteamGC message queue used by normal GC responses.
             PostToHost(HostEvent::Message, type, messageData, size);
             offset += size;
             ++delivered;
