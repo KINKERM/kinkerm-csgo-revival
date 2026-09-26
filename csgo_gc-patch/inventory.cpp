@@ -2496,6 +2496,47 @@ uint32_t Inventory::ApplyWeeklyProfileXp(uint32_t baseXp, uint32_t *levelsGained
     return awarded;
 }
 
+bool Inventory::ImportRevivalProfile(
+    uint32_t level, uint32_t xp,
+    uint32_t profileWeek, uint32_t weeklyBaseXp,
+    bool weeklyLevelRewardClaimed,
+    uint32_t casePlaytimeSeconds, uint32_t caseDropsThisWeek,
+    uint32_t nextCaseDropSeconds,
+    RankId competitiveRank, uint32_t competitiveWins,
+    int32_t competitiveRating, uint32_t competitiveMatches)
+{
+    const uint32_t rankValue = static_cast<uint32_t>(competitiveRank);
+    if (level < 1 || level > 40
+        || xp >= 5000
+        || rankValue > static_cast<uint32_t>(RankGlobalElite)
+        || competitiveRating < 600 || competitiveRating > 2300)
+    {
+        Platform::Print("progression: rejected malformed revival profile state\n");
+        return false;
+    }
+
+    m_profileLevel = level;
+    m_profileXp = xp;
+    m_profileWeek = profileWeek;
+    m_weeklyBaseXp = weeklyBaseXp;
+    m_weeklyLevelRewardClaimed = weeklyLevelRewardClaimed;
+    m_casePlaytimeSeconds = casePlaytimeSeconds;
+    m_caseDropsThisWeek = std::min<uint32_t>(caseDropsThisWeek, 2u);
+    m_nextCaseDropSeconds = nextCaseDropSeconds;
+    m_competitiveRank = competitiveRank;
+    m_competitiveWins = competitiveWins;
+    m_competitiveRating = competitiveRating;
+    m_competitiveMatches = competitiveMatches;
+    WriteToFile();
+
+    Platform::Print(
+        "REVIVAL_PROFILE_SYNC_V2 level=%u xp=%u rank=%u wins=%u matches=%u rating=%d weekly_base=%u\n",
+        m_profileLevel, m_profileXp, static_cast<uint32_t>(m_competitiveRank),
+        m_competitiveWins, m_competitiveMatches, m_competitiveRating,
+        m_weeklyBaseXp);
+    return true;
+}
+
 bool Inventory::ApplyCompetitiveMatchResult(bool won, bool tied)
 {
     const RankId oldRank = m_competitiveRank;
