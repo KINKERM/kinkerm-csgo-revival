@@ -81,6 +81,10 @@ private:
     uint64_t m_lastMatchmakingReservation{};
     uint64_t m_lastRewardedReservation{};
     uint64_t m_lastRewardedMatchId{};
+    // Non-zero while a direct-UDP revival match owns item generation.
+    // The server's 9137/SO bundle is authoritative; client 9136 must not
+    // independently reroll the same item ids with different RNG.
+    uint64_t m_revivalAuthoritativeMatchId{};
     uint32_t m_matchmakingIdleTicks{};
     uint64_t m_matchmakingServerId{};
     uint32_t m_matchmakingDirectUdpIp{};
