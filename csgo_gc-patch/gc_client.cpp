@@ -997,6 +997,7 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     m_matchmakingGameType = message.has_game_type() ? message.game_type() : 8;
     m_matchmakingClientVersion = message.has_client_version() ? message.client_version() : 0;
     m_matchmakingActive = true;
+    m_matchmakingIgnoreNextNonAbandonStop = true;
     m_lastMatchmakingReservation = 0;
     m_matchmakingIdleTicks = 0;
     m_matchmakingServerId = 0;
@@ -1039,6 +1040,21 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
 
     const int abandon = message.has_abandon() ? message.abandon() : 0;
 
+    // Legacy Panorama can emit one transient non-abandon stop immediately
+    // after StartMatchmaking while it rebuilds the mmqueue session. Treating
+    // that as a real cancel makes the queue disappear instantly.
+    if (m_matchmakingActive
+        && !m_lastMatchmakingReservation
+        && abandon != 1
+        && m_matchmakingIgnoreNextNonAbandonStop)
+    {
+        m_matchmakingIgnoreNextNonAbandonStop = false;
+        Platform::Print(
+            "REVIVAL_CLIENT_QUEUE_START_GUARD_V1 ignored transient startup stop abandon=%d\n",
+            abandon);
+        return;
+    }
+
     // After 9107 the stock client can stop the SEARCH phase with abandon=0.
     // That must not cancel the already-reserved match. Only an explicit
     // abandon=1 (or a stop before any reservation exists) leaves the revival
@@ -1061,6 +1077,7 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
     WriteMatchmakingBridgeFile(MatchmakingRequestPath, request.str());
 
     m_matchmakingActive = false;
+    m_matchmakingIgnoreNextNonAbandonStop = false;
     m_lastMatchmakingReservation = 0;
     m_matchmakingIdleTicks = 0;
     m_matchmakingServerId = 0;
@@ -1375,6 +1392,7 @@ void ClientGC::PollMatchmakingBridge()
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
 
         m_lastMatchmakingReservation = reservationId;
+        m_matchmakingIgnoreNextNonAbandonStop = false;
         m_matchmakingServerId = serverId;
         m_matchmakingDirectUdpIp = directUdpIp;
         m_matchmakingDirectUdpPort = port;
