@@ -188,6 +188,15 @@ public:
         uint32_t missionCardId,
         CMsgSOMultipleObjects &update);
 
+    // Revival-native mission selection bridge. Unlike the retired Valve
+    // mission service, this persists both the selected card and the exact quest
+    // chosen by Panorama so matchmaking, the native HUD and the laptop server
+    // all share the same mission state.
+    bool SetOperationMissionSelection(uint32_t season,
+        uint32_t missionCardId,
+        uint32_t questId,
+        CMsgSOMultipleObjects &update);
+
     // If the selected Operation card contains a supported Competitive mission,
     // return its curated map so mission matchmaking can target it.
     std::string PreferredOperationMissionMap() const;
@@ -323,6 +332,7 @@ private:
     uint32_t m_operationEarnedStars{};
     uint32_t m_operationMissionsCompleted{};
     uint32_t m_operationMissionId{};
+    uint32_t m_operationSelectedQuestId{};
     uint32_t m_operationSeasonPassTime{};
     std::unordered_map<uint32_t, OperationQuestProgressState> m_operationQuestProgress;
 };
