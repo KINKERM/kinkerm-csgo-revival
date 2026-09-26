@@ -416,6 +416,8 @@ void Inventory::ReadFromFile()
         m_operationEarnedStars = operationKey->GetNumber<uint32_t>("earned_stars", 0);
         m_operationMissionsCompleted = operationKey->GetNumber<uint32_t>("missions_completed", 0);
         m_operationMissionId = operationKey->GetNumber<uint32_t>("mission_id", 0);
+        m_operationSelectedQuestId =
+            operationKey->GetNumber<uint32_t>("selected_quest_id", 0);
         m_operationSeasonPassTime = operationKey->GetNumber<uint32_t>("season_pass_time", 0);
 
         const KeyValue *questsKey = operationKey->GetSubkey("quests");
@@ -543,6 +545,7 @@ void Inventory::WriteToFile() const
         operationKey.AddNumber("earned_stars", m_operationEarnedStars);
         operationKey.AddNumber("missions_completed", m_operationMissionsCompleted);
         operationKey.AddNumber("mission_id", m_operationMissionId);
+        operationKey.AddNumber("selected_quest_id", m_operationSelectedQuestId);
         operationKey.AddNumber("season_pass_time", m_operationSeasonPassTime);
 
         KeyValue &questsKey = operationKey.AddSubkey("quests");
@@ -824,6 +827,31 @@ bool Inventory::UseItem(uint64_t itemId,
             m_items.erase(coinId);
             Platform::Print("operation: could not initialize star attribute %u\n",
                 GetConfig().OperationStarAttribute());
+            return false;
+        }
+
+        // The retail client finds the active Operation item by the native
+        // "season access" attribute before it even looks for "quest id".
+        // Without this, GameStateAPI.GetActiveQuestID() can never become
+        // non-zero even if the GC writes attribute 168 later.
+        CSOEconItemAttribute *seasonAttribute = coin.add_attribute();
+        seasonAttribute->set_def_index(ItemSchema::AttributeSeasonAccess);
+        if (!m_itemSchema.SetAttributeUint32(
+                seasonAttribute, GetConfig().OperationSeason()))
+        {
+            m_items.erase(coinId);
+            Platform::Print(
+                "operation: could not initialize native season access %u\n",
+                GetConfig().OperationSeason());
+            return false;
+        }
+
+        CSOEconItemAttribute *questAttribute = coin.add_attribute();
+        questAttribute->set_def_index(ItemSchema::AttributeQuestId);
+        if (!m_itemSchema.SetAttributeUint32(questAttribute, 0))
+        {
+            m_items.erase(coinId);
+            Platform::Print("operation: could not initialize native quest id\n");
             return false;
         }
 
@@ -2701,59 +2729,165 @@ void Inventory::BuildProfilePersonaUpdate(CMsgSOMultipleObjects &update)
 }
 
 
-bool Inventory::SetOperationMissionCard(uint32_t season,
+bool Inventory::SetOperationMissionSelection(
+    uint32_t season,
     uint32_t missionCardId,
+    uint32_t questId,
     CMsgSOMultipleObjects &update)
 {
     if (season != GetConfig().OperationSeason())
     {
-        Platform::Print("operation: refused mission card %u for season %u (active %u)\n",
-            missionCardId, season, GetConfig().OperationSeason());
+        Platform::Print(
+            "operation: refused mission selection card=%u quest=%u for season %u (active %u)\n",
+            missionCardId, questId, season, GetConfig().OperationSeason());
         return false;
     }
 
     if (!FindOperationCoin(0))
     {
-        Platform::Print("operation: refused mission card %u - pass not activated\n", missionCardId);
+        Platform::Print(
+            "operation: refused mission selection card=%u quest=%u - pass not activated\n",
+            missionCardId, questId);
         return false;
     }
 
-    if (!m_itemSchema.GetOperationMissionCard(missionCardId))
+    // Depending on which legacy client path generated the request, the value
+    // called "mission_id" can be the weekly mission-card id or the concrete
+    // quest id. Resolve either representation to one canonical card.
+    const OperationMissionCard *card =
+        m_itemSchema.GetOperationMissionCard(missionCardId);
+
+    if (!card && missionCardId)
     {
-        Platform::Print("operation: refused unknown mission card %u\n", missionCardId);
+        card = m_itemSchema.GetOperationMissionCardForQuest(missionCardId);
+        if (card && !questId)
+            questId = missionCardId;
+    }
+
+    if (!card && questId)
+        card = m_itemSchema.GetOperationMissionCardForQuest(questId);
+
+    if (!card)
+    {
+        Platform::Print(
+            "operation: refused unknown mission selection card=%u quest=%u\n",
+            missionCardId, questId);
         return false;
     }
 
-    m_operationMissionId = missionCardId;
+    // If Panorama did not provide a concrete quest, pick the first
+    // Competitive quest on the card. This keeps native 9165 requests useful,
+    // while the explicit revival bridge below normally supplies the exact id.
+    if (!questId)
+    {
+        for (uint32_t candidateId : card->questIds)
+        {
+            const QuestDefinition *candidate =
+                m_itemSchema.GetQuestDefinition(candidateId);
+            if (candidate
+                && candidate->gameMode.rfind("competitive", 0) == 0)
+            {
+                questId = candidateId;
+                break;
+            }
+        }
+    }
 
-    // Selecting a different card must clear any quest left active from the
-    // previous match. The concrete quest is chosen once matchmaking allocates
-    // an actual map.
-    SetOperationActiveQuest(0, update);
+    const QuestDefinition *quest =
+        questId ? m_itemSchema.GetQuestDefinition(questId) : nullptr;
+    if (!quest
+        || std::find(
+            card->questIds.begin(), card->questIds.end(), questId)
+            == card->questIds.end())
+    {
+        Platform::Print(
+            "operation: refused quest %u - not a member of card %u\n",
+            questId, card->id);
+        return false;
+    }
+
+    m_operationMissionId = card->id;
+    m_operationSelectedQuestId = questId;
+
+    // This writes native coin attributes 71 (season access) and 168 (quest id)
+    // and emits the coin SO update the retail client uses for active-quest HUD.
+    if (!SetOperationActiveQuest(questId, update))
+        return false;
+
     AddOperationSeasonalState(update);
     WriteToFile();
 
-    Platform::Print("operation: active mission card set to %u (season %u)\n",
-        missionCardId, season);
+    Platform::Print(
+        "REVIVAL_OPERATION_SELECTION_BRIDGE_V2 season=%u card=%u quest=%u\n",
+        season, m_operationMissionId, m_operationSelectedQuestId);
     return true;
+}
+
+bool Inventory::SetOperationMissionCard(uint32_t season,
+    uint32_t missionCardId,
+    CMsgSOMultipleObjects &update)
+{
+    // Compatibility path for the original 9165 request. The explicit Panorama
+    // bridge sends an exact quest id, but old/native requests may only carry
+    // the mission/card field.
+    return SetOperationMissionSelection(
+        season, missionCardId, 0, update);
 }
 
 std::string Inventory::PreferredOperationMissionMap() const
 {
-    if (!m_operationMissionId)
+    if (m_operationSelectedQuestId)
     {
-        return {};
+        const QuestDefinition *quest =
+            m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
+        if (quest && quest->gameMode.rfind("competitive", 0) == 0)
+        {
+            // Riptide Premier uses lobby_mapveto: keep the shared Competitive
+            // pool and let the revival coordinator choose the actual BSP.
+            if (quest->map == "lobby_mapveto")
+                return {};
+
+            if (!quest->map.empty())
+                return quest->map;
+
+            if (quest->mapGroup.rfind("mg_", 0) == 0)
+                return quest->mapGroup.substr(3);
+        }
     }
+
+    if (!m_operationMissionId)
+        return {};
+
     return m_itemSchema.PreferredOperationMissionMap(m_operationMissionId);
 }
 
 uint32_t Inventory::PreferredOperationMissionQuest(
     std::string_view actualMap) const
 {
-    if (!m_operationMissionId)
+    if (m_operationSelectedQuestId)
     {
-        return 0;
+        const QuestDefinition *quest =
+            m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
+        if (quest && quest->gameMode.rfind("competitive", 0) == 0)
+        {
+            bool mapMatches = quest->map == actualMap
+                || quest->map == "lobby_mapveto";
+
+            if (!mapMatches
+                && quest->mapGroup.rfind("mg_", 0) == 0)
+            {
+                mapMatches =
+                    quest->mapGroup.substr(3) == actualMap;
+            }
+
+            if (mapMatches)
+                return m_operationSelectedQuestId;
+        }
     }
+
+    if (!m_operationMissionId)
+        return 0;
+
     return m_itemSchema.PreferredOperationMissionQuest(
         m_operationMissionId, actualMap);
 }
@@ -2775,6 +2909,33 @@ bool Inventory::SetOperationActiveQuest(uint32_t questId,
         Platform::Print(
             "operation: cannot publish native active quest %u - no Operation coin\n",
             questId);
+        return false;
+    }
+
+    // Repair both newly-created and old revival coins. Retail
+    // RefreshActiveQuestID() first filters on "season access", then reads
+    // "quest id" from that same item.
+    CSOEconItemAttribute *seasonAttribute = nullptr;
+    for (int i = 0; i < coin->attribute_size(); ++i)
+    {
+        if (coin->mutable_attribute(i)->def_index()
+            == ItemSchema::AttributeSeasonAccess)
+        {
+            seasonAttribute = coin->mutable_attribute(i);
+            break;
+        }
+    }
+    if (!seasonAttribute)
+    {
+        seasonAttribute = coin->add_attribute();
+        seasonAttribute->set_def_index(ItemSchema::AttributeSeasonAccess);
+    }
+    if (!m_itemSchema.SetAttributeUint32(
+            seasonAttribute, GetConfig().OperationSeason()))
+    {
+        Platform::Print(
+            "operation: failed to write native season-access attribute %u\n",
+            GetConfig().OperationSeason());
         return false;
     }
 
@@ -2903,6 +3064,7 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         // Competitive queue after completion does not keep forcing the mission map.
         state.bonusPoints = 0;
         m_operationMissionId = 0;
+        m_operationSelectedQuestId = 0;
 
         // Match completed: clear the native active quest so the HUD does not
         // keep showing a finished mission into the next ordinary match.
@@ -3017,8 +3179,32 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
     }
 
     const QuestDefinition *selected = nullptr;
+
+    // The explicit selection bridge tells us exactly which mission the user
+    // clicked. Use it first instead of guessing from all quests on the week.
+    if (m_operationSelectedQuestId)
+    {
+        const QuestDefinition *exact =
+            m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
+        if (exact && exact->gameMode.find("competitive") == 0)
+        {
+            bool exactMapMatches =
+                exact->map == mapName || exact->map == "lobby_mapveto";
+            if (!exactMapMatches
+                && exact->mapGroup.rfind("mg_", 0) == 0)
+            {
+                exactMapMatches =
+                    exact->mapGroup.substr(3) == mapName;
+            }
+            if (exactMapMatches)
+                selected = exact;
+        }
+    }
+
     for (uint32_t questId : card->questIds)
     {
+        if (selected)
+            break;
         const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
         if (!quest || quest->gameMode.find("competitive") != 0)
         {
