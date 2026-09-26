@@ -332,19 +332,32 @@ def _remove_old_patch(text: str) -> tuple[str, bool]:
         changed = True
 
     recipes_open, recipes_close = _find_named_block(text, "recipes")
+
+    # Older revival builds inserted recipe 900/901 inside recipe 4/14 instead
+    # of as siblings. Search the entire recipes range, not only direct children.
     removals: list[tuple[int, int]] = []
-    for entry in _iter_block_entries(text, recipes_open, recipes_close):
-        if entry.kind != "block" or entry.key not in {"900", "901"}:
-            continue
-        raw = text[entry.start:entry.end]
-        if OLD_MARKER in raw or ('"di_A"' in raw and '"ancient"' in raw):
-            removals.append((entry.start, entry.end))
-    for start, end in reversed(removals):
-        text = text[:start] + text[end:]
+    for recipe_id in ("900", "901"):
+        for open_pos, close_pos in _find_named_blocks(
+            text, recipe_id, recipes_open + 1, recipes_close
+        ):
+            raw = text[open_pos + 1:close_pos]
+            if (
+                OLD_MARKER in raw
+                or (
+                    '"di_A"' in raw
+                    and '"5"' in raw
+                    and '"*rarity"' in raw
+                    and '"ancient"' in raw
+                )
+            ):
+                line_start = text.rfind("\n", recipes_open + 1, open_pos) + 1
+                removals.append((line_start, close_pos + 1))
+
+    for remove_start, remove_end in sorted(removals, reverse=True):
+        text = text[:remove_start] + text[remove_end:]
         changed = True
 
     return text, changed
-
 
 def _ensure_prefab_craft_class(text: str, prefab_name: str) -> tuple[str, bool]:
     prefabs_open, prefabs_close = _find_named_block(text, "prefabs")
