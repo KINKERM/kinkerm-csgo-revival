@@ -34,7 +34,7 @@ Write-Host ("    Rare-special lists: " + $unusualLootLists) -ForegroundColor Dar
 Write-Host ""
 Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
 
-Write-Host "[1/5] Installing CS2-style 5-Covert recipe metadata..." -ForegroundColor Yellow
+Write-Host "[1/5] Installing launch-safe Legacy 5-Covert recipes..." -ForegroundColor Yellow
 $tradeupPatcher = Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py"
 Need-Path $tradeupPatcher "Trade-up schema patcher"
 & py -3 -m py_compile $tradeupPatcher
@@ -53,17 +53,10 @@ $preflightExit = $LASTEXITCODE
 $preflightOutput | ForEach-Object { Write-Host $_ }
 if ($preflightExit -ne 0) { throw "5-Covert trade-up full-schema preflight failed." }
 
-$mappingLine = $preflightOutput | Where-Object { $_ -match "mapped_skins=(\d+).*mapped_item_sets=(\d+)" } | Select-Object -Last 1
-if (-not $mappingLine) {
-    throw "5-Covert trade-up preflight did not report mapping counts."
+$preflightJoined = $preflightOutput -join [Environment]::NewLine
+if (-not $preflightJoined.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY")) {
+    throw "5-Covert trade-up preflight did not install the V4 Legacy marker."
 }
-$null = $mappingLine -match "mapped_skins=(\d+).*mapped_item_sets=(\d+)"
-$mappedSkins = [int]$Matches[1]
-$mappedSets = [int]$Matches[2]
-if ($mappedSkins -lt 100 -or $mappedSets -lt 10) {
-    throw "5-Covert trade-up mapping coverage is unexpectedly low: skins=$mappedSkins item_sets=$mappedSets"
-}
-
 & py -3 $tradeupPatcher $tradeupPreflight --unusual-loot-lists $unusualLootLists --output $tradeupPreflight2
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up idempotency rerun failed." }
 
@@ -76,17 +69,17 @@ if ($preflightHash1 -ne $preflightHash2) {
 & py -3 $tradeupPatcher $tradeupPreflight2 --check
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up preflight output failed validation." }
 Remove-Item $tradeupPreflight, $tradeupPreflight2 -Force -ErrorAction SilentlyContinue
-Write-Host "    Full legacy schema preflight passed: $mappedSkins skins, $mappedSets item sets, idempotent." -ForegroundColor Green
+Write-Host "    Full legacy schema preflight passed: recipes 5/15 validated, V3 removed, idempotent." -ForegroundColor Green
 
 & py -3 $tradeupPatcher $itemsGame --unusual-loot-lists $unusualLootLists
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
 & py -3 $tradeupPatcher $itemsGame --check
 if ($LASTEXITCODE -ne 0) { throw "Installed 5-Covert client schema failed validation." }
 $itemsText = Get-Content $itemsGame -Raw
-if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V3")) {
-    throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
+if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY")) {
+    throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY"
 }
-Write-Host "    Valve-style recipes 5/15 + case gold-pool mappings installed." -ForegroundColor Green
+Write-Host "    Legacy recipes 5/15 installed; gold-pool resolution remains GC-side." -ForegroundColor Green
 
 # The GC itself loads this relative to the game working directory. A source
 # checkout keeps it under examples\; release packages move it into csgo_gc\.
