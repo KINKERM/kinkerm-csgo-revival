@@ -792,6 +792,46 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             HostEvent::Message, rankType,
             rankPacket.data(), static_cast<uint32_t>(rankPacket.size()));
 
+        // The Legacy dedicated server consumes 9137 into the stock DROPS UI,
+        // but this build does not translate our fake-GC 9116/9166 into the
+        // client usermessages that Panorama actually reads. Send a compact
+        // envelope to steam_hook so the engine/main thread can emit the real
+        // CS_UM_ServerRankUpdate (52) + CS_UM_XpUpdate (65).
+        std::string xpBytes;
+        xpNotice.SerializeToString(&xpBytes);
+
+        std::vector<uint8_t> progressUi;
+        auto appendUi = [&progressUi](const auto &value)
+        {
+            const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+            progressUi.insert(progressUi.end(), bytes, bytes + sizeof(value));
+        };
+
+        const uint32_t uiAccount = accountId;
+        const int32_t uiRankOld = static_cast<int32_t>(oldRank);
+        const int32_t uiRankNew =
+            static_cast<int32_t>(inventory.CompetitiveRank());
+        const int32_t uiWins =
+            static_cast<int32_t>(inventory.CompetitiveWins());
+        const float uiRankChange =
+            inventory.CompetitiveRank() > oldRank ? 1.0f
+            : (inventory.CompetitiveRank() < oldRank ? -1.0f : 0.0f);
+        const int32_t uiRankType = RankTypeCompetitive;
+        const uint32_t uiXpSize = static_cast<uint32_t>(xpBytes.size());
+
+        appendUi(uiAccount);
+        appendUi(uiRankOld);
+        appendUi(uiRankNew);
+        appendUi(uiWins);
+        appendUi(uiRankChange);
+        appendUi(uiRankType);
+        appendUi(uiXpSize);
+        progressUi.insert(progressUi.end(), xpBytes.begin(), xpBytes.end());
+
+        PostToHost(
+            HostEvent::EndMatchProgressUI, accountId,
+            progressUi.data(), static_cast<uint32_t>(progressUi.size()));
+
         Platform::Print(
             "REVIVAL_NATIVE_ENDMATCH_UI_V1 queued 9166+9116 account=%u xp=%u level=%u rank=%u->%u wins=%u->%u team=%s\n",
             accountId, awardedXp, inventory.ProfileLevel(),
