@@ -14,20 +14,64 @@ Need-Path $RevivalRepo "Revival repo"
 Need-Path $CsgoGcSource "csgo_gc source"
 Need-Path (Join-Path $CsgoGcSource "build") "csgo_gc build directory"
 Need-Path $CsgoDir "CS:GO Legacy root"
+if (Get-Process -Name "csgo" -ErrorAction SilentlyContinue) {
+    throw "Close CS:GO completely before running this hotfix (Panorama code.pbin/panorama.dll must not be in use)."
+}
 $itemsGame = Join-Path $CsgoDir "csgo\scripts\items\items_game.txt"
 Need-Path $itemsGame "CS:GO items_game.txt"
 
 Write-Host ""
 Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
 
-Write-Host "[0/3] Enabling CS2-style 5-Covert Trade Up Contract..." -ForegroundColor Yellow
+Write-Host "[1/5] Installing CS2-style 5-Covert recipe metadata..." -ForegroundColor Yellow
 & py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
 $itemsText = Get-Content $itemsGame -Raw
 if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_V1")) {
     throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_V1"
 }
-Write-Host "    Trade Up Contract now exposes 5-Covert recipes." -ForegroundColor Green
+Write-Host "    Recipe metadata installed (5 Covert -> rare special)." -ForegroundColor Green
+
+Write-Host "[2/5] Patching Legacy Panorama so Covert skins can actually be selected..." -ForegroundColor Yellow
+$panoramaDir = Join-Path $CsgoDir "csgo\panorama"
+$codePbin = Join-Path $panoramaDir "code.pbin"
+$backupPbin = Join-Path $panoramaDir "_code.pbin"
+$pbinTool = Join-Path $RevivalRepo "tools\pbin.py"
+$tradeupUiTool = Join-Path $RevivalRepo "tools\patch_tradeup_panorama.py"
+Need-Path $panoramaDir "CS:GO Panorama directory"
+Need-Path $codePbin "CS:GO Panorama code.pbin"
+Need-Path $pbinTool "PBIN tool"
+Need-Path $tradeupUiTool "Trade-up Panorama patcher"
+
+# Keep a one-time untouched/current baseline for manual recovery, but patch the
+# ACTIVE code.pbin so any other revival Panorama changes already installed stay intact.
+if (-not (Test-Path $backupPbin)) {
+    Copy-Item $codePbin $backupPbin -Force
+}
+
+Push-Location $panoramaDir
+try {
+    & py -3 $pbinTool unpack "code.pbin"
+    if ($LASTEXITCODE -ne 0) { throw "Could not unpack active Panorama code.pbin." }
+
+    & py -3 $tradeupUiTool $panoramaDir
+    if ($LASTEXITCODE -ne 0) { throw "Legacy Panorama Covert selector patch failed." }
+
+    & py -3 $pbinTool pack
+    if ($LASTEXITCODE -ne 0) { throw "Could not repack Panorama code.pbin." }
+
+    & py -3 $pbinTool patch_panorama
+    if ($LASTEXITCODE -ne 0) { throw "Could not patch panorama.dll for the modified code.pbin." }
+}
+finally {
+    Pop-Location
+}
+
+$codeText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($codePbin))
+if (-not $codeText.Contains("REVIVAL_COVERT_TRADEUP_UI_V2")) {
+    throw "Repacked code.pbin is missing REVIVAL_COVERT_TRADEUP_UI_V2"
+}
+Write-Host "    Panorama selector bridge installed; red Covert weapon skins are no longer hidden by the legacy recipe filter." -ForegroundColor Green
 
 # Keep steam_hook.cpp matched to this local csgo_gc tree, then apply the
 # current revival overlay and the small compatibility patch.
@@ -43,7 +87,7 @@ $steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) { throw "steam_hook patch failed." }
 
-Write-Host "[1/3] Building only csgo_gc.dll..." -ForegroundColor Yellow
+Write-Host "[3/5] Building only csgo_gc.dll..." -ForegroundColor Yellow
 & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo_gc
 if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed." }
 
@@ -91,7 +135,7 @@ foreach ($marker in $markers) {
 }
 Write-Host "    Fresh DLL contains direct-UDP matchmaking support." -ForegroundColor Green
 
-Write-Host "[2/3] Installing DLL on main PC..." -ForegroundColor Yellow
+Write-Host "[4/5] Installing DLL on main PC..." -ForegroundColor Yellow
 $runtimeDir = Join-Path $CsgoDir "csgo_gc"
 New-Item $runtimeDir -ItemType Directory -Force | Out-Null
 Copy-Item $gcDll (Join-Path $runtimeDir "csgo_gc.dll") -Force
@@ -102,7 +146,7 @@ if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash $gcDll -A
     throw "Installed DLL hash does not match fresh build."
 }
 
-Write-Host "[3/3] Rebuilding laptop pack..." -ForegroundColor Yellow
+Write-Host "[5/5] Rebuilding laptop pack..." -ForegroundColor Yellow
 $pack = Join-Path $RevivalRepo "launcher\csgo-revival-pack.zip"
 & py -3 (Join-Path $RevivalRepo "launcher\build_pack.py") --csgo-gc-dir $CsgoGcSource --out $pack
 if ($LASTEXITCODE -ne 0) { throw "pack build failed." }
