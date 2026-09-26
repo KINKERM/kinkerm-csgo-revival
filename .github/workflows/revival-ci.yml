@@ -31,6 +31,9 @@ jobs:
         shell: pwsh
         run: |
           node --check panorama/scripts/mainmenu_play.js
+          node --check panorama/scripts/operation/operation_mission_card.js
+          node --check panorama/scripts/operation/operation_util.js
+          node --check panorama/scripts/popups/popup_activate_mission.js
           python -c "import xml.etree.ElementTree as ET; ET.parse(r'panorama/layout/mainmenu_play.xml'); print('Panorama XML OK')"
       - name: Validate Windows updater syntax
         shell: pwsh
