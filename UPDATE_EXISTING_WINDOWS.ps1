@@ -70,10 +70,11 @@ if ((-not $updaterTracked) -and (Test-Path $updaterPath)) {
 # binaries. Persist the tree hash that was actually built instead.
 $targetGcTree = (& git -C $RevivalRepo rev-parse "origin/${Branch}:csgo_gc-patch").Trim()
 $targetHookPatch = (& git -C $RevivalRepo rev-parse "origin/${Branch}:tools/patch_steam_hook.py").Trim()
-if ((-not $targetGcTree) -or (-not $targetHookPatch)) {
+$targetKeyValuePatch = (& git -C $RevivalRepo rev-parse "origin/${Branch}:tools/patch_keyvalue_operation_duplicates.py").Trim()
+if ((-not $targetGcTree) -or (-not $targetHookPatch) -or (-not $targetKeyValuePatch)) {
     throw "Could not resolve target GC patch inputs."
 }
-$targetGcTree = "$targetGcTree-$targetHookPatch"
+$targetGcTree = "$targetGcTree-$targetHookPatch-$targetKeyValuePatch"
 
 $buildStamp = Join-Path $CsgoGcSource "build\.revival_gc_patch_tree.txt"
 $lastBuiltGcTree = ""
@@ -107,10 +108,11 @@ Write-Host "[2/6] Applying complete csgo_gc overlay..." -ForegroundColor Yellow
 # revival patcher below makes only the two small required edits in-place.
 & git -C $CsgoGcSource checkout -- `
     "csgo_gc/steam_hook.cpp" `
+    "csgo_gc/keyvalue.cpp" `
     "csgo_gc/platform.h" `
     "csgo_gc/platform_windows.cpp"
 if ($LASTEXITCODE -ne 0) {
-    throw "Could not restore local csgo_gc steam_hook/platform files."
+    throw "Could not restore local csgo_gc steam_hook/keyvalue/platform files."
 }
 
 Copy-Item (Join-Path $RevivalRepo "csgo_gc-patch\*") (Join-Path $CsgoGcSource "csgo_gc\") -Recurse -Force
@@ -119,6 +121,12 @@ $steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to patch the local-compatible steam_hook.cpp."
+}
+
+$keyValueCpp = Join-Path $CsgoGcSource "csgo_gc\keyvalue.cpp"
+& py -3 (Join-Path $RevivalRepo "tools\patch_keyvalue_operation_duplicates.py") $keyValueCpp
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to patch KeyValue duplicate Operation mission-card handling."
 }
 
 $clientExe = Join-Path $CsgoGcSource "build\launcher\Release\csgo.exe"
@@ -222,6 +230,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     }
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_SCHEMA_V2")) {
         throw "Built csgo_gc.dll does not parse Riptide quest_definitions correctly."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_CARD_PARSE_V3")) {
+        throw "Built csgo_gc.dll does not contain the full repeated Riptide mission-card parser."
     }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
@@ -420,6 +431,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_OPERATION_SCHEMA_V2")) {
         throw "Installed csgo_gc.dll is missing the Riptide quest_definitions parser fix."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_OPERATION_CARD_PARSE_V3")) {
+        throw "Installed csgo_gc.dll is missing the full repeated Riptide mission-card parser."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
