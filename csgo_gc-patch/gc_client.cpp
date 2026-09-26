@@ -1926,6 +1926,33 @@ void ClientGC::PollMatchmakingBridge()
         if (serverVersion)
             details->set_server_version(serverVersion);
 
+        // The stock in-game mission HUD does NOT read
+        // SeasonalOperations.mission_id. GameStateAPI.GetActiveQuestID() is
+        // backed by the Operation coin's native "quest id" attribute. Resolve
+        // the selected card against the actual allocated map and publish that
+        // item update before the client enters the match-ready/connect flow.
+        const uint32_t operationQuestId =
+            m_inventory.PreferredOperationMissionQuest(mapName);
+        if (operationQuestId)
+        {
+            CMsgSOMultipleObjects questUpdate;
+            if (m_inventory.SetOperationActiveQuest(
+                    operationQuestId, questUpdate))
+            {
+                SendMessageToGame(
+                    true, k_ESOMsg_UpdateMultiple, questUpdate);
+                Platform::Print(
+                    "REVIVAL_NATIVE_ACTIVE_QUEST_V1 map=%s quest=%u published before reserve\n",
+                    mapName.c_str(), operationQuestId);
+            }
+        }
+        else
+        {
+            Platform::Print(
+                "REVIVAL_NATIVE_ACTIVE_QUEST_V1 map=%s no matching selected quest\n",
+                mapName.c_str());
+        }
+
         // 9107 itself is the transition into the stock match-ready flow.
         // Do NOT immediately follow it with 9104 matchmaking=0: that cancels
         // the UI/search state in the same tick and suppresses the green ACCEPT
