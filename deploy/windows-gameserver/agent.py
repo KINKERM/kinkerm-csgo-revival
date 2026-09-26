@@ -45,7 +45,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V32"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V33"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -1081,8 +1081,7 @@ class ServerSlot:
                     "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
                     "mp_autokick 0; mp_autoteambalance 0; mp_limitteams 0; "
-                    "mp_friendlyfire 1; mp_maxrounds 30; mp_winlimit 0; "
-                    "mp_halftime 1; mp_overtime_enable 1; mp_overtime_maxrounds 6; "
+                    "mp_friendlyfire 1; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_timelimit 0; mp_match_restart_delay 15; "
                     "mp_competitive_endofmatch_extra_time 20; "
@@ -1308,7 +1307,7 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5 1; "
-                    "mp_winlimit 0; mp_timelimit 0; "
+                    "mp_timelimit 0; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
                     "bot_quota_mode fill; bot_quota 10"
