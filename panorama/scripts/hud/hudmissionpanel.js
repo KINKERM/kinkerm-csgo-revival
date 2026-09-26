@@ -40,7 +40,7 @@ var HudMissionPanel = ( function() {
 			return;
 		}
 
-		_UpdateMission();
+		$.Schedule( 1, _UpdateMission );
 
 		                                                                                
 		                         
@@ -170,7 +170,9 @@ var HudMissionPanel = ( function() {
 (function()
 {
 	$.Msg( '[revival operation hud] script loaded' );
-	$.RegisterForUnhandledEvent( "GameState_OnMatchStart", HudMissionPanel.OnMatchStart );
+	// Revival direct-connect reservations do not reliably emit GameState_OnMatchStart.
+	// GameState_ServerSpawn is dispatched on every successful server connection.
+	$.RegisterForUnhandledEvent( "GameState_ServerSpawn", HudMissionPanel.OnMatchStart );
 	$.RegisterForUnhandledEvent( "GameState_LevelInitPreEntity", HudMissionPanel.LevelTransitionStart );
 	$.RegisterForUnhandledEvent( "OnQuestProgressMade", HudMissionPanel.UpdateProgress );
 	$.RegisterForUnhandledEvent( 'OnRoundMVPShown', HudMissionPanel.OnReceiveMVP );
