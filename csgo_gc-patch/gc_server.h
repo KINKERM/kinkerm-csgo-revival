@@ -11,6 +11,7 @@ public:
 
     // Called synchronously from the hardened CCSGameRules::RewardMatchEndDrops
     // hook so item previews exist before Source broadcasts the end-match reveal.
+    void ProcessRevivalMatchEndTrigger(bool nativeIntermission = false);
 
 private:
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
@@ -27,8 +28,6 @@ private:
     void MatchmakingReservationResponse(GCMessageRead &messageRead);
     void IncrementKillCountAttribute(GCMessageRead &messageRead);
     void MatchEndRunRewardDrops(GCMessageRead &messageRead);
-    void ProcessRevivalMatchEndTrigger(bool nativeIntermission = false);
-
     bool m_sentWelcome{};
     bool m_sentReservation{};
     uint32_t m_reservationIdleTicks{};
