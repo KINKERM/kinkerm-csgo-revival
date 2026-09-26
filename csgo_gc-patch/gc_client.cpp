@@ -981,15 +981,21 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
     }
 
-    Platform::Print(
-        revivalMissionPacket
-            ? "REVIVAL_REPEATABLE_MISSIONS_V4 completed mission packet "
-              "match=%llu account=%u\n"
-            : "progression: completed match-end processing "
-              "match=%llu reservation=%llu account=%u\n",
-        matchId,
-        revivalMissionPacket ? AccountId() : reservationId,
-        revivalMissionPacket ? 0u : AccountId());
+    if (revivalMissionPacket)
+    {
+        Platform::Print(
+            "REVIVAL_REPEATABLE_MISSIONS_V4 completed mission packet "
+            "match=%llu account=%u rounds=%u won=%u\n",
+            matchId, AccountId(), revivalMissionRounds,
+            revivalMissionWon ? 1u : 0u);
+    }
+    else
+    {
+        Platform::Print(
+            "progression: completed match-end processing "
+            "match=%llu reservation=%llu account=%u\n",
+            matchId, reservationId, AccountId());
+    }
 }
 
 
