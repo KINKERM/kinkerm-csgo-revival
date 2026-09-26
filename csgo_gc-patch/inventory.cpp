@@ -432,6 +432,8 @@ void Inventory::ReadFromFile()
                 OperationQuestProgressState state;
                 state.progress = questKey.GetNumber<uint32_t>("progress", 0);
                 state.bonusPoints = questKey.GetNumber<uint32_t>("bonus_points", 0);
+                state.repeatableRounds = questKey.GetNumber<uint32_t>(
+                    "repeatable_rounds", 0);
                 m_operationQuestProgress[questId] = state;
             }
         }
@@ -549,6 +551,7 @@ void Inventory::WriteToFile() const
             KeyValue &questKey = questsKey.AddSubkey(std::to_string(pair.first));
             questKey.AddNumber("progress", pair.second.progress);
             questKey.AddNumber("bonus_points", pair.second.bonusPoints);
+            questKey.AddNumber("repeatable_rounds", pair.second.repeatableRounds);
         }
     }
 
@@ -2875,7 +2878,14 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
 
         // Coin tiers still use Valve's Riptide mission-earned thresholds:
         // 33 Silver, 66 Gold, 100 Diamond. Purchased stars remain wallet-only.
-        m_operationMissionsCompleted = m_operationEarnedStars;
+        if (completedCycles > 0)
+        {
+            const uint64_t completedSum =
+                static_cast<uint64_t>(m_operationMissionsCompleted)
+                + completedCycles;
+            m_operationMissionsCompleted = completedSum > UINT32_MAX
+                ? UINT32_MAX : static_cast<uint32_t>(completedSum);
+        }
 
         const uint32_t targetCoinDef = OperationCoinDefForEarnedStars();
         if (targetCoinDef && coin->def_index() != targetCoinDef)
@@ -2901,6 +2911,131 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         static_cast<unsigned long long>(completedCycles),
         starsEarnedNow, m_operationEarnedStars);
     return true;
+}
+
+bool Inventory::ApplySelectedOperationCompetitiveMission(
+    std::string_view mapName,
+    uint32_t roundsWon,
+    bool wonMatch,
+    CMsgSOMultipleObjects &update)
+{
+    if (!m_operationMissionId || mapName.empty())
+    {
+        return false;
+    }
+
+    const OperationMissionCard *card =
+        m_itemSchema.GetOperationMissionCard(m_operationMissionId);
+    if (!card)
+    {
+        return false;
+    }
+
+    const QuestDefinition *selected = nullptr;
+    for (uint32_t questId : card->questIds)
+    {
+        const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
+        if (!quest || quest->gameMode.find("competitive") != 0)
+        {
+            continue;
+        }
+
+        bool mapMatches = quest->map == mapName;
+
+        // Premier's Riptide mission uses lobby_mapveto rather than a concrete
+        // BSP. In the revival that means "any map in our curated Competitive
+        // pool" instead of trying to resurrect Valve's veto backend.
+        if (quest->map == "lobby_mapveto")
+        {
+            mapMatches = true;
+        }
+
+        if (!mapMatches && quest->mapGroup.rfind("mg_", 0) == 0)
+        {
+            mapMatches = quest->mapGroup.substr(3) == mapName;
+        }
+
+        if (!mapMatches)
+        {
+            continue;
+        }
+
+        selected = quest;
+        break;
+    }
+
+    if (!selected)
+    {
+        Platform::Print(
+            "operation: active card %u has no supported Competitive mission for map %s\n",
+            m_operationMissionId, std::string(mapName).c_str());
+        return false;
+    }
+
+    OperationQuestProgressState &state =
+        m_operationQuestProgress[selected->id];
+
+    // Riptide's main Competitive missions are OR graphs represented by a
+    // parent quest with expression "QQ:|...|...": complete by either winning
+    // the match or accumulating 21 round wins across attempts. We intentionally
+    // keep the stock parent quest id so the original Operation UI remains the
+    // source of truth for selection/display.
+    if (selected->expression.rfind("QQ:", 0) == 0)
+    {
+        const uint64_t roundTotal =
+            static_cast<uint64_t>(state.repeatableRounds) + roundsWon;
+        const bool completed = wonMatch || roundTotal >= 21u;
+
+        if (!completed)
+        {
+            state.repeatableRounds = static_cast<uint32_t>(
+                std::min<uint64_t>(roundTotal, 20u));
+            WriteToFile();
+            Platform::Print(
+                "REVIVAL_REPEATABLE_MISSIONS_V2 quest=%u map=%s rounds=%u/21 awaiting completion\n",
+                selected->id, std::string(mapName).c_str(),
+                state.repeatableRounds);
+            return false;
+        }
+
+        state.repeatableRounds = 0;
+        const bool changed = ApplyOperationQuestProgress(
+            selected->id, 1, 0, update);
+
+        Platform::Print(
+            "REVIVAL_REPEATABLE_MISSIONS_V2 quest=%u map=%s completed via %s\n",
+            selected->id, std::string(mapName).c_str(),
+            wonMatch ? "match-win" : "21-rounds");
+        return changed;
+    }
+
+    int normalPoints = 0;
+    if (selected->expression.find("%act_win_match%") != std::string::npos)
+    {
+        normalPoints = wonMatch ? 1 : 0;
+    }
+    else if (selected->expression.find("%act_win_round%") != std::string::npos)
+    {
+        normalPoints = static_cast<int>(
+            std::min<uint32_t>(roundsWon, static_cast<uint32_t>(INT_MAX)));
+    }
+    else
+    {
+        // We do not synthesize unsupported kill/MVP/etc. counters. Leaving the
+        // mission untouched is safer than awarding progress for the wrong stat.
+        Platform::Print(
+            "operation: selected Competitive quest %u uses unsupported expression '%s'\n",
+            selected->id, selected->expression.c_str());
+        return false;
+    }
+
+    if (normalPoints <= 0)
+    {
+        return false;
+    }
+
+    return ApplyOperationQuestProgress(
+        selected->id, normalPoints, 0, update);
 }
 
 bool Inventory::CanSpendStars(int cost) const
