@@ -211,6 +211,7 @@ class Handler(BaseHTTPRequestHandler):
                 steamid,
                 game_type=int(body.get("game_type") or 8),
                 client_version=int(body.get("client_version") or 0),
+                preferred_map=str(body.get("map") or "").strip(),
             ))
 
         if path == "/matchmaking/stop":
