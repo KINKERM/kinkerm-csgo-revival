@@ -7,6 +7,7 @@
 #include "random.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 constexpr const char *InventoryFilePath = "csgo_gc/inventory.txt";
 
@@ -996,9 +997,9 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
 {
     newItemId = 0;
 
-    if (itemIds.size() < 2)
+    if (itemIds.empty())
     {
-        Platform::Print("tradeup: need at least 2 input items, got %zu\n", itemIds.size());
+        Platform::Print("tradeup: no input items\n");
         return false;
     }
 
@@ -1013,6 +1014,7 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
 
     std::vector<Input> inputs;
     inputs.reserve(itemIds.size());
+    std::unordered_set<uint64_t> seenItemIds;
 
     uint32_t commonRarity = 0;
     bool statTrak = false;
@@ -1020,6 +1022,12 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
     for (size_t index = 0; index < itemIds.size(); index++)
     {
         uint64_t id = itemIds[index];
+
+        if (!seenItemIds.insert(id).second)
+        {
+            Platform::Print("tradeup: duplicate input item %llu, aborting\n", id);
+            return false;
+        }
 
         auto it = m_items.find(id);
         if (it == m_items.end())
@@ -1091,10 +1099,17 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
     }
 
     // ===== 5 Covert -> 1 gold (knife/glove), the CS2 recipe =====
-    // Covert is the top normal grade, so instead of "next rarity" the output is a
-    // random knife/glove from the case pool of one of the input collections.
-    if (commonRarity >= ItemSchema::RarityAncient)
+    // Covert is the top normal grade. Modern CS2 accepts EXACTLY five Coverts:
+    // regular -> regular knife or gloves; StatTrak -> StatTrak knife only.
+    if (commonRarity == ItemSchema::RarityAncient)
     {
+        if (itemIds.size() != 5)
+        {
+            Platform::Print(
+                "REVIVAL_COVERT_TRADEUP_V1 rejected: Covert contracts require exactly 5 inputs (got %zu)\n",
+                itemIds.size());
+            return false;
+        }
         // gather each input's case gold pool, weighted by how many inputs used it
         std::vector<std::pair<const LootList *, int>> pools;
         for (const Input &in : inputs)
@@ -1147,10 +1162,15 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
         std::vector<const LootListItem *> golds;
         for (const LootListItem &gold : chosenPool->items)
         {
-            if (gold.type == LootListItemPaintable && gold.itemInfo && gold.paintKitInfo)
-            {
-                golds.push_back(&gold);
-            }
+            if (gold.type != LootListItemPaintable || !gold.itemInfo || !gold.paintKitInfo)
+                continue;
+
+            // Gloves have no StatTrak variants. Five StatTrak Coverts must
+            // therefore draw only from knife entries in the rare-special pool.
+            if (statTrak && gold.itemInfo->m_defIndex >= 1000)
+                continue;
+
+            golds.push_back(&gold);
         }
 
         if (golds.empty())
@@ -1180,7 +1200,7 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
         // StatTrak carries over only to items that can have it - gloves and some
         // newer knives (unusual quality, def >= 1000) can't, matching the case
         // opening logic in ShouldMakeStatTrak.
-        bool goldStatTrak = statTrak && (chosen->itemInfo->m_defIndex < 1000);
+        bool goldStatTrak = statTrak;
 
         // build the gold with the same path case opening uses, then override the
         // wear with our computed float (create BEFORE destroying inputs)
@@ -1204,8 +1224,9 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
 
         CSOEconItem &output = CreateItem(temp);
 
-        Platform::Print("tradeup: %zu Covert -> GOLD def %u paintkit %u float %.4f%s\n",
-            inputs.size(), chosen->itemInfo->m_defIndex, chosen->paintKitInfo->m_defIndex,
+        Platform::Print(
+            "REVIVAL_COVERT_TRADEUP_V1 5 Covert -> GOLD def %u paintkit %u float %.4f%s\n",
+            chosen->itemInfo->m_defIndex, chosen->paintKitInfo->m_defIndex,
             outputFloat, goldStatTrak ? " StatTrak" : "");
 
         newItemId = output.id();
@@ -1226,6 +1247,20 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
         }
 
         return true;
+    }
+
+    if (commonRarity > ItemSchema::RarityAncient)
+    {
+        Platform::Print("tradeup: rarity %u has no contract output\n", commonRarity);
+        return false;
+    }
+
+    if (itemIds.size() != 10)
+    {
+        Platform::Print(
+            "tradeup: normal contracts require exactly 10 inputs (got %zu)\n",
+            itemIds.size());
+        return false;
     }
 
     uint32_t outputRarity = commonRarity + 1;
