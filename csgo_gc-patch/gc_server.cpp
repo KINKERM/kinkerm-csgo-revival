@@ -846,7 +846,36 @@ void ServerGC::SendMatchmakingReservation()
             char *parseEnd = nullptr;
             const unsigned long value = std::strtoul(part.c_str(), &parseEnd, 10);
             if (parseEnd && *parseEnd == '\0' && value && value <= UINT32_MAX)
-                reserve.add_account_ids(static_cast<uint32_t>(value));
+            {
+                const uint32_t accountId = static_cast<uint32_t>(value);
+                reserve.add_account_ids(accountId);
+
+                // Give SRCDS the same pre-match Competitive rank context Valve's
+                // 9105 reservation carried. This lets a later 9116 produce the
+                // native old->new skill-group transition instead of looking like
+                // a community server with no ranking data.
+                CSteamID playerId{
+                    accountId, k_EUniversePublic, k_EAccountTypeIndividual };
+                const uint64_t steamId = playerId.ConvertToUint64();
+                const std::string inventoryPath =
+                    "csgo_gc/server_players/" + std::to_string(steamId) + ".txt";
+                std::ifstream rankProbe(inventoryPath, std::ios::binary);
+                if (rankProbe.is_open())
+                {
+                    rankProbe.close();
+                    Inventory inventory{ steamId, inventoryPath };
+                    PlayerRankingInfo *ranking = reserve.add_rankings();
+                    ranking->set_account_id(accountId);
+                    ranking->set_rank_id(inventory.CompetitiveRank());
+                    ranking->set_wins(inventory.CompetitiveWins());
+                    ranking->set_rank_type_id(RankTypeCompetitive);
+                    Platform::Print(
+                        "REVIVAL_NATIVE_ENDMATCH_UI_V1 reserve rank account=%u rank=%u wins=%u\n",
+                        accountId,
+                        static_cast<uint32_t>(inventory.CompetitiveRank()),
+                        inventory.CompetitiveWins());
+                }
+            }
         }
     }
 
