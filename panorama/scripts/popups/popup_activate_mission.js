@@ -116,9 +116,13 @@ function LaunchMission ()
 {
     var nRequestedMissonCardId = $.GetContextPanel().GetAttributeInt( "requestedMissonCardId", 0 );
     var nSeasonAccess = $.GetContextPanel().GetAttributeInt( "seasonAccess", 0 );
+    var QuestItemID = $.GetContextPanel().GetAttributeString( "questItemID", '0' );
+    var nQuestId = parseInt( InventoryAPI.GetItemAttributeValue( QuestItemID, "quest id" ) ) || 0;
 
-    if ( !nRequestedMissonCardId || !nSeasonAccess || nSeasonAccess < 0 )
+    if ( !nRequestedMissonCardId || !nSeasonAccess || nSeasonAccess < 0 || !nQuestId )
     {
+        $.Msg( '[revival operation] invalid selection card=' + nRequestedMissonCardId +
+            ' season=' + nSeasonAccess + ' quest=' + nQuestId );
         $.DispatchEvent( 'UIPopupButtonClicked', '' );
         return;
     }
@@ -130,11 +134,25 @@ function LaunchMission ()
     // Persist the mission through the real GC request. The revival's custom
     // SeasonalOperations update is not mirrored back through the old native
     // MissionsAPI cache reliably, so after one short GC tick continue anyway.
-    if ( !bMissionCardMatches && !$.GetContextPanel().GetAttributeInt( 'revivalMissionRequested', 0 ) )
+    if ( !$.GetContextPanel().GetAttributeInt( 'revivalMissionRequested', 0 ) )
     {
         $.GetContextPanel().SetAttributeInt( 'revivalMissionRequested', 1 );
-        MissionsAPI.ActionRequestSeasonalOperationMissionCardID( nSeasonAccess, nRequestedMissonCardId );
-        $.Schedule( 0.25, LaunchMission );
+
+        // LOCAL revival bridge: write the exact selection into a tiny console
+        // logfile. csgo_gc consumes and deletes it before MatchmakingStart.
+        // Keep Valve's native request too, but do not depend on its retired
+        // backend/cache path to persist the mission.
+        var revivalSelection = 'REVIVAL_MISSION_SELECT_V1 ' +
+            nSeasonAccess + ' ' + nRequestedMissonCardId + ' ' + nQuestId;
+        GameInterfaceAPI.ConsoleCommand(
+            'con_logfile "revival_mission_select.log"; echo ' +
+            revivalSelection + '; con_logfile ""' );
+
+        $.Msg( '[revival operation] ' + revivalSelection );
+        MissionsAPI.ActionRequestSeasonalOperationMissionCardID(
+            nSeasonAccess, nRequestedMissonCardId );
+
+        $.Schedule( 0.35, LaunchMission );
         return;
     }
 
@@ -148,8 +166,6 @@ function LaunchMission ()
             return;
         }
         
-        var QuestItemID = $.GetContextPanel().GetAttributeString( "questItemID", '0' );
-
 		                                                  
 		if ( !EnsureHostAndMatchmakingStoppedIfNeeded() )
 			return;
@@ -247,7 +263,7 @@ function LaunchMission ()
                         mode: gameMode,
                         type: gameType,
                         mapgroupname: mapGroup,
-                        questid: 0,
+                        questid: nQuestId,
                         gamemodeflags: gameModeFlags,
                     },
 				},
@@ -257,11 +273,6 @@ function LaunchMission ()
 					}
 				}
             };
-
-            if ( gameType === 'cooperative' )
-            {
-                settings.update.Game.questid = InventoryAPI.GetItemAttributeValue( QuestItemID, "quest id" );
-            }
 
             LobbyAPI.UpdateSessionSettings( settings );
 
