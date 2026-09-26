@@ -9,6 +9,31 @@ var OperationMissionCard = ( function()
 	var _m_missionCardPrefix = 'id-mission-card-';
 	var _m_missionBacklogIndex = 0;
 	var _m_missionUnlockTimerHandler = null;
+	// Revival Operation mode: preserve the stock Riptide mission-card UI while
+	// exposing only Competitive missions that can run on the curated map pool.
+	var _m_revSupportedMapGroups = [
+		'mg_lobby_mapveto',
+		'mg_de_dust2',
+		'mg_de_mirage',
+		'mg_de_cache',
+		'mg_de_cbble',
+		'mg_de_inferno',
+		'mg_de_ancient',
+		'mg_de_nuke',
+		'mg_cs_insertion2'
+	];
+
+	var _IsRevivalCompetitiveMission = function( missionId )
+	{
+		var details = OperationUtil.GetMissionDetails( missionId );
+		if ( !details || !details.missionGameMode ||
+			!details.missionGameMode.startsWith( 'competitive' ) )
+		{
+			return false;
+		}
+
+		return _m_revSupportedMapGroups.indexOf( details.missionMapGroup ) !== -1;
+	};
 
 	var _UpdateMissionCard = function( idx, elParent )
 	{
@@ -64,10 +89,21 @@ var OperationMissionCard = ( function()
 		var oCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( OperationUtil.GetOperationInfo().nSeasonAccess, idx );
 		if ( oCardDetails )
 		{
-			oCardDetails.isunlocked = idx < InventoryAPI.GetMissionBacklog();
+			oCardDetails.quests = oCardDetails.quests.filter( _IsRevivalCompetitiveMission );
+
+			// Hide cards whose only missions are unsupported modes/maps instead of
+			// leaving dead Guardian/DM/retired-map entries in the Operation hub.
+			if ( oCardDetails.quests.length <= 0 )
+			{
+				return null;
+			}
+
+			// Infinite revival missions have no historical weekly cap. Each visible
+			// Competitive mission pays four stars when completed.
+			oCardDetails.operational_points = 4;
+			oCardDetails.isunlocked = true;
 			oCardDetails.idx = idx;
-			oCardDetails.bShowLock = ( oCardDetails.quests.length <= 0 )
-				|| ( !oCardDetails.isunlocked && !oCardDetails.showTimer );
+			oCardDetails.bShowLock = false;
 
 			return oCardDetails;
 	
