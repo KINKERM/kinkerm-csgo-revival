@@ -511,6 +511,7 @@ def write_native_reservation(
         f"match_id={int(assignment.get('match_id') or 0)}",
         f"game_type={reservation_game_type}",
         f"server_version={server_version}",
+        f"map={str(assignment.get('map') or '').strip()}",
         "account_ids=" + ",".join(str(x) for x in account_ids),
     ]
     tmp = request_path + ".tmp"
