@@ -241,6 +241,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V3")) {
         throw "Built csgo_gc.dll does not contain the complete stock XP/rank/reveal UI bridge."
     }
+    if (-not $gcDllText.Contains("REVIVAL_COVERT_TRADEUP_V1")) {
+        throw "Built csgo_gc.dll does not contain the 5-Covert gold trade-up contract."
+    }
     Write-Host "    Verified current client + server matchmaking code is inside csgo_gc.dll." -ForegroundColor Green
 
     [System.IO.File]::WriteAllText(
