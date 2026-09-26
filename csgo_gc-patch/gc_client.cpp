@@ -936,24 +936,47 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
         else if (operationEligible)
         {
-            for (const PlayerQuestData::QuestItemData &quest :
-                playerData.quest_item_data())
+            uint32_t revivalSelectedQuest = 0;
+            if (serverAuthoritativeItems
+                && message.has_serverinfo()
+                && message.serverinfo().has_map())
             {
-                if (!quest.has_quest_id() || quest.quest_id() > UINT32_MAX)
-                {
-                    continue;
-                }
+                revivalSelectedQuest =
+                    m_inventory.PreferredOperationMissionQuest(
+                        message.serverinfo().map());
+            }
 
-                const int normal = quest.has_quest_normal_points_earned()
-                    ? quest.quest_normal_points_earned() : 0;
-                const int bonus = quest.has_quest_bonus_points_earned()
-                    ? quest.quest_bonus_points_earned() : 0;
-
-                if (m_inventory.ApplyOperationQuestProgress(
-                    static_cast<uint32_t>(quest.quest_id()),
-                    normal, bonus, operationUpdate))
+            if (revivalSelectedQuest)
+            {
+                // The V4 fallback is authoritative for revival Competitive
+                // missions. Ignore SRCDS' parallel native quest deltas for this
+                // match so the same win cannot award stars twice.
+                Platform::Print(
+                    "REVIVAL_REPEATABLE_MISSIONS_V4 deferring native quest "
+                    "deltas to fallback quest=%u map=%s\n",
+                    revivalSelectedQuest, message.serverinfo().map().c_str());
+            }
+            else
+            {
+                for (const PlayerQuestData::QuestItemData &quest :
+                    playerData.quest_item_data())
                 {
-                    operationChanged = true;
+                    if (!quest.has_quest_id() || quest.quest_id() > UINT32_MAX)
+                    {
+                        continue;
+                    }
+
+                    const int normal = quest.has_quest_normal_points_earned()
+                        ? quest.quest_normal_points_earned() : 0;
+                    const int bonus = quest.has_quest_bonus_points_earned()
+                        ? quest.quest_bonus_points_earned() : 0;
+
+                    if (m_inventory.ApplyOperationQuestProgress(
+                        static_cast<uint32_t>(quest.quest_id()),
+                        normal, bonus, operationUpdate))
+                    {
+                        operationChanged = true;
+                    }
                 }
             }
         }
