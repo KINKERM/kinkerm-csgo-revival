@@ -225,6 +225,32 @@ var ItemTile = ( function()
 	var _OnActivate = function()
 	{
 		var id = $.GetContextPanel().GetAttributeString( 'itemid', '0' );
+
+		// REVIVAL_COVERT_TRADEUP_UI_V2: Legacy hides Coverts from the native recipe list.
+		// Inside the contract, send eligible tiles straight to the craft ingredient API.
+		var craftParent = $.GetContextPanel();
+		while ( craftParent )
+		{
+			if ( craftParent.id === 'Crafting-Items' )
+			{
+				var slot = ItemInfo.GetSlotSubPosition( id );
+				var validSlot = slot && slot !== 'melee' && slot !== 'c4' && slot !== 'clothing_hands' &&
+					!ItemInfo.IsEquippalbleButNotAWeapon( id );
+				if ( validSlot && ( InventoryAPI.CanTradeUp( id ) ||
+					( InventoryAPI.GetItemRarity( id ) === 6 && ItemInfo.IsWeapon( id ) ) ) )
+				{
+					$.DispatchEvent( 'PlaySoundEffect', 'inventory_item_select', 'MOUSE' );
+					InventoryAPI.AddCraftIngredient( id );
+				}
+				return;
+			}
+			if ( craftParent.id === 'Crafting-Ingredients' )
+			{
+				InventoryAPI.RemoveCraftIngredient( id );
+				return;
+			}
+			craftParent = craftParent.GetParent();
+		}
 		                                       
 
 		                                                
