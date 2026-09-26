@@ -630,6 +630,7 @@ class ServerSlot:
         self.expected_account_ids: set[int] = set()
         self.connected_account_ids: set[int] = set()
         self.player_teams: dict[int, str] = {}
+        self.player_rounds_won: dict[int, int] = {}
         self.match_play_started_at = 0.0
         self.ready_at = 0.0
         self.source_match_started_at = 0.0
@@ -778,6 +779,7 @@ class ServerSlot:
             }
             self.connected_account_ids.clear()
             self.player_teams.clear()
+            self.player_rounds_won.clear()
             self.match_play_started_at = 0.0
             self.ready_at = 0.0
             self.source_match_started_at = 0.0
@@ -898,17 +900,31 @@ class ServerSlot:
             side = m.group(1).upper()
             changed = False
             with self._lock:
+                old_score = self.ct_score if side == "CT" else self.t_score
+                changed = old_score != score
                 if side == "CT":
-                    changed = self.ct_score != score
                     self.ct_score = score
                 else:
-                    changed = self.t_score != score
                     self.t_score = score
+
+                # Keep a player-centric round-win counter across halftime.
+                # Reading only the player's CURRENT team score would become
+                # wrong after CT/T swap because the scoreboard totals belong to
+                # team sides, not to the same player across both halves.
+                delta = max(0, score - old_score)
+                if delta:
+                    for account_id in self.expected_account_ids:
+                        if self.player_teams.get(account_id) == side:
+                            self.player_rounds_won[account_id] = (
+                                self.player_rounds_won.get(account_id, 0) + delta
+                            )
                 match_id = self.match_id
+                live_rounds = dict(self.player_rounds_won)
             if changed and match_id:
                 print(
                     f"[agent] REVIVAL_LIVE_OPERATION_ROUNDS_V1 "
-                    f"match={match_id} score={self.ct_score}-{self.t_score}"
+                    f"match={match_id} score={self.ct_score}-{self.t_score} "
+                    f"player_rounds={live_rounds}"
                 )
 
         seen_account_id = account_id_from_text(line)
@@ -1411,6 +1427,7 @@ class ServerSlot:
         self.expected_account_ids.clear()
         self.connected_account_ids.clear()
         self.player_teams.clear()
+        self.player_rounds_won.clear()
         self.match_play_started_at = 0.0
         self.assignment_missing_since = 0.0
         self.launched_at = 0.0
@@ -1486,6 +1503,11 @@ def main() -> None:
                 "player_teams": {
                     str(account_id): team
                     for account_id, team in slot.player_teams.items()
+                    if account_id in slot.expected_account_ids
+                },
+                "player_rounds_won": {
+                    str(account_id): int(rounds)
+                    for account_id, rounds in slot.player_rounds_won.items()
                     if account_id in slot.expected_account_ids
                 },
             }
