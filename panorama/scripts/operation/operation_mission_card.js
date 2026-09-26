@@ -160,7 +160,8 @@ var OperationMissionCard = ( function()
 		if ( !elParent.FindChildInLayoutFile( _m_missionCardPrefix + oCardDetails.id ) )
 		{
 			                                                                     
-			elParent.RemoveAndDeleteChildren();
+			if ( elParent.id === 'id-missions-mission-card' )
+				elParent.RemoveAndDeleteChildren();
 			
 			elMissionCard = $.CreatePanel( 'Panel',
 				elParent,
