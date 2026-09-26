@@ -13,6 +13,11 @@ enum class HostEvent
     // srcds only: serialized CEconItemPreviewDataBlock; steam_hook records it
     // into CCSGameRules so the stock end-match scoreboard reveal owns the UI.
     RecordPlayerItemDrop,
+    // srcds only: compact revival envelope containing the target account,
+    // stock rank update values, and serialized 9166 XP payload. steam_hook
+    // converts it to real CS_UM_ServerRankUpdate (52) + CS_UM_XpUpdate (65)
+    // on the engine/main thread.
+    EndMatchProgressUI,
 };
 
 enum class GCEvent
