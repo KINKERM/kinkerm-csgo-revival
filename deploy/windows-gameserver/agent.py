@@ -45,7 +45,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V22"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V23"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -322,7 +322,9 @@ def installed_maps(csgo_dir: str) -> list[str]:
 def ensure_match_cfg(csgo_dir: str, steam_account_token: str = "") -> None:
     cfg_dir = os.path.join(csgo_dir, "csgo", "cfg")
     os.makedirs(cfg_dir, exist_ok=True)
-    token = str(steam_account_token or "").replace('"', '').strip()
+    # Direct-UDP revival does not require a GSLT. A stale/expired token makes
+    # legacy SRCDS terminate cleanly with a fatal error, so intentionally ignore
+    # any saved steam_account_token here.
 
     # Early process/server settings. Gameplay cvars placed here are overwritten
     # by Host_NewGame/gamemode_competitive.cfg, so keep this file intentionally
@@ -336,11 +338,8 @@ sv_pure 0
 sv_allow_votes 1
 sv_hibernate_when_empty 0
 sv_hibernate_postgame_delay 5
-sv_mmqueue_reservation_timeout 600
-sv_setsteamaccount "__REVIVAL_STEAM_TOKEN__"
 log on
 """
-    early = early.replace("__REVIVAL_STEAM_TOKEN__", token)
     with open(early_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(early)
 
@@ -350,7 +349,6 @@ log on
     late_path = os.path.join(cfg_dir, "gamemode_competitive_server.cfg")
     late = r"""// CS:GO Revival - final matchmaking overrides
 sv_competitive_official_5v5 1
-sv_mmqueue_reservation_timeout 600
 
 bot_quota 10
 bot_quota_mode fill
@@ -682,10 +680,9 @@ class ServerSlot:
 
             map_name = str(assignment.get("map") or "de_dust2")
             srcds = find_srcds(self.cfg["csgo_dir"])
-            ensure_match_cfg(
-                self.cfg["csgo_dir"],
-                self.cfg.get("steam_account_token", ""),
-            )
+            if str(self.cfg.get("steam_account_token") or "").strip():
+                print("[agent] ignoring configured steam_account_token; direct-UDP mode does not require GSLT")
+            ensure_match_cfg(self.cfg["csgo_dir"])
             sync_server_player_inventories(
                 self.cfg, assignment, clear_existing=True
             )
@@ -716,7 +713,6 @@ class ServerSlot:
                 "-maxplayers_override", "10",
                 "+game_type", "0",
                 "+game_mode", "1",
-                "+sv_mmqueue_reservation_timeout", "600",
                 "+map", map_name,
                 "+exec", "revival_competitive.cfg",
                 "+rcon_password", self.rcon_password,
