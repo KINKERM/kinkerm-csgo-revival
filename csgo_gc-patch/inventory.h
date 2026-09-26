@@ -191,6 +191,7 @@ public:
     // If the selected Operation card contains a supported Competitive mission,
     // return its curated map so mission matchmaking can target it.
     std::string PreferredOperationMissionMap() const;
+    uint32_t PreferredOperationMissionQuest(std::string_view actualMap) const;
 
     // Persistent CS:GO profile progression. One profile rank is 5000 XP and
     // rank 40 is the pre-service-medal cap used by the legacy client.
