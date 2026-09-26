@@ -29,14 +29,49 @@ constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
 
-// Panorama's con_logfile path can be rooted at either the game directory or
-// the csgo subdirectory depending on how this Legacy build was launched.
-// Poll all harmless local candidates and consume whichever exists.
+// Relative fallbacks for non-Windows builds and unusual launch cwd values.
 constexpr const char *OperationMissionBridgePaths[] = {
     "revival_mission_select.log",
     "csgo/revival_mission_select.log",
     "csgo_gc/revival_mission_select.log",
+    "csgo/csgo_gc/revival_mission_select.log",
 };
+
+std::vector<std::string> OperationMissionBridgeCandidates()
+{
+    std::vector<std::string> out;
+
+#ifdef _WIN32
+    // Do not depend on Source's process working directory. The launcher writes
+    // the bridge under the actual game root, while Source may chdir during
+    // bootstrap. Derive the root from csgo_revival.exe itself.
+    char executablePath[MAX_PATH] = {};
+    const DWORD pathLength = GetModuleFileNameA(
+        nullptr, executablePath, static_cast<DWORD>(sizeof(executablePath)));
+    if (pathLength > 0 && pathLength < sizeof(executablePath))
+    {
+        std::string root(executablePath, pathLength);
+        const size_t slash = root.find_last_of("\\/");
+        if (slash != std::string::npos)
+        {
+            root.resize(slash);
+            out.push_back(root + "\\revival_mission_select.log");
+            out.push_back(root + "\\csgo_gc\\revival_mission_select.log");
+            out.push_back(root + "\\csgo\\revival_mission_select.log");
+            out.push_back(root + "\\csgo\\csgo_gc\\revival_mission_select.log");
+        }
+    }
+#endif
+
+    for (const char *relative : OperationMissionBridgePaths)
+    {
+        out.emplace_back(relative);
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
 
 constexpr int RevivalUserMsgServerRankRevealAll = 50;
 constexpr int RevivalUserMsgServerRankUpdate = 52;
@@ -1304,9 +1339,12 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
 
 void ClientGC::PollOperationMissionSelectionBridge()
 {
-    for (const char *path : OperationMissionBridgePaths)
+    const std::vector<std::string> candidates =
+        OperationMissionBridgeCandidates();
+
+    for (const std::string &path : candidates)
     {
-        std::ifstream in(path);
+        std::ifstream in(path, std::ios::binary);
         if (!in.is_open())
             continue;
 
@@ -1321,7 +1359,7 @@ void ClientGC::PollOperationMissionSelectionBridge()
 
         // Consume first. If parsing fails, a stale malformed line cannot keep
         // reapplying forever on every SharedGC idle tick.
-        std::remove(path);
+        std::remove(path.c_str());
 
         if (latest.empty())
             continue;
@@ -1343,7 +1381,7 @@ void ClientGC::PollOperationMissionSelectionBridge()
 
         Platform::Print(
             "operation bridge: received Panorama selection season=%u card=%u quest=%u from %s\n",
-            season, card, quest, path);
+            season, card, quest, path.c_str());
 
         CMsgSOMultipleObjects update;
         if (m_inventory.SetOperationMissionSelection(
