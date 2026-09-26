@@ -29,15 +29,18 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "server_agent.json")
 
+# Curated revival queue: the maps we actually want players seeing.
+# Keep this intentionally small; installed_maps() filters this list against the
+# BSPs present on the laptop and NEVER appends unrelated installed maps.
 MAP_POOL = (
-    "de_dust2", "de_mirage", "de_inferno", "de_nuke", "de_overpass",
-    "de_vertigo", "de_train", "de_cache", "de_cbble", "de_ancient",
-    "de_anubis", "de_tuscan", "de_canals", "de_breach", "de_basalt",
-    "de_abbey", "de_austria", "de_biome", "de_blackgold", "de_chlorine",
-    "de_engage", "de_grind", "de_lite", "de_mocha", "de_mutiny",
-    "de_ruby", "de_seaside", "de_shipped", "de_studio", "de_subzero",
-    "de_swamp", "de_thrill", "de_zoo",
-    "cs_office", "cs_agency", "cs_italy", "cs_insertion", "cs_insertion2",
+    "de_dust2",
+    "de_mirage",
+    "de_cache",
+    "de_cbble",
+    "de_inferno",
+    "de_ancient",
+    "de_nuke",
+    "cs_insertion2",
 )
 
 # Same hardcoded gscookieid used by the injected GC in CMsgCStrike15Welcome.
@@ -308,19 +311,14 @@ def installed_maps(csgo_dir: str) -> list[str]:
     if not os.path.isdir(maps_dir):
         return []
 
-    # Single huge queue: every top-level defuse/hostage BSP installed on the
-    # laptop is eligible. Keep the known pool first for stable logs, then append
-    # any other preserved de_/cs_ maps automatically.
+    # Only advertise the curated matchmaking pool. A map still has to be
+    # physically installed on the laptop, so a missing BSP is safely skipped.
     found = {
-        name[:-4]
+        name[:-4].lower()
         for name in os.listdir(maps_dir)
         if name.lower().endswith(".bsp")
-        and name[:-4].lower().startswith(("de_", "cs_"))
-        and not name[:-4].lower().endswith(("_se", "_ve"))
     }
-    ordered = [m for m in MAP_POOL if m in found]
-    ordered.extend(sorted(found.difference(ordered)))
-    return ordered
+    return [m for m in MAP_POOL if m in found]
 
 
 def ensure_match_cfg(csgo_dir: str, steam_account_token: str = "") -> None:
