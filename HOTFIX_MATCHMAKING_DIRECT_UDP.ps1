@@ -18,19 +18,23 @@ if (Get-Process -Name "csgo" -ErrorAction SilentlyContinue) {
     throw "Close CS:GO completely before running this hotfix (Panorama code.pbin/panorama.dll must not be in use)."
 }
 $itemsGame = Join-Path $CsgoDir "csgo\scripts\items\items_game.txt"
+$unusualLootLists = Join-Path $CsgoGcSource "csgo_gc\unusual_loot_lists.txt"
 Need-Path $itemsGame "CS:GO items_game.txt"
+Need-Path $unusualLootLists "csgo_gc unusual_loot_lists.txt"
 
 Write-Host ""
 Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
 
 Write-Host "[1/5] Installing CS2-style 5-Covert recipe metadata..." -ForegroundColor Yellow
-& py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame
+& py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame --unusual-loot-lists $unusualLootLists
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
+& py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame --check
+if ($LASTEXITCODE -ne 0) { throw "Installed 5-Covert client schema failed validation." }
 $itemsText = Get-Content $itemsGame -Raw
-if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_V1")) {
-    throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_V1"
+if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V3")) {
+    throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
 }
-Write-Host "    Recipe metadata installed (5 Covert -> rare special)." -ForegroundColor Green
+Write-Host "    Valve-style recipes 5/15 + case gold-pool mappings installed." -ForegroundColor Green
 
 Write-Host "[2/5] Patching Legacy Panorama so Covert skins can actually be selected..." -ForegroundColor Yellow
 $panoramaDir = Join-Path $CsgoDir "csgo\panorama"
@@ -71,7 +75,7 @@ $codeText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($codePbin))
 if (-not $codeText.Contains("REVIVAL_COVERT_TRADEUP_UI_V2")) {
     throw "Repacked code.pbin is missing REVIVAL_COVERT_TRADEUP_UI_V2"
 }
-Write-Host "    Panorama selector bridge installed; red Covert weapon skins are no longer hidden by the legacy recipe filter." -ForegroundColor Green
+Write-Host "    Panorama fallback bridge installed; native recipe metadata is now the primary eligibility path." -ForegroundColor Green
 
 # Keep steam_hook.cpp matched to this local csgo_gc tree, then apply the
 # current revival overlay and the small compatibility patch.
