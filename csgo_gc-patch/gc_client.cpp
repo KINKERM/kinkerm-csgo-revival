@@ -657,28 +657,62 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
     }
 
-    const bool serverAuthoritativeItems =
-        m_revivalAuthoritativeMatchId
-        && ((matchId && matchId == m_revivalAuthoritativeMatchId)
-            || (!matchId && reservationId == GameServerCookieId));
-
-    // Direct-UDP revival uses the same GC-welcome cookie as reservation id on
-    // every match, so reservationid alone is NOT a valid transaction key.
-    // Prefer the real queued match id carried by serverinfo.reservation.
-    if (matchId && matchId == m_lastRewardedMatchId)
+    bool revivalMissionPacket = false;
+    uint32_t revivalMissionRounds = 0;
+    bool revivalMissionWon = false;
+    if (message.has_match_end_quest_data())
     {
-        Platform::Print("progression: duplicate 9136 ignored for match %llu\n",
-            matchId);
-        return;
+        const std::string &marker =
+            message.match_end_quest_data().binary_data();
+        unsigned rounds = 0;
+        unsigned won = 0;
+        if (std::sscanf(
+                marker.c_str(), "RVOPM1:%u:%u", &rounds, &won) == 2)
+        {
+            revivalMissionPacket = true;
+            revivalMissionRounds = static_cast<uint32_t>(rounds);
+            revivalMissionWon = won != 0;
+        }
     }
-    // Older/non-revival packets can lack match_id. Reservation id remains a
-    // useful fallback except for our deliberately reused welcome cookie.
-    if (!matchId && reservationId && reservationId != GameServerCookieId
-        && reservationId == m_lastRewardedReservation)
+
+    const bool serverAuthoritativeItems =
+        revivalMissionPacket
+        || (m_revivalAuthoritativeMatchId
+            && ((matchId && matchId == m_revivalAuthoritativeMatchId)
+                || (!matchId && reservationId == GameServerCookieId)));
+
+    // Mission fallback packets have their own transaction id because they may
+    // arrive before or after SRCDS' normal 9136. Never let ordinary match-end
+    // dedupe suppress mission progress, and never apply one mission twice.
+    if (revivalMissionPacket)
     {
-        Platform::Print("progression: duplicate 9136 ignored for reservation %llu\n",
-            reservationId);
-        return;
+        if (matchId && matchId == m_lastOperationMissionMatchId)
+        {
+            Platform::Print(
+                "REVIVAL_REPEATABLE_MISSIONS_V4 duplicate mission packet "
+                "ignored for match %llu\n", matchId);
+            return;
+        }
+    }
+    else
+    {
+        // Direct-UDP revival uses the same GC-welcome cookie as reservation id
+        // on every match, so reservationid alone is NOT a valid transaction key.
+        if (matchId && matchId == m_lastRewardedMatchId)
+        {
+            Platform::Print(
+                "progression: duplicate 9136 ignored for match %llu\n",
+                matchId);
+            return;
+        }
+        if (!matchId && reservationId && reservationId != GameServerCookieId
+            && reservationId == m_lastRewardedReservation)
+        {
+            Platform::Print(
+                "progression: duplicate 9136 ignored for reservation %llu\n",
+                reservationId);
+            return;
+        }
     }
 
     if (!message.has_match_end_quest_data())
@@ -861,7 +895,13 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                 break;
             }
         }
-        const uint32_t roundsWon = baseXp / 30;
+        uint32_t roundsWon = baseXp / 30;
+        if (revivalMissionPacket)
+        {
+            roundsWon = revivalMissionRounds;
+            won = revivalMissionWon;
+        }
+
         const bool tied = !won && roundsWon == 15;
         if (!serverAuthoritativeItems
             && m_inventory.ApplyCompetitiveMatchResult(won, tied))
@@ -869,12 +909,29 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             SendRankUpdate();
         }
 
-        // Operation missions share the same real match-end packet.
+        // Operation missions share the same real match-end path. The custom
+        // RVOPM1 packet is only a Direct-UDP fallback carrying authoritative
+        // map/round result; the Inventory still evaluates the original Riptide
+        // quest graph and emits the normal SeasonalOperation/QuestProgress SOs.
         const bool operationEligible =
             !playerData.has_operation_points_eligible()
             || playerData.operation_points_eligible();
 
-        if (operationEligible)
+        if (operationEligible && revivalMissionPacket)
+        {
+            std::string missionMap;
+            if (message.has_serverinfo() && message.serverinfo().has_map())
+            {
+                missionMap = message.serverinfo().map();
+            }
+
+            if (m_inventory.ApplySelectedOperationCompetitiveMission(
+                    missionMap, roundsWon, won, operationUpdate))
+            {
+                operationChanged = true;
+            }
+        }
+        else if (operationEligible)
         {
             for (const PlayerQuestData::QuestItemData &quest :
                 playerData.quest_item_data())
@@ -910,15 +967,29 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
 
     if (processedPlayer)
     {
-        if (matchId)
-            m_lastRewardedMatchId = matchId;
-        if (reservationId)
-            m_lastRewardedReservation = reservationId;
+        if (revivalMissionPacket)
+        {
+            if (matchId)
+                m_lastOperationMissionMatchId = matchId;
+        }
+        else
+        {
+            if (matchId)
+                m_lastRewardedMatchId = matchId;
+            if (reservationId)
+                m_lastRewardedReservation = reservationId;
+        }
     }
 
     Platform::Print(
-        "progression: completed match-end processing match=%llu reservation=%llu account=%u\n",
-        matchId, reservationId, AccountId());
+        revivalMissionPacket
+            ? "REVIVAL_REPEATABLE_MISSIONS_V4 completed mission packet "
+              "match=%llu account=%u\n"
+            : "progression: completed match-end processing "
+              "match=%llu reservation=%llu account=%u\n",
+        matchId,
+        revivalMissionPacket ? AccountId() : reservationId,
+        revivalMissionPacket ? 0u : AccountId());
 }
 
 
