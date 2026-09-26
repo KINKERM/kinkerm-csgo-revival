@@ -399,10 +399,16 @@ static bool RevivalDispatchReserveServerForQueuedGame(
     void **vtable = *reinterpret_cast<void ***>(s_engineServer);
     auto reserve = reinterpret_cast<ReserveFn>(vtable[149]);
     const bool ok = reserve(s_engineServer, payloadString.c_str());
-    Platform::Print(
-        "REVIVAL_ENGINE_QUEUE_RESERVE_V1 result=%d match=%llu payload=%s\n",
-        ok ? 1 : 0, static_cast<unsigned long long>(matchId),
-        payloadString.c_str());
+    static std::string s_lastLoggedPayload;
+    static bool s_lastReserveOk = false;
+    if (!ok || payloadString != s_lastLoggedPayload || !s_lastReserveOk)
+    {
+        Platform::Print(
+            "REVIVAL_ENGINE_QUEUE_RESERVE_V1 result=%d match=%llu\n",
+            ok ? 1 : 0, static_cast<unsigned long long>(matchId));
+        s_lastLoggedPayload = payloadString;
+        s_lastReserveOk = ok;
+    }
 
     if (ok)
     {
