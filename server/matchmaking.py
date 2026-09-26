@@ -79,6 +79,9 @@ class MatchmakingCoordinator:
             "ready_match_id": 0,
             "reserved_account_ids": [],
             "maps": [],
+            "ct_score": 0,
+            "t_score": 0,
+            "player_teams": {},
         }
         self._assignment: dict[str, Any] | None = None
         self._reward_queues: dict[str, list[str]] = {}
@@ -163,6 +166,28 @@ class MatchmakingCoordinator:
             # Competitive is commonly 0x02000008, not plain 8.
             "game_type": int(match.players[0].game_type if match.players else 8),
         }
+
+        # Live Operation progress: laptop heartbeat publishes authoritative team
+        # scores and the player's current team. The desktop launcher serializes
+        # this into mm_state.txt and the injected client GC applies only the
+        # newly-won rounds.
+        ct_score = int(self._server.get("ct_score") or 0)
+        t_score = int(self._server.get("t_score") or 0)
+        teams_raw = self._server.get("player_teams")
+        teams = teams_raw if isinstance(teams_raw, dict) else {}
+        team = str(teams.get(str(player.account_id)) or "").upper()
+        if team == "CT":
+            live_rounds_won = ct_score
+        elif team == "TERRORIST":
+            live_rounds_won = t_score
+        else:
+            live_rounds_won = 0
+        state.update({
+            "live_ct_score": ct_score,
+            "live_t_score": t_score,
+            "live_player_team": team,
+            "live_rounds_won": live_rounds_won,
+        })
         if client_state == "searching":
             ids = self._match_account_ids(match)
             state.update({
@@ -545,6 +570,14 @@ class MatchmakingCoordinator:
                     if str(x).isdigit() and int(x) > 0
                 ]
 
+            self._server["ct_score"] = max(0, int(body.get("ct_score") or 0))
+            self._server["t_score"] = max(0, int(body.get("t_score") or 0))
+            teams_raw = body.get("player_teams")
+            self._server["player_teams"] = (
+                {str(k): str(v).upper() for k, v in teams_raw.items()}
+                if isinstance(teams_raw, dict) else {}
+            )
+
             started_match_id = int(body.get("started_match_id") or 0)
             if started_match_id:
                 self.server_match_started(started_match_id)
@@ -586,6 +619,10 @@ class MatchmakingCoordinator:
                     match.state = "complete"
                     self._assignment = None
                     self._server["ready_match_id"] = 0
+
+            active = self._active_match_locked()
+            if active is not None:
+                self._refresh_match_player_states_locked(active)
 
             self._try_form_locked()
             return {
