@@ -12,6 +12,7 @@ PLATFORM_INTERFACE_MARKER = "REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1"
 LOCAL_SOCACHE_AUTH_MARKER = "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1"
 NATIVE_DROP_REVEAL_MARKER = "REVIVAL_NATIVE_DROP_REVEAL_V1"
 NATIVE_DROP_RETRY_MARKER = "REVIVAL_NATIVE_DROP_RETRY_V2"
+NATIVE_DROP_CRASH_GUARD_MARKER = "REVIVAL_NATIVE_DROP_CRASH_GUARD_V1"
 NATIVE_DROP_TIMING_MARKER = "REVIVAL_NATIVE_DROP_TIMING_V3"
 PLATFORM_PATTERN_MARKER = "REVIVAL_PLATFORM_FIND_PATTERN_V1"
 RICH_PRESENCE_MARKER = "REVIVAL_MATCHMAKING_RICH_PRESENCE_V1"
@@ -555,7 +556,7 @@ static bool RevivalRecordPlayerItemDrop(
             + "\n\n#ifdef _WIN32\n"
             + "    static bool s_revNativeHookCrashGuardLogged = false;\n"
             + "    if (!s_revNativeHookCrashGuardLogged) {\n"
-            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 crash-guard active; reward bridge remains enabled\\n\");\n"
+            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 crash-guard active; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 reward bridge remains enabled\\n\");\n"
             + "        s_revNativeHookCrashGuardLogged = true;\n"
             + "    }\n"
             + "#endif",
@@ -623,7 +624,7 @@ static bool RevivalRecordPlayerItemDrop(
             or QUEUE_RESERVE_MARKER not in verify
             or LOCAL_SOCACHE_AUTH_MARKER not in verify
             or NATIVE_DROP_REVEAL_MARKER not in verify
-            or NATIVE_DROP_RETRY_MARKER not in verify
+            or NATIVE_DROP_CRASH_GUARD_MARKER not in verify
             or NATIVE_DROP_TIMING_MARKER not in verify
             or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
