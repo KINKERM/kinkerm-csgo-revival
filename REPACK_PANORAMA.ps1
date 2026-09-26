@@ -114,6 +114,25 @@ foreach ($compactFile in @(
     )
 }
 
+
+# popup_activate_mission.js has one of Panorama's tight fixed PBIN slots.
+# Strip only indentation, blank lines and whole-line // comments. Strings and
+# executable code are left unchanged.
+$activateRaw = [IO.File]::ReadAllText($stageActivateMissionJs)
+$activateLines = [Text.RegularExpressions.Regex]::Split($activateRaw, "\r?\n") |
+    ForEach-Object { $_.Trim() } |
+    Where-Object {
+        $_.Length -gt 0 -and
+        -not $_.StartsWith("//")
+    }
+[IO.File]::WriteAllText(
+    $stageActivateMissionJs,
+    ($activateLines -join [Environment]::NewLine),
+    [Text.UTF8Encoding]::new($false)
+)
+Write-Host ("[pbin] compact popup_activate_mission.js -> {0} B" -f
+    ([IO.File]::ReadAllBytes($stageActivateMissionJs).Length))
+
 Push-Location $panoramaDir
 try {
     & py -3 ".\pbin.py" pack
@@ -142,7 +161,10 @@ if (-not $packedText.Contains("m_revivalValidationMapGroup")) {
 if (-not $packedText.Contains("_GetRevivalValidationMapGroup")) {
     throw "Packed code.pbin is missing the Revival queue validation logic"
 }
-Write-Host "PBIN queue markers OK" -ForegroundColor Green
+if (-not $packedText.Contains("REVIVAL_MISSION_SELECT_V1")) {
+    throw "Packed code.pbin is missing the exact Operation mission-selection bridge"
+}
+Write-Host "PBIN queue + Operation mission markers OK" -ForegroundColor Green
 
 $newHash = (Get-FileHash $codePbin -Algorithm SHA256).Hash
 $oldHash = (Get-FileHash $originalPbin -Algorithm SHA256).Hash
