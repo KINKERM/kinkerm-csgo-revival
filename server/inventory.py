@@ -195,6 +195,9 @@ def _normalize_operation_state(raw: Any) -> dict[str, Any]:
             quests_out[str(qid)] = {
                 "progress": _as_int(quest_raw.get("progress"), 0),
                 "bonus_points": _as_int(quest_raw.get("bonus_points"), 0),
+                "repeatable_rounds": _as_int(
+                    quest_raw.get("repeatable_rounds"), 0
+                ),
             }
     out["quests"] = quests_out
     return out
