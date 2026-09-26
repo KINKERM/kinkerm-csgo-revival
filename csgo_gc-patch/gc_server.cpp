@@ -817,6 +817,47 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             bridgeMessages.emplace_back(std::move(out));
         };
 
+        // Direct-UDP fallback for Operation missions. Retail SRCDS normally
+        // emits 9136 quest progress itself, but that path is inconsistent when
+        // the revival uses a synthetic GC identity. Carry the authoritative
+        // map/result through the existing reward bridge and let ClientGC apply
+        // it to the selected Riptide mission using the stock Operation SO/UI.
+        std::string matchMap;
+        auto mapIt = reservation.find("map");
+        if (mapIt != reservation.end())
+            matchMap = mapIt->second;
+
+        if (!matchMap.empty()
+            && inventory.PreferredOperationMissionQuest(matchMap) != 0)
+        {
+            CMsgGCCStrike15_v2_MatchEndRunRewardDrops missionRun;
+            CMsgGCCStrike15_v2_MatchmakingServerReservationResponse *serverInfo =
+                missionRun.mutable_serverinfo();
+            serverInfo->set_map(matchMap);
+            serverInfo->mutable_reservation()->set_match_id(matchId);
+
+            CMsgGC_ServerQuestUpdateData *missionData =
+                missionRun.mutable_match_end_quest_data();
+
+            std::ostringstream marker;
+            marker << "RVOPM1:" << roundsWon << ":" << (won ? 1 : 0);
+            missionData->set_binary_data(marker.str());
+
+            PlayerQuestData *missionPlayer =
+                missionData->add_player_quest_data();
+            missionPlayer->set_quester_account_id(accountId);
+            missionPlayer->set_operation_points_eligible(true);
+
+            GCMessageWrite missionWrite{
+                k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops, missionRun };
+            queueMessage(missionWrite);
+
+            Platform::Print(
+                "REVIVAL_REPEATABLE_MISSIONS_V4 queued mission fallback "
+                "account=%u map=%s rounds=%u won=%u\n",
+                accountId, matchMap.c_str(), roundsWon, won ? 1u : 0u);
+        }
+
         auto publishDrop = [this, &queueMessage](
             CMsgSOSingleObject &create,
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &drop)
