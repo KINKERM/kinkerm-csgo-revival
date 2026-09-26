@@ -69,7 +69,7 @@ if ($preflightHash1 -ne $preflightHash2) {
 & py -3 $tradeupPatcher $tradeupPreflight2 --check
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up preflight output failed validation." }
 Remove-Item $tradeupPreflight, $tradeupPreflight2 -Force -ErrorAction SilentlyContinue
-Write-Host "    Full legacy schema preflight passed: recipes 5/15 validated, V3 removed, idempotent." -ForegroundColor Green
+Write-Host "    Full legacy schema preflight passed: dedicated recipes 50/51 validated, V3 removed, idempotent." -ForegroundColor Green
 
 & py -3 $tradeupPatcher $itemsGame --unusual-loot-lists $unusualLootLists
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
@@ -79,7 +79,7 @@ $itemsText = Get-Content $itemsGame -Raw
 if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY")) {
     throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY"
 }
-Write-Host "    Legacy recipes 5/15 installed; gold-pool resolution remains GC-side." -ForegroundColor Green
+Write-Host "    Legacy recipes 50/51 installed; gold-pool resolution remains GC-side." -ForegroundColor Green
 
 # The GC itself loads this relative to the game working directory. A source
 # checkout keeps it under examples\; release packages move it into csgo_gc\.
