@@ -9,6 +9,9 @@ public:
     ServerGC();
     ~ServerGC();
 
+    // Called synchronously from the hardened CCSGameRules::RewardMatchEndDrops
+    // hook so item previews exist before Source broadcasts the end-match reveal.
+
 private:
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     void HandleIdle() override;
