@@ -228,26 +228,39 @@ class MatchmakingCoordinator:
 
         existing = {p.steamid: p for p in match.players}
         changed = False
-        while self._queue and len(match.players) < MAX_HUMANS:
-            player = self._queue.pop(0)
+        remaining: list[QueueEntry] = []
+
+        for player in self._queue:
+            if len(match.players) >= MAX_HUMANS:
+                remaining.append(player)
+                continue
+
             already = existing.get(player.steamid)
             if already is not None:
-                # Repair a stale/restarted search for a player who is already
-                # attached to this allocation. Older builds could leave the
-                # player's public state as "searching" while silently dropping
-                # the new queue entry here forever.
                 already.game_type = player.game_type
                 already.client_version = player.client_version
+                already.preferred_map = player.preferred_map
                 self._states[player.steamid] = self._state_for_match_player_locked(
                     match, already
                 )
                 continue
+
+            # A selected Operation mission owns a specific map. Never attach
+            # that player to an incompatible live match just because this
+            # revival has one physical server. They remain queued until the
+            # current match ends and their requested map can allocate.
+            if player.preferred_map and player.preferred_map != match.map_name:
+                remaining.append(player)
+                continue
+
             match.players.append(player)
             existing[player.steamid] = player
             changed = True
             self._states[player.steamid] = self._state_for_match_player_locked(
                 match, player
             )
+
+        self._queue = remaining
 
         if changed:
             self._sync_assignment_locked(match)
@@ -257,15 +270,31 @@ class MatchmakingCoordinator:
         if not self._queue or not self._server_idle_locked():
             return
 
-        # Take everyone currently waiting, up to the 10-human server cap. The
-        # important difference from Valve-style 5v5 formation is that ONE player
-        # is enough to allocate the server.
-        players = self._queue[:MAX_HUMANS]
-        del self._queue[:len(players)]
+        # The oldest queued player owns the map choice. If they selected an
+        # Operation mission, only players with no mission-map preference or the
+        # same requested map are grouped into this server allocation.
+        first = self._queue[0]
+        map_name = self._choose_map_locked([first])
+
+        players: list[QueueEntry] = []
+        remaining: list[QueueEntry] = []
+        for player in self._queue:
+            compatible = (
+                not player.preferred_map
+                or player.preferred_map == map_name
+            )
+            if compatible and len(players) < MAX_HUMANS:
+                players.append(player)
+            else:
+                remaining.append(player)
+
+        if not players:
+            return
+
+        self._queue = remaining
 
         self._next_match_id += 1
         match_id = self._next_match_id
-        map_name = self._choose_map_locked(players)
         match = Match(match_id, 0, players, map_name)
         self._matches[match_id] = match
         self._server["reserved_account_ids"] = []
