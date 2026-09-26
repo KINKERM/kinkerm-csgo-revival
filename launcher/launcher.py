@@ -253,12 +253,17 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                             "steamid": config["steam_id"],
                             "game_type": int(request.get("game_type") or 8),
                             "client_version": int(request.get("client_version") or 0),
+                            "map": str(request.get("map") or ""),
                         },
                     )
                     _write_mm_state(config, state)
                     searching = True
                     last_poll = 0.0
-                    print("[launcher] matchmaking: joined shared Competitive queue")
+                    mission_map = str(request.get("map") or "")
+                    if mission_map:
+                        print(f"[launcher] matchmaking: joined repeatable mission queue for {mission_map}")
+                    else:
+                        print("[launcher] matchmaking: joined shared Competitive queue")
                 elif action == "stop":
                     state = _http_json(
                         "POST", base + "/matchmaking/stop",
