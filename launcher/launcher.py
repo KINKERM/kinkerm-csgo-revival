@@ -374,6 +374,8 @@ def _write_mm_state(config: dict, state: dict) -> None:
         "server_available", "match_id", "reservation_id", "map", "server_address",
         "public_host", "public_port", "direct_udp_ip", "game_type", "server_version",
         "server_id", "error", "last_match_id", "last_map",
+        "live_ct_score", "live_t_score", "live_player_team",
+        "live_rounds_won",
     ]
     lines: list[str] = []
     for key in fields:
