@@ -6,29 +6,15 @@ var HudMissionPanel = ( function() {
 	var _m_missionId = undefined;
 	var _m_elMission = null;
 
-	// Revival HUD fallback: Riptide is no longer Valve's live Operation, so the
-	// retail active-quest cache can stay at 0. Read the quest directly from the
-	// owned Riptide coin that the revival GC already updates (attribute 168).
+	// Exact clicked quest is carried through a process-local Source cvar.
 	var _GetRevivalActiveQuestID = function()
 	{
 		var q = parseInt( GameStateAPI.GetActiveQuestID() ) || 0;
 		if( q ) return q;
-		var defs = OperationUtil.GetCoinDefIdxArray();
-		for( var d = 0; d < defs.length; d++ )
-		{
-			var name = InventoryAPI.GetItemDefinitionName( InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( defs[d], 0 ) );
-			if( !name ) continue;
-			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + name, '', '' );
-			if( !InventoryAPI.GetInventoryCount() ) continue;
-			q = parseInt( InventoryAPI.GetItemAttributeValue( InventoryAPI.GetInventoryItemIDByIndex( 0 ), 'quest id' ) ) || 0;
-			if( q )
-			{
-				$.Msg( '[revival operation hud] coin quest=' + q );
-				return q;
-			}
-		}
-		$.Msg( '[revival operation hud] no active quest' );
-		return 0;
+		var s = GameInterfaceAPI.GetSettingString( 'con_filter_text_out' ) || '';
+		if( s.indexOf( 'REVIVALQ:' ) === 0 ) q = parseInt( s.substr( 9 ) ) || 0;
+		$.Msg( '[revival operation hud] cvar quest=' + q );
+		return q;
 	}
 
 	var _OnMatchStart = function()
