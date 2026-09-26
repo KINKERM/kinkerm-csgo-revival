@@ -144,6 +144,62 @@ class DropInMatchmakingTests(unittest.TestCase):
         self.assertEqual(repaired["match_id"], match_id)
         self.assertEqual(repaired["reservation_id"], 987654321)
 
+
+    def test_operation_preferred_map_allocates_requested_curated_map(self) -> None:
+        mm = MatchmakingCoordinator(map_pool=["de_dust2", "de_nuke"])
+        mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2", "de_nuke"],
+        })
+
+        player = steamid(80)
+        state = mm.start(player, preferred_map="de_nuke")
+        self.assertEqual(state["state"], "searching")
+
+        assignment = mm.snapshot()["assignment"]
+        self.assertIsNotNone(assignment)
+        self.assertEqual(assignment["map"], "de_nuke")
+
+    def test_operation_player_waits_for_incompatible_live_map(self) -> None:
+        mm = MatchmakingCoordinator(map_pool=["de_dust2", "de_nuke"])
+        mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2", "de_nuke"],
+        })
+
+        first = steamid(81)
+        mm.start(first, preferred_map="de_dust2")
+        first_assignment = mm.snapshot()["assignment"]
+        self.assertIsNotNone(first_assignment)
+        first_match = first_assignment["match_id"]
+
+        first_aid = account_id_from_steamid64(first)
+        mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2", "de_nuke"],
+            "ready_match_id": first_match,
+            "reservation_id": 123456,
+            "reserved_account_ids": [first_aid],
+        })
+        mm.server_match_started(first_match)
+
+        second = steamid(82)
+        second_state = mm.start(second, preferred_map="de_nuke")
+        self.assertEqual(second_state["state"], "searching")
+        self.assertNotEqual(second_state.get("match_id"), first_match)
+
+        mm.server_match_ended(first_match, {"reason": "game_over"})
+        next_assignment = mm.snapshot()["assignment"]
+        self.assertIsNotNone(next_assignment)
+        self.assertEqual(next_assignment["map"], "de_nuke")
+        self.assertIn(account_id_from_steamid64(second), next_assignment["account_ids"])
+
     def test_cancel_reserved_solo_match_allows_clean_new_allocation(self) -> None:
         first = steamid(43)
         self.mm.start(first)
