@@ -45,7 +45,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V20"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V21"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -639,6 +639,7 @@ class ServerSlot:
         self.rcon_password = secrets.token_hex(16)
         self.log_started_at = 0.0
         self.log_files_before: set[str] = set()
+        self.assignment_missing_since = 0.0
 
     def alive(self) -> bool:
         with self._lock:
@@ -650,6 +651,7 @@ class ServerSlot:
             return
         with self._lock:
             if self.alive() and self.match_id == match_id:
+                self.assignment_missing_since = 0.0
                 new_accounts = {
                     int(x) for x in assignment.get("account_ids", []) if int(x) > 0
                 }
@@ -779,6 +781,7 @@ class ServerSlot:
             self.runtime_guard_at = 0.0
             self.human_presence_seen = False
             self._ended = False
+            self.assignment_missing_since = 0.0
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
             threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
 
@@ -1344,6 +1347,7 @@ class ServerSlot:
         self.connected_account_ids.clear()
         self.player_teams.clear()
         self.match_play_started_at = 0.0
+        self.assignment_missing_since = 0.0
         if proc is None or proc.poll() is not None:
             return
         try:
@@ -1413,13 +1417,19 @@ def main() -> None:
                 reply = post_json(base + "/matchmaking/server/heartbeat", body)
                 assignment = reply.get("assignment")
                 if isinstance(assignment, dict):
+                    slot.assignment_missing_since = 0.0
                     slot.start(assignment)
                 elif slot.alive() and not slot.started:
-                    # The coordinator can withdraw an allocation if native 9106
-                    # never arrives. Do not leave a dead warmup server consuming
-                    # RAM/CPU on the 4 GB laptop.
-                    print("[agent] coordinator withdrew unstarted allocation; stopping srcds")
-                    slot.stop()
+                    # Never kill a healthy GC-active server because of one empty
+                    # heartbeat. Backend allocation/ready-up can legitimately lag.
+                    # Require 45 continuous seconds without an assignment first.
+                    now = time.monotonic()
+                    if not slot.assignment_missing_since:
+                        slot.assignment_missing_since = now
+                        print("[agent] assignment temporarily absent; keeping srcds alive")
+                    elif now - slot.assignment_missing_since >= 45.0:
+                        print("[agent] assignment absent for 45s; stopping unstarted srcds")
+                        slot.stop()
                 slot.check_accept_timeout()
             except (urllib.error.URLError, ValueError, OSError) as exc:
                 print(f"[agent] heartbeat failed: {exc}")
