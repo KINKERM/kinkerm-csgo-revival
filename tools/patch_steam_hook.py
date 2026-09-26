@@ -610,10 +610,9 @@ static bool RevivalRecordPlayerItemDrop(
             callback_anchor,
             callback_anchor
             + "\n\n#ifdef _WIN32\n"
-            + "    RevivalInstallNativeDropRevealHooks();\n"
             + "    static bool s_revNativeHookCrashGuardLogged = false;\n"
             + "    if (!s_revNativeHookCrashGuardLogged) {\n"
-            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 hardened native hook enabled; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 safeguards active\\n\");\n"
+            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 native GC-message UI path active; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 raw detour disabled\\n\");\n"
             + "        s_revNativeHookCrashGuardLogged = true;\n"
             + "    }\n"
             + "#endif",
