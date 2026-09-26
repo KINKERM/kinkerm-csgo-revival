@@ -161,9 +161,9 @@ public:
     bool CanSpendStars(int cost) const;
     bool SpendStars(int cost, CMsgSOMultipleObjects &update);
 
-    // Apply match-end quest progress from the game server. Mission-earned stars
-    // increase both the spendable wallet and the non-spendable Operation tier
-    // progress, while respecting each Riptide mission card's weekly star cap.
+    // Apply match-end quest progress from the game server. Revival Competitive
+    // missions are repeatable forever: stock threshold stars are preserved and
+    // a small completion bonus is added, with no historical weekly star cap.
     bool ApplyOperationQuestProgress(uint32_t questId,
         int normalPointsEarned,
         int bonusPointsEarned,
@@ -172,6 +172,10 @@ public:
     bool SetOperationMissionCard(uint32_t season,
         uint32_t missionCardId,
         CMsgSOMultipleObjects &update);
+
+    // If the selected Operation card contains a supported Competitive mission,
+    // return its curated map so mission matchmaking can target it.
+    std::string PreferredOperationMissionMap() const;
 
     // Persistent CS:GO profile progression. One profile rank is 5000 XP and
     // rank 40 is the pre-service-medal cap used by the legacy client.
