@@ -488,13 +488,40 @@ static std::string LowerAscii(std::string_view value)
     return out;
 }
 
-static bool Is2014To2017Container(std::string_view internalName)
+static uint32_t FirstSaleYear(std::string_view firstSaleDate)
 {
+    if (firstSaleDate.size() < 4)
+    {
+        return 0;
+    }
+
+    const uint32_t year = FromString<uint32_t>(firstSaleDate.substr(0, 4));
+    return (year >= 2000 && year <= 2100) ? year : 0;
+}
+
+static bool Is2014To2017Container(
+    std::string_view internalName,
+    std::string_view firstSaleDate)
+{
+    const uint32_t year = FirstSaleYear(firstSaleDate);
+    if (year >= 2014 && year <= 2017)
+    {
+        return true;
+    }
+
+    // Historical schemas do not consistently carry first_sale_date on every
+    // tournament wrapper, so retain a name-based fallback.
     const std::string lower = LowerAscii(internalName);
     return lower.find("2014") != std::string::npos
         || lower.find("2015") != std::string::npos
         || lower.find("2016") != std::string::npos
         || lower.find("2017") != std::string::npos;
+}
+
+static bool IsOldWeaponCase(std::string_view firstSaleDate)
+{
+    const uint32_t year = FirstSaleYear(firstSaleDate);
+    return year != 0 && year <= 2017;
 }
 
 static bool IsRevivalOnlyContainer(std::string_view internalName)
@@ -510,6 +537,7 @@ static bool IsRevivalOnlyContainer(std::string_view internalName)
 void ItemSchema::BuildMatchDropContainerPools()
 {
     m_matchDropWeaponCases.clear();
+    m_matchDropOldWeaponCases.clear();
     m_legacyStickerCapsules.clear();
     m_legacySouvenirPackages.clear();
 
@@ -537,7 +565,7 @@ void ItemSchema::BuildMatchDropContainerPools()
         // end-match capsule pool to the 2014-2017 era requested for the revival.
         if (traits.hasSticker && !traits.hasPaintedWeapon)
         {
-            if (Is2014To2017Container(info.m_name))
+            if (Is2014To2017Container(info.m_name, info.m_firstSaleDate))
             {
                 m_legacyStickerCapsules.push_back(defIndex);
             }
@@ -548,7 +576,7 @@ void ItemSchema::BuildMatchDropContainerPools()
         // They are also kept completely separate from the ordinary case roll.
         if (traits.hasPaintedWeapon && traits.hasTournamentQuality)
         {
-            if (Is2014To2017Container(info.m_name))
+            if (Is2014To2017Container(info.m_name, info.m_firstSaleDate))
             {
                 m_legacySouvenirPackages.push_back(defIndex);
             }
@@ -561,6 +589,10 @@ void ItemSchema::BuildMatchDropContainerPools()
         if (traits.hasPaintedWeapon)
         {
             m_matchDropWeaponCases.push_back(defIndex);
+            if (IsOldWeaponCase(info.m_firstSaleDate))
+            {
+                m_matchDropOldWeaponCases.push_back(defIndex);
+            }
         }
     }
 
@@ -571,12 +603,14 @@ void ItemSchema::BuildMatchDropContainerPools()
     };
 
     normalize(m_matchDropWeaponCases);
+    normalize(m_matchDropOldWeaponCases);
     normalize(m_legacyStickerCapsules);
     normalize(m_legacySouvenirPackages);
 
     Platform::Print(
-        "drops: schema pools cases=%zu old_capsules_2014_2017=%zu old_souvenirs_2014_2017=%zu\n",
+        "drops: schema pools cases=%zu old_cases=%zu old_capsules_2014_2017=%zu old_souvenirs_2014_2017=%zu\n",
         m_matchDropWeaponCases.size(),
+        m_matchDropOldWeaponCases.size(),
         m_legacyStickerCapsules.size(),
         m_legacySouvenirPackages.size());
 }
@@ -919,6 +953,12 @@ void ItemSchema::ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, con
     if (name.size())
     {
         info.m_name = name;
+    }
+
+    std::string_view firstSaleDate = itemKey.GetString("first_sale_date");
+    if (firstSaleDate.size())
+    {
+        info.m_firstSaleDate = firstSaleDate;
     }
 
     std::string_view quality = itemKey.GetString("item_quality");
