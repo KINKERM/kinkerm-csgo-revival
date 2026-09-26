@@ -1122,6 +1122,28 @@ bool Inventory::TradeUp(const std::vector<uint64_t> &itemIds,
                 return false;
             }
 
+            if (statTrak)
+            {
+                bool hasStatTrakKnife = false;
+                for (const LootListItem &gold : pool->items)
+                {
+                    if (gold.type == LootListItemPaintable
+                        && gold.itemInfo && gold.paintKitInfo
+                        && gold.itemInfo->m_defIndex < 1000)
+                    {
+                        hasStatTrakKnife = true;
+                        break;
+                    }
+                }
+                if (!hasStatTrakKnife)
+                {
+                    Platform::Print(
+                        "tradeup: StatTrak Covert input def %u paintkit %u maps to a gold pool with no StatTrak knife\n",
+                        in.defIndex, in.paintKit);
+                    return false;
+                }
+            }
+
             bool merged = false;
             for (auto &entry : pools)
             {
