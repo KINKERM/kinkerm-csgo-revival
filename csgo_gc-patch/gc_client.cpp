@@ -4,6 +4,7 @@
 #include "keyvalue.h"
 
 #include <fstream>
+#include <algorithm>
 
 #include <cstdlib>
 #include <cstdio>
