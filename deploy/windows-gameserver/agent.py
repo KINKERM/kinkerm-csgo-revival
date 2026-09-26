@@ -50,7 +50,10 @@ REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V28"
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
     re.compile(r'Game Over:', re.I),
-    re.compile(r'Going to intermission(?:\.\.\.)?
+    re.compile(r'Going to intermission(?:\.\.\.)?$', re.I),
+    re.compile(r'\bGAMEPHASE_MATCH_ENDED\b', re.I),
+)
+
 TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
 STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
