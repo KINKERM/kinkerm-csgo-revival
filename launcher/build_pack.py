@@ -37,13 +37,21 @@ TRADEUP_PATCHER = os.path.join(REPO, "tools", "patch_tradeup_items_game.py")
 
 
 def _load_tradeup_patcher():
-    spec = importlib.util.spec_from_file_location(
-        "revival_tradeup_items_game", TRADEUP_PATCHER
-    )
+    module_name = "revival_tradeup_items_game"
+    spec = importlib.util.spec_from_file_location(module_name, TRADEUP_PATCHER)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load trade-up patcher: {TRADEUP_PATCHER}")
+
+    # dataclasses resolves postponed annotations through sys.modules while the
+    # class decorator runs. Register the module before exec_module(), exactly
+    # like Python's normal import machinery does.
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
     return module
 
 # csgo_gc runtime files, per platform. The GC library is essential; the launcher
