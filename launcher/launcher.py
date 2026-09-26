@@ -410,6 +410,9 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
     searching = False
     last_poll = 0.0
     last_operation_selection: tuple[int, int, int] | None = None
+    last_live_rounds_seen = 0
+    last_idle_match_seen = 0
+    progress_upload_due = 0.0
 
     while not stop_event.wait(0.05):
         try:
@@ -500,11 +503,29 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                     "GET", base + "/matchmaking/state/" + config["steam_id"]
                 )
                 _write_mm_state(config, state)
+
+                # Live Operation SO updates are written by csgo_gc shortly after
+                # mm_state.txt changes. Schedule a sync-back slightly later so
+                # round progress survives relaunches/backend refreshes instead
+                # of only being uploaded when the whole game closes.
+                live_rounds = int(state.get("live_rounds_won") or 0)
+                if live_rounds > last_live_rounds_seen:
+                    last_live_rounds_seen = live_rounds
+                    progress_upload_due = time.monotonic() + 1.5
+
                 if state.get("state") in ("reserved", "in_match"):
                     # Keep polling slowly so reconnect/end state stays fresh.
                     pass
                 elif state.get("state") == "idle":
                     searching = False
+                    idle_match = int(state.get("last_match_id") or 0)
+                    if idle_match and idle_match != last_idle_match_seen:
+                        last_idle_match_seen = idle_match
+                        progress_upload_due = time.monotonic() + 1.5
+
+            if progress_upload_due and time.monotonic() >= progress_upload_due:
+                upload_inventory(config)
+                progress_upload_due = 0.0
 
             # Match-end rewards must keep flowing after the queue state becomes
             # idle. Only fetch the next server packet once the DLL consumed the
