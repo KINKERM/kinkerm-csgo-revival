@@ -211,6 +211,12 @@ def main() -> None:
             sys.exit(4)
         zf.write(pbin_tool, "csgo/panorama/pbin.py")
         print("[build_pack] added csgo/panorama/pbin.py")
+        tradeup_ui_tool = os.path.join(REPO, "tools", "patch_tradeup_panorama.py")
+        if not os.path.isfile(tradeup_ui_tool):
+            print(f"[build_pack] ERROR: missing trade-up Panorama patcher: {tradeup_ui_tool}")
+            sys.exit(4)
+        zf.write(tradeup_ui_tool, "csgo/panorama/patch_tradeup_panorama.py")
+        print("[build_pack] added csgo/panorama/patch_tradeup_panorama.py")
         if os.path.isdir(args.panorama):
             pn = 0
             for base, dirs, files in os.walk(args.panorama):
