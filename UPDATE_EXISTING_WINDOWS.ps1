@@ -274,6 +274,14 @@ Need-Path $pack "Built revival pack"
 if (-not $SkipInstall) {
     Write-Host "[5/6] Installing pack + rebuilding Panorama PBIN..." -ForegroundColor Yellow
     Need-Path $CsgoDir "CS:GO Legacy root"
+
+    # Windows refuses to replace csgo_gc.dll while the injected client/server
+    # process still has it mapped, even from an elevated PowerShell. Stop only
+    # the revival game/runtime processes before overwriting the pack.
+    Get-Process csgo, csgo_revival, srcds -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 750
+
     Expand-Archive -Path $pack -DestinationPath $CsgoDir -Force
 
     # Do not trust ZIP extraction alone for the runtime binaries. Explicitly
