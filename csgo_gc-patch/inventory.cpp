@@ -2725,6 +2725,11 @@ bool Inventory::SetOperationMissionCard(uint32_t season,
     }
 
     m_operationMissionId = missionCardId;
+
+    // Selecting a different card must clear any quest left active from the
+    // previous match. The concrete quest is chosen once matchmaking allocates
+    // an actual map.
+    SetOperationActiveQuest(0, update);
     AddOperationSeasonalState(update);
     WriteToFile();
 
@@ -2751,6 +2756,60 @@ uint32_t Inventory::PreferredOperationMissionQuest(
     }
     return m_itemSchema.PreferredOperationMissionQuest(
         m_operationMissionId, actualMap);
+}
+
+bool Inventory::SetOperationActiveQuest(uint32_t questId,
+    CMsgSOMultipleObjects &update)
+{
+    if (questId && !m_itemSchema.GetQuestDefinition(questId))
+    {
+        Platform::Print(
+            "operation: refused native active quest %u - unknown quest\n",
+            questId);
+        return false;
+    }
+
+    CSOEconItem *coin = FindOperationCoin(0);
+    if (!coin)
+    {
+        Platform::Print(
+            "operation: cannot publish native active quest %u - no Operation coin\n",
+            questId);
+        return false;
+    }
+
+    CSOEconItemAttribute *questAttribute = nullptr;
+    for (int i = 0; i < coin->attribute_size(); ++i)
+    {
+        if (coin->mutable_attribute(i)->def_index()
+            == ItemSchema::AttributeQuestId)
+        {
+            questAttribute = coin->mutable_attribute(i);
+            break;
+        }
+    }
+
+    if (!questAttribute)
+    {
+        questAttribute = coin->add_attribute();
+        questAttribute->set_def_index(ItemSchema::AttributeQuestId);
+    }
+
+    if (!m_itemSchema.SetAttributeUint32(questAttribute, questId))
+    {
+        Platform::Print(
+            "operation: failed to write native quest-id attribute %u\n",
+            questId);
+        return false;
+    }
+
+    AddToMultipleObjects(update, *coin);
+    WriteToFile();
+
+    Platform::Print(
+        "REVIVAL_NATIVE_ACTIVE_QUEST_V1 quest=%u coin=%llu\n",
+        questId, static_cast<unsigned long long>(coin->id()));
+    return true;
 }
 
 
@@ -2844,6 +2903,25 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         // Competitive queue after completion does not keep forcing the mission map.
         state.bonusPoints = 0;
         m_operationMissionId = 0;
+
+        // Match completed: clear the native active quest so the HUD does not
+        // keep showing a finished mission into the next ordinary match.
+        CSOEconItemAttribute *questAttribute = nullptr;
+        for (int i = 0; i < coin->attribute_size(); ++i)
+        {
+            if (coin->mutable_attribute(i)->def_index()
+                == ItemSchema::AttributeQuestId)
+            {
+                questAttribute = coin->mutable_attribute(i);
+                break;
+            }
+        }
+        if (!questAttribute)
+        {
+            questAttribute = coin->add_attribute();
+            questAttribute->set_def_index(ItemSchema::AttributeQuestId);
+        }
+        m_itemSchema.SetAttributeUint32(questAttribute, 0);
     }
     else if (bonusPointsEarned > 0)
     {
