@@ -82,6 +82,7 @@ class MatchmakingCoordinator:
             "ct_score": 0,
             "t_score": 0,
             "player_teams": {},
+            "player_rounds_won": {},
         }
         self._assignment: dict[str, Any] | None = None
         self._reward_queues: dict[str, list[str]] = {}
@@ -176,12 +177,11 @@ class MatchmakingCoordinator:
         teams_raw = self._server.get("player_teams")
         teams = teams_raw if isinstance(teams_raw, dict) else {}
         team = str(teams.get(str(player.account_id)) or "").upper()
-        if team == "CT":
-            live_rounds_won = ct_score
-        elif team == "TERRORIST":
-            live_rounds_won = t_score
-        else:
-            live_rounds_won = 0
+        round_raw = self._server.get("player_rounds_won")
+        round_map = round_raw if isinstance(round_raw, dict) else {}
+        live_rounds_won = max(
+            0, int(round_map.get(str(player.account_id)) or 0)
+        )
         state.update({
             "live_ct_score": ct_score,
             "live_t_score": t_score,
@@ -576,6 +576,15 @@ class MatchmakingCoordinator:
             self._server["player_teams"] = (
                 {str(k): str(v).upper() for k, v in teams_raw.items()}
                 if isinstance(teams_raw, dict) else {}
+            )
+            round_raw = body.get("player_rounds_won")
+            self._server["player_rounds_won"] = (
+                {
+                    str(k): max(0, int(v))
+                    for k, v in round_raw.items()
+                    if str(k).isdigit()
+                }
+                if isinstance(round_raw, dict) else {}
             )
 
             started_match_id = int(body.get("started_match_id") or 0)
