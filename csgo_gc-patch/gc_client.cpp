@@ -686,11 +686,14 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
     // dedupe suppress mission progress, and never apply one mission twice.
     if (revivalMissionPacket)
     {
-        if (matchId && matchId == m_lastOperationMissionMatchId)
+        if (matchId
+            && (matchId == m_lastOperationMissionMatchId
+                || matchId == m_lastMissionProgressMatchId))
         {
             Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V4 duplicate mission packet "
-                "ignored for match %llu\n", matchId);
+                "REVIVAL_REPEATABLE_MISSIONS_V5 duplicate mission packet "
+                "ignored for match %llu\n",
+                static_cast<unsigned long long>(matchId));
             return;
         }
     }
@@ -970,7 +973,10 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         if (revivalMissionPacket)
         {
             if (matchId)
+            {
                 m_lastOperationMissionMatchId = matchId;
+                m_lastMissionProgressMatchId = matchId;
+            }
         }
         else
         {
@@ -984,10 +990,10 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
     if (revivalMissionPacket)
     {
         Platform::Print(
-            "REVIVAL_REPEATABLE_MISSIONS_V4 completed mission packet "
+            "REVIVAL_REPEATABLE_MISSIONS_V5 completed mission packet "
             "match=%llu account=%u rounds=%u won=%u\n",
-            matchId, AccountId(), revivalMissionRounds,
-            revivalMissionWon ? 1u : 0u);
+            static_cast<unsigned long long>(matchId), AccountId(),
+            revivalMissionRounds, revivalMissionWon ? 1u : 0u);
     }
     else
     {
@@ -1675,7 +1681,8 @@ void ClientGC::ProcessCompletedMatchBridge(
     // Mission progression has its own exactly-once guard. The authoritative
     // server reward bundle can arrive before this coordinator state; tying
     // missions to m_lastRewardedMatchId made that ordering randomly skip stars.
-    if (matchId != m_lastMissionProgressMatchId)
+    if (matchId != m_lastMissionProgressMatchId
+        && matchId != m_lastOperationMissionMatchId)
     {
         auto mapIt = state.find("last_map");
         const std::string completedMap =
@@ -1696,12 +1703,13 @@ void ClientGC::ProcessCompletedMatchBridge(
                 operationHello);
 
             Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V3 applied end-match Operation update map=%s match=%llu\n",
+                "REVIVAL_REPEATABLE_MISSIONS_V5 applied end-match Operation update map=%s match=%llu\n",
                 completedMap.c_str(),
                 static_cast<unsigned long long>(matchId));
         }
 
         m_lastMissionProgressMatchId = matchId;
+        m_lastOperationMissionMatchId = matchId;
     }
 
     // If the server bundle already applied XP/rank/items, only the independent
