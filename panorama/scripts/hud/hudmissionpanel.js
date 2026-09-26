@@ -6,6 +6,28 @@ var HudMissionPanel = ( function() {
 	var _m_missionId = undefined;
 	var _m_elMission = null;
 
+	// Revival fallback: the old native Operation cache can leave
+	// GameStateAPI.GetActiveQuestID() at zero even after the custom GC has
+	// persisted the selected Riptide quest. The mission popup stores the exact
+	// quest in lobby session settings before matchmaking, so the HUD can use it.
+	var _GetRevivalActiveQuestID = function()
+	{
+		var nativeQuest = parseInt( GameStateAPI.GetActiveQuestID() ) || 0;
+		if( nativeQuest > 0 )
+		{
+			return nativeQuest;
+		}
+
+		var settings = LobbyAPI.GetSessionSettings();
+		var game = settings && settings.game ? settings.game : null;
+		var lobbyQuest = game ? ( parseInt( game.questid ) || 0 ) : 0;
+		if( lobbyQuest > 0 )
+		{
+			$.Msg( '[revival operation hud] native=0 fallback=' + lobbyQuest );
+		}
+		return lobbyQuest;
+	}
+
 	var _OnMatchStart = function()
 	{
 		                                                                      	
@@ -32,7 +54,7 @@ var HudMissionPanel = ( function() {
 
 	var _UpdateMission = function()
 	{
-		_m_missionId = GameStateAPI.GetActiveQuestID();
+		_m_missionId = _GetRevivalActiveQuestID();
 		if( !_m_missionId || _m_missionId === 0 || _m_missionId === '0' || GameStateAPI.GetMapBSPName() === 'lobby_mapveto' )
 		{
 			_DeleteMissionPanel();
