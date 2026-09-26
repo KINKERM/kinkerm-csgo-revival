@@ -124,18 +124,23 @@ function LaunchMission ()
     }
 
     var iActiveMissionCard = MissionsAPI.GetSeasonalOperationMissionCardActiveIdx( nSeasonAccess );
+    var bMissionCardMatches = iActiveMissionCard >= 0 &&
+        MissionsAPI.GetSeasonalOperationMissionCardDetails( nSeasonAccess, iActiveMissionCard ).id === nRequestedMissonCardId;
 
-    if ( iActiveMissionCard < 0 || MissionsAPI.GetSeasonalOperationMissionCardDetails( nSeasonAccess, iActiveMissionCard ).id !== nRequestedMissonCardId )
-    {	
-        MissionsAPI.ActionRequestSeasonalOperationMissionCardID( nSeasonAccess, nRequestedMissonCardId );
-                                                                                  
-    }
-    else
+    // Persist the mission through the real GC request. The revival's custom
+    // SeasonalOperations update is not mirrored back through the old native
+    // MissionsAPI cache reliably, so after one short GC tick continue anyway.
+    if ( !bMissionCardMatches && !$.GetContextPanel().GetAttributeInt( 'revivalMissionRequested', 0 ) )
     {
-                                                                                                             
-        _CancelMissionActivateTimer();
+        $.GetContextPanel().SetAttributeInt( 'revivalMissionRequested', 1 );
+        MissionsAPI.ActionRequestSeasonalOperationMissionCardID( nSeasonAccess, nRequestedMissonCardId );
+        $.Schedule( 0.25, LaunchMission );
+        return;
+    }
 
-        var bOnlyActivateMission = $.GetContextPanel().GetAttributeString( 'activateonly', 'false' ) === 'true' ? true : false;
+    _CancelMissionActivateTimer();
+
+    var bOnlyActivateMission = $.GetContextPanel().GetAttributeString( 'activateonly', 'false' ) === 'true' ? true : false;
         if ( bOnlyActivateMission )
         {
             _ClosePopUp();
@@ -177,6 +182,10 @@ function LaunchMission ()
 		{	                                                                               
 			gameModeFlags = questGameModeFlags;
 		}
+        if ( gameMode === 'competitive' )
+        {
+            gameModeFlags = 16;
+        }
 
                                            
         if ( GameModeFlags.DoesModeUseFlags( gameMode ) && gameModeFlags == 0)
@@ -273,7 +282,6 @@ function LaunchMission ()
 			$.DispatchEvent( 'UIPopupButtonClicked', '' );
 			$.DispatchEvent( 'OpenPlayMenu', '' );
         }
-    }
 }
 
 var _ClosePopUp = function()
