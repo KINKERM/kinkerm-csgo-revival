@@ -217,6 +217,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_ACTIVE_QUEST_V1")) {
         throw "Built csgo_gc.dll does not contain native Operation active-quest HUD support."
     }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_SELECTION_BRIDGE_V2")) {
+        throw "Built csgo_gc.dll does not contain exact Operation mission-selection bridge V2."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -408,6 +411,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_NATIVE_ACTIVE_QUEST_V1")) {
         throw "Installed csgo_gc.dll is missing native Operation active-quest HUD support."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_OPERATION_SELECTION_BRIDGE_V2")) {
+        throw "Installed csgo_gc.dll is missing exact Operation mission-selection bridge V2."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
