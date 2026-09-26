@@ -208,6 +208,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_GUARANTEED_MATCH_DROPS_V1")) {
         throw "Built csgo_gc.dll does not contain guaranteed Competitive match drops."
     }
+    if (-not $gcDllText.Contains("REVIVAL_RANDOMIZED_LEGACY_DROPS_V2")) {
+        throw "Built csgo_gc.dll does not contain the randomized legacy case/capsule/souvenir drop policy."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -382,6 +385,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_GUARANTEED_MATCH_DROPS_V1")) {
         throw "Installed csgo_gc.dll is missing guaranteed Competitive match drops."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_RANDOMIZED_LEGACY_DROPS_V2")) {
+        throw "Installed csgo_gc.dll is missing the randomized legacy case/capsule/souvenir drop policy."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
