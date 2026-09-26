@@ -172,10 +172,10 @@ Write-Host "    Verified current matchmaking DLL markers on laptop." -Foreground
 
 $installedItems = Join-Path $CsgoDir "csgo\scripts\items\items_game.txt"
 $installedItemsText = Get-Content $installedItems -Raw
-if (-not $installedItemsText.Contains("REVIVAL_COVERT_TRADEUP_V1")) {
-    throw "Installed laptop items_game.txt is stale; missing REVIVAL_COVERT_TRADEUP_V1"
+if (-not $installedItemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V3")) {
+    throw "Installed laptop items_game.txt is stale; missing REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
 }
-Write-Host "    Verified 5-Covert Trade Up Contract recipe metadata." -ForegroundColor Green
+Write-Host "    Verified Valve-style 5-Covert recipes and rare-special mappings." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_MATCH_FINAL_V33")) {
