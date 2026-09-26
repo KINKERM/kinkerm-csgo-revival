@@ -2809,6 +2809,31 @@ bool Inventory::SetOperationMissionSelection(
     m_operationMissionId = card->id;
     m_operationSelectedQuestId = questId;
 
+    // The Panorama MissionsAPI does not derive GetQuestPoints() from the item
+    // schema alone. It expects CSOQuestProgress objects in the client SOCache.
+    // Previously a freshly-selected Riptide mission had no entry until AFTER a
+    // match produced progress, so the HUD resolved quest 1104 correctly but
+    // GetQuestPoints(goal) returned 0 and UpdateMissionDisplay() exited.
+    //
+    // Seed the selected parent and every QQ graph child with zero-progress SOs
+    // immediately at activation. This matches the objects Valve's GC supplied
+    // before entering an Operation mission and also makes them survive the next
+    // full SOCache subscription via m_operationQuestProgress.
+    m_operationQuestProgress.try_emplace(questId);
+    AddOperationQuestState(questId, update);
+
+    const std::vector<uint32_t> graphChildren =
+        m_itemSchema.QuestGraphChildren(questId);
+    for (uint32_t childId : graphChildren)
+    {
+        m_operationQuestProgress.try_emplace(childId);
+        AddOperationQuestState(childId, update);
+    }
+
+    Platform::Print(
+        "REVIVAL_OPERATION_PROGRESS_CACHE_V1 quest=%u children=%zu seeded\n",
+        questId, graphChildren.size());
+
     // This writes native coin attributes 71 (season access) and 168 (quest id)
     // and emits the coin SO update the retail client uses for active-quest HUD.
     if (!SetOperationActiveQuest(questId, update))
