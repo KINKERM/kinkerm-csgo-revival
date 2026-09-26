@@ -303,7 +303,10 @@ def _remove_old_recipe_blocks(text: str) -> tuple[str, int]:
         for open_pos, close_pos in _find_named_blocks(
             text, recipe_id, recipes_open + 1, recipes_close
         ):
-            line_start = text.rfind("\n", recipes_open + 1, open_pos) + 1
+            name_pos = text.rfind(f'"{recipe_id}"', recipes_open + 1, open_pos)
+            if name_pos < 0:
+                continue
+            line_start = text.rfind("\n", recipes_open + 1, name_pos) + 1
             raw = text[line_start:close_pos + 1]
 
             is_revival = (
