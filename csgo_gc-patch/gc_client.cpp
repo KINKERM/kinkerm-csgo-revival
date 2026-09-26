@@ -1581,7 +1581,7 @@ void ClientGC::ProcessCompletedMatchBridge(
     const std::unordered_map<std::string, std::string> &state)
 {
     const uint64_t matchId = BridgeU64(state, "last_match_id", 0);
-    if (!matchId || matchId == m_lastRewardedMatchId)
+    if (!matchId)
         return;
 
     auto reasonIt = state.find("result_reason");
@@ -1594,6 +1594,43 @@ void ClientGC::ProcessCompletedMatchBridge(
         std::min<uint64_t>(BridgeU64(state, "result_time_played", 0), UINT32_MAX));
     const bool won = BridgeU64(state, "result_won", 0) != 0;
     const bool tied = BridgeU64(state, "result_tied", 0) != 0;
+
+    // Mission progression has its own exactly-once guard. The authoritative
+    // server reward bundle can arrive before this coordinator state; tying
+    // missions to m_lastRewardedMatchId made that ordering randomly skip stars.
+    if (matchId != m_lastMissionProgressMatchId)
+    {
+        auto mapIt = state.find("last_map");
+        const std::string completedMap =
+            (mapIt != state.end() && !mapIt->second.empty())
+                ? mapIt->second
+                : m_matchmakingMap;
+
+        CMsgSOMultipleObjects operationUpdate;
+        if (m_inventory.ApplySelectedOperationCompetitiveMission(
+                completedMap, roundsWon, won, operationUpdate))
+        {
+            SendMessageToGame(true, k_ESOMsg_UpdateMultiple, operationUpdate);
+
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello operationHello;
+            BuildMatchmakingHello(operationHello);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
+                operationHello);
+
+            Platform::Print(
+                "REVIVAL_REPEATABLE_MISSIONS_V3 applied end-match Operation update map=%s match=%llu\n",
+                completedMap.c_str(),
+                static_cast<unsigned long long>(matchId));
+        }
+
+        m_lastMissionProgressMatchId = matchId;
+    }
+
+    // If the server bundle already applied XP/rank/items, only the independent
+    // mission step above was still needed.
+    if (matchId == m_lastRewardedMatchId)
+        return;
 
     Platform::Print(
         "REVIVAL_SYNTHETIC_MATCH_END_V1 match=%llu rounds=%u time=%u won=%u tied=%u\n",
@@ -1634,36 +1671,6 @@ void ClientGC::ProcessCompletedMatchBridge(
 
     if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
         SendRankUpdate();
-
-    // Revival Operation mission progression rides the same authoritative
-    // completed-match state as XP/rank. The mission was selected in the stock
-    // Operation UI before queueing, and MatchmakingStart carried its target map
-    // through the revival bridge. Completion immediately resets the quest so it
-    // can be selected again forever.
-    {
-        auto mapIt = state.find("last_map");
-        const std::string completedMap =
-            (mapIt != state.end() && !mapIt->second.empty())
-                ? mapIt->second
-                : m_matchmakingMap;
-
-        CMsgSOMultipleObjects operationUpdate;
-        if (m_inventory.ApplySelectedOperationCompetitiveMission(
-                completedMap, roundsWon, won, operationUpdate))
-        {
-            SendMessageToGame(true, k_ESOMsg_UpdateMultiple, operationUpdate);
-
-            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello operationHello;
-            BuildMatchmakingHello(operationHello);
-            SendMessageToGame(
-                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
-                operationHello);
-
-            Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V2 applied end-match Operation update map=%s\n",
-                completedMap.c_str());
-        }
-    }
 
     // Populate the stock Panorama end-match buffers BEFORE EndOfMatch_Show.
     // Waiting for the later reward bundle was too late: the item-drop reveal
