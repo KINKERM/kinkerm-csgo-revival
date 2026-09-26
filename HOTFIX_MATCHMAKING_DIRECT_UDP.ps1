@@ -18,9 +18,18 @@ if (Get-Process -Name "csgo" -ErrorAction SilentlyContinue) {
     throw "Close CS:GO completely before running this hotfix (Panorama code.pbin/panorama.dll must not be in use)."
 }
 $itemsGame = Join-Path $CsgoDir "csgo\scripts\items\items_game.txt"
-$unusualLootLists = Join-Path $CsgoGcSource "csgo_gc\unusual_loot_lists.txt"
+$unusualCandidates = @(
+    (Join-Path $CsgoGcSource "examples\unusual_loot_lists.txt"),
+    (Join-Path $CsgoGcSource "csgo_gc\unusual_loot_lists.txt"),
+    (Join-Path $CsgoGcSource "unusual_loot_lists.txt"),
+    (Join-Path $CsgoDir "csgo_gc\unusual_loot_lists.txt")
+)
+$unusualLootLists = $unusualCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 Need-Path $itemsGame "CS:GO items_game.txt"
-Need-Path $unusualLootLists "csgo_gc unusual_loot_lists.txt"
+if (-not $unusualLootLists) {
+    throw "unusual_loot_lists.txt not found. Checked: $($unusualCandidates -join '; ')"
+}
+Write-Host ("    Rare-special lists: " + $unusualLootLists) -ForegroundColor DarkGray
 
 Write-Host ""
 Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
@@ -35,6 +44,13 @@ if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V3")) {
     throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
 }
 Write-Host "    Valve-style recipes 5/15 + case gold-pool mappings installed." -ForegroundColor Green
+
+# The GC itself loads this relative to the game working directory. A source
+# checkout keeps it under examples\; release packages move it into csgo_gc\.
+$runtimeDataDir = Join-Path $CsgoDir "csgo_gc"
+New-Item $runtimeDataDir -ItemType Directory -Force | Out-Null
+Copy-Item $unusualLootLists (Join-Path $runtimeDataDir "unusual_loot_lists.txt") -Force
+Write-Host "    Installed csgo_gc\unusual_loot_lists.txt for runtime gold-pool resolution." -ForegroundColor Green
 
 Write-Host "[2/5] Patching Legacy Panorama so Covert skins can actually be selected..." -ForegroundColor Yellow
 $panoramaDir = Join-Path $CsgoDir "csgo\panorama"
