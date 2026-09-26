@@ -44,6 +44,7 @@ class QueueEntry:
     account_id: int
     game_type: int = 8
     client_version: int = 0
+    preferred_map: str = ""
     joined_at: float = field(default_factory=time.time)
 
 
@@ -189,11 +190,22 @@ class MatchmakingCoordinator:
                 match, player
             )
 
-    def _choose_map_locked(self) -> str:
+    def _choose_map_locked(self, players: list[QueueEntry] | None = None) -> str:
         available = [
             str(x) for x in self._server.get("maps", [])
-            if str(x).startswith(("de_", "cs_"))
+            if str(x) in self._map_pool
         ]
+
+        # An Operation mission can request one specific map. Only honor maps
+        # from the curated revival pool, and only when the laptop actually
+        # advertises that BSP. The first queued player's selected mission owns
+        # the map for a newly-created match; drop-in players never change it.
+        if players:
+            preferred = str(players[0].preferred_map or "").strip()
+            if preferred in self._map_pool:
+                if not available or preferred in available:
+                    return preferred
+
         if available:
             return random.choice(available)
         return random.choice(self._map_pool)
@@ -253,7 +265,7 @@ class MatchmakingCoordinator:
 
         self._next_match_id += 1
         match_id = self._next_match_id
-        map_name = self._choose_map_locked()
+        map_name = self._choose_map_locked(players)
         match = Match(match_id, 0, players, map_name)
         self._matches[match_id] = match
         self._server["reserved_account_ids"] = []
@@ -286,11 +298,21 @@ class MatchmakingCoordinator:
 
         self._publish_search_states_locked()
 
-    def start(self, steamid: str, game_type: int = 8, client_version: int = 0) -> dict[str, Any]:
+    def start(
+        self,
+        steamid: str,
+        game_type: int = 8,
+        client_version: int = 0,
+        preferred_map: str = "",
+    ) -> dict[str, Any]:
         with self._lock:
             account_id = account_id_from_steamid64(steamid)
             if not account_id:
                 return {"state": "error", "error": "invalid steamid"}
+
+            preferred_map = str(preferred_map or "").strip()
+            if preferred_map not in self._map_pool:
+                preferred_map = ""
 
             existing = self._states.get(steamid, {})
             if existing.get("state") in ("reserved", "in_match"):
@@ -307,6 +329,7 @@ class MatchmakingCoordinator:
                         if attached.steamid == steamid:
                             attached.game_type = int(game_type or attached.game_type or 8)
                             attached.client_version = int(client_version or attached.client_version or 0)
+                            attached.preferred_map = preferred_map
                             self._states[steamid] = self._state_for_match_player_locked(
                                 match, attached
                             )
@@ -318,6 +341,7 @@ class MatchmakingCoordinator:
                         account_id=account_id,
                         game_type=int(game_type or 8),
                         client_version=int(client_version or 0),
+                        preferred_map=preferred_map,
                     ))
                 self._try_form_locked()
                 return dict(self._states[steamid])
@@ -328,6 +352,7 @@ class MatchmakingCoordinator:
                 account_id=account_id,
                 game_type=int(game_type or 8),
                 client_version=int(client_version or 0),
+                preferred_map=preferred_map,
             ))
             self._states[steamid] = {
                 "state": "searching",
