@@ -6,45 +6,29 @@ var HudMissionPanel = ( function() {
 	var _m_missionId = undefined;
 	var _m_elMission = null;
 
-	// Revival fallback: the old native Operation cache can leave
-	// GameStateAPI.GetActiveQuestID() at zero even after the custom GC has
-	// persisted the selected Riptide quest. The mission popup stores the exact
-	// quest in lobby session settings before matchmaking, so the HUD can use it.
+	// Revival HUD fallback: Riptide is no longer Valve's live Operation, so the
+	// retail active-quest cache can stay at 0. Read the quest directly from the
+	// owned Riptide coin that the revival GC already updates (attribute 168).
 	var _GetRevivalActiveQuestID = function()
 	{
-		var nativeQuest = parseInt( GameStateAPI.GetActiveQuestID() ) || 0;
-		if( nativeQuest > 0 )
-			return nativeQuest;
-
-		// Read the exact quest directly from the owned Riptide coin. This uses the
-		// same inventory filter path as OperationUtil, so it does not depend on the
-		// retired native active-season cache or on lobby settings surviving connect.
+		var q = parseInt( GameStateAPI.GetActiveQuestID() ) || 0;
+		if( q ) return q;
 		var defs = OperationUtil.GetCoinDefIdxArray();
 		for( var d = 0; d < defs.length; d++ )
 		{
-			var faux = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( defs[d], 0 );
-			var defName = InventoryAPI.GetItemDefinitionName( faux );
-			if( !defName ) continue;
-			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
-			var count = InventoryAPI.GetInventoryCount();
-			for( var i = 0; i < count; i++ )
+			var name = InventoryAPI.GetItemDefinitionName( InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( defs[d], 0 ) );
+			if( !name ) continue;
+			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + name, '', '' );
+			if( !InventoryAPI.GetInventoryCount() ) continue;
+			q = parseInt( InventoryAPI.GetItemAttributeValue( InventoryAPI.GetInventoryItemIDByIndex( 0 ), 'quest id' ) ) || 0;
+			if( q )
 			{
-				var owned = InventoryAPI.GetInventoryItemIDByIndex( i );
-				var season = parseInt( InventoryAPI.GetItemAttributeValue( owned, 'season access' ) ) || 0;
-				var coinQuest = parseInt( InventoryAPI.GetItemAttributeValue( owned, 'quest id' ) ) || 0;
-				if( season === 10 && coinQuest > 0 )
-				{
-					$.Msg( '[revival operation hud] source=coin quest=' + coinQuest );
-					return coinQuest;
-				}
+				$.Msg( '[revival operation hud] coin quest=' + q );
+				return q;
 			}
 		}
-
-		var settings = LobbyAPI.GetSessionSettings();
-		var game = settings && settings.game ? settings.game : null;
-		var lobbyQuest = game ? ( parseInt( game.questid ) || 0 ) : 0;
-		$.Msg( '[revival operation hud] native=0 coin=0 lobby=' + lobbyQuest );
-		return lobbyQuest;
+		$.Msg( '[revival operation hud] no active quest' );
+		return 0;
 	}
 
 	var _OnMatchStart = function()
@@ -74,7 +58,7 @@ var HudMissionPanel = ( function() {
 	var _UpdateMission = function()
 	{
 		_m_missionId = _GetRevivalActiveQuestID();
-		$.Msg( '[revival operation hud] update quest=' + _m_missionId + ' map=' + GameStateAPI.GetMapBSPName() );
+		$.Msg( '[revival operation hud] update=' + _m_missionId );
 		if( !_m_missionId || _m_missionId === 0 || _m_missionId === '0' || GameStateAPI.GetMapBSPName() === 'lobby_mapveto' )
 		{
 			_DeleteMissionPanel();
