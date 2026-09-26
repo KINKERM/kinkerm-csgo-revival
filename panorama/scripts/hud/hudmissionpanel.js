@@ -14,17 +14,36 @@ var HudMissionPanel = ( function() {
 	{
 		var nativeQuest = parseInt( GameStateAPI.GetActiveQuestID() ) || 0;
 		if( nativeQuest > 0 )
-		{
 			return nativeQuest;
+
+		// Read the exact quest directly from the owned Riptide coin. This uses the
+		// same inventory filter path as OperationUtil, so it does not depend on the
+		// retired native active-season cache or on lobby settings surviving connect.
+		var defs = OperationUtil.GetCoinDefIdxArray();
+		for( var d = 0; d < defs.length; d++ )
+		{
+			var faux = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( defs[d], 0 );
+			var defName = InventoryAPI.GetItemDefinitionName( faux );
+			if( !defName ) continue;
+			InventoryAPI.SetInventorySortAndFilters( 'inv_sort_age', false, 'item_definition:' + defName, '', '' );
+			var count = InventoryAPI.GetInventoryCount();
+			for( var i = 0; i < count; i++ )
+			{
+				var owned = InventoryAPI.GetInventoryItemIDByIndex( i );
+				var season = parseInt( InventoryAPI.GetItemAttributeValue( owned, 'season access' ) ) || 0;
+				var coinQuest = parseInt( InventoryAPI.GetItemAttributeValue( owned, 'quest id' ) ) || 0;
+				if( season === 10 && coinQuest > 0 )
+				{
+					$.Msg( '[revival operation hud] source=coin quest=' + coinQuest );
+					return coinQuest;
+				}
+			}
 		}
 
 		var settings = LobbyAPI.GetSessionSettings();
 		var game = settings && settings.game ? settings.game : null;
 		var lobbyQuest = game ? ( parseInt( game.questid ) || 0 ) : 0;
-		if( lobbyQuest > 0 )
-		{
-			$.Msg( '[revival operation hud] native=0 fallback=' + lobbyQuest );
-		}
+		$.Msg( '[revival operation hud] native=0 coin=0 lobby=' + lobbyQuest );
 		return lobbyQuest;
 	}
 
@@ -55,6 +74,7 @@ var HudMissionPanel = ( function() {
 	var _UpdateMission = function()
 	{
 		_m_missionId = _GetRevivalActiveQuestID();
+		$.Msg( '[revival operation hud] update quest=' + _m_missionId + ' map=' + GameStateAPI.GetMapBSPName() );
 		if( !_m_missionId || _m_missionId === 0 || _m_missionId === '0' || GameStateAPI.GetMapBSPName() === 'lobby_mapveto' )
 		{
 			_DeleteMissionPanel();
@@ -165,6 +185,7 @@ var HudMissionPanel = ( function() {
 
 (function()
 {
+	$.Msg( '[revival operation hud] script loaded' );
 	$.RegisterForUnhandledEvent( "GameState_OnMatchStart", HudMissionPanel.OnMatchStart );
 	$.RegisterForUnhandledEvent( "GameState_LevelInitPreEntity", HudMissionPanel.LevelTransitionStart );
 	$.RegisterForUnhandledEvent( "OnQuestProgressMade", HudMissionPanel.UpdateProgress );
