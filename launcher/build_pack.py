@@ -108,15 +108,21 @@ def main() -> None:
             print(f"[build_pack] missing {what}: {path}")
             sys.exit(1)
 
-    unusual_loot_lists = os.path.join(args.csgo_gc_dir, "csgo_gc", "unusual_loot_lists.txt")
-    if not os.path.isfile(unusual_loot_lists):
-        fallback = os.path.join(args.csgo_gc_dir, "unusual_loot_lists.txt")
-        if os.path.isfile(fallback):
-            unusual_loot_lists = fallback
-        else:
-            print("[build_pack] ERROR: missing csgo_gc/unusual_loot_lists.txt; "
-                  "the Valve-style 5-Covert client schema needs the rare-special pools.")
-            sys.exit(6)
+    unusual_candidates = [
+        os.path.join(args.csgo_gc_dir, "examples", "unusual_loot_lists.txt"),
+        os.path.join(args.csgo_gc_dir, "csgo_gc", "unusual_loot_lists.txt"),
+        os.path.join(args.csgo_gc_dir, "unusual_loot_lists.txt"),
+    ]
+    unusual_loot_lists = next(
+        (path for path in unusual_candidates if os.path.isfile(path)),
+        "",
+    )
+    if not unusual_loot_lists:
+        print("[build_pack] ERROR: missing unusual_loot_lists.txt; checked:")
+        for path in unusual_candidates:
+            print(f"    {path}")
+        sys.exit(6)
+    print(f"[build_pack] rare-special lists: {unusual_loot_lists}")
 
     runtime = harvest(args.csgo_gc_dir)
     gc_lib = [n for n in runtime if n in GC_LIBS]
