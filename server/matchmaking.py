@@ -28,7 +28,7 @@ DEFAULT_MAP_POOL = (
 
 MAX_HUMANS = 10
 SERVER_STALE_SECONDS = 12.0
-ALLOCATE_TIMEOUT_SECONDS = 90.0
+ALLOCATE_TIMEOUT_SECONDS = 360.0
 
 
 def account_id_from_steamid64(steamid: str) -> int:
@@ -502,8 +502,9 @@ class MatchmakingCoordinator:
                     and match.state == "allocating"
                     and time.time() - match.created_at > ALLOCATE_TIMEOUT_SECONDS
                 ):
-                    # Server failed to boot. Put still-interested players back in
-                    # line and let the next heartbeat retry from a clean slot.
+                    # Keep this longer than the laptop's 300-second ready/accept window.
+                    # The old 90-second timeout could withdraw a healthy GC-active
+                    # allocation and make the agent cleanly shut SRCDS down.
                     for player in reversed(match.players):
                         if self._states.get(player.steamid, {}).get("state") != "idle":
                             self._queue.insert(0, player)
