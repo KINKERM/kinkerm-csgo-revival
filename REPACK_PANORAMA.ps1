@@ -74,16 +74,26 @@ $stageXml = Join-Path $stageDir "layout\mainmenu_play.xml"
 $stageJs  = Join-Path $stageDir "scripts\mainmenu_play.js"
 $stageCss = Join-Path $stageDir "styles\mainmenu_play.css"
 $stageOperationJs = Join-Path $stageDir "scripts\operation\operation_mainmenu.js"
+$stageOperationMissionCardJs = Join-Path $stageDir "scripts\operation\operation_mission_card.js"
+$stageOperationUtilJs = Join-Path $stageDir "scripts\operation\operation_util.js"
 Need-Path $stageXml "Staged mainmenu_play.xml"
 Need-Path $stageJs "Staged mainmenu_play.js"
 Need-Path $stageCss "Staged mainmenu_play.css"
 Need-Path $stageOperationJs "Staged operation_mainmenu.js"
+Need-Path $stageOperationMissionCardJs "Staged operation_mission_card.js"
+Need-Path $stageOperationUtilJs "Staged operation_util.js"
 
 $xmlText = [IO.File]::ReadAllText($stageXml)
 $xmlText = [Text.RegularExpressions.Regex]::Replace($xmlText, ">\s+<", "><")
 [IO.File]::WriteAllText($stageXml, $xmlText, [Text.UTF8Encoding]::new($false))
 
-foreach ($compactFile in @($stageJs, $stageCss, $stageOperationJs)) {
+foreach ($compactFile in @(
+    $stageJs,
+    $stageCss,
+    $stageOperationJs,
+    $stageOperationMissionCardJs,
+    $stageOperationUtilJs
+)) {
     $raw = [IO.File]::ReadAllText($compactFile)
     $compactLines = [Text.RegularExpressions.Regex]::Split($raw, "\r?\n") |
         ForEach-Object { $_.TrimEnd() } |
