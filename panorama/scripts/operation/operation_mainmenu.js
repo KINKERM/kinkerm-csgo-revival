@@ -183,22 +183,34 @@ var OperationMainMenu = ( function()
 		_m_cp.FindChildInLayoutFile( 'id-op-mainmenu-missions' ).RemoveClass( 'hide' );
 		_m_cp.SetDialogVariableInt( 'total_missions', oStatus.nMissionsCompleted );
 		_UpdateXpDisplay( oStatus );
-		var cardIndex = oStatus.nActiveCardIndex ? oStatus.nActiveCardIndex : 0;
-		_UpdateSelectedMissionCard( cardIndex );
+		_UpdateSelectedMissionCard( oStatus.nActiveCardIndex );
 		_SetUpCardUnlockDisplay( oStatus );
+	};
+	var _FirstRevivalMissionCardIndex = function()
+	{
+		var count = MissionsAPI.GetSeasonalOperationMissionCardsCount( _m_nSeasonIndex );
+		for ( var i = 0; i < count; ++i )
+		{
+			if ( OperationMissionCard.GetMissionCardDetails( i ) )
+				return i;
+		}
+		return 0;
 	};
 	var _UpdateSelectedMissionCard = function( cardIndex )
 	{
-		cardIndex = Number( cardIndex ) || 0;
+		cardIndex = Number( cardIndex );
+		if ( isNaN( cardIndex ) || cardIndex < 0 ||
+			!OperationMissionCard.GetMissionCardDetails( cardIndex ) )
+		{
+			cardIndex = _FirstRevivalMissionCardIndex();
+		}
+
 		var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( _m_nSeasonIndex, cardIndex );
 		var elLabel = $.GetContextPanel().FindChildInLayoutFile( 'id-missions-selected-card-name' );
 		var nWeek = cardIndex + 1;
 
 		if ( !jsoCardDetails )
 		{
-			// Some revived accounts can reference a mission-card index not present
-			// in this Legacy client's bundled operation data. Keep the Operation
-			// panel alive instead of aborting all remaining Panorama script.
 			elLabel.text = $.Localize( "#op_mainmenu_mission_week_prefix") + " " + nWeek;
 			return;
 		}
