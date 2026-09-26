@@ -3078,7 +3078,7 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
     else if (selected->expression.find("%act_win_round%") != std::string::npos)
     {
         normalPoints = static_cast<int>(
-            std::min<uint32_t>(roundsWon, static_cast<uint32_t>(INT_MAX)));
+            std::min<uint32_t>(roundsWon, 1000000u));
     }
     else
     {
