@@ -214,7 +214,7 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_REVEAL_V1")) {
         throw "Built csgo_gc.dll does not contain native CCSGameRules drop reveal."
     }
-    if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_RETRY_V2")) {
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_CRASH_GUARD_V1")) {
         throw "Built csgo_gc.dll does not contain retry-safe native drop hook installation."
     }
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_DROP_TIMING_V3")) {
@@ -374,7 +374,7 @@ if (-not $SkipInstall) {
     if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_REVEAL_V1")) {
         throw "Installed csgo_gc.dll is missing native CCSGameRules drop reveal."
     }
-    if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_RETRY_V2")) {
+    if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_CRASH_GUARD_V1")) {
         throw "Installed csgo_gc.dll is missing retry-safe native drop hook installation."
     }
     if (-not $installedGcText.Contains("REVIVAL_NATIVE_DROP_TIMING_V3")) {
