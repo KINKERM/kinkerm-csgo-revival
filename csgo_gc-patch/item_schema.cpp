@@ -706,6 +706,99 @@ static bool RevivalCompetitiveMissionMapSupported(std::string_view mapName)
         != Supported.end();
 }
 
+static bool RevivalQuestTargetsMap(
+    const QuestDefinition &quest,
+    std::string_view mapName)
+{
+    if (!RevivalCompetitiveMissionMapSupported(mapName))
+    {
+        return false;
+    }
+
+    // Riptide Premier missions use lobby_mapveto and therefore work on any
+    // map in the revival's curated Competitive pool.
+    if (quest.map == "lobby_mapveto")
+    {
+        return true;
+    }
+
+    if (quest.map == mapName)
+    {
+        return true;
+    }
+
+    if (quest.mapGroup.rfind("mg_", 0) == 0
+        && quest.mapGroup.substr(3) == mapName)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+std::vector<uint32_t> ItemSchema::QuestGraphChildren(uint32_t questId) const
+{
+    std::vector<uint32_t> out;
+    const QuestDefinition *quest = GetQuestDefinition(questId);
+    if (!quest || quest->expression.rfind("QQ:", 0) != 0)
+    {
+        return out;
+    }
+
+    std::string_view expression = quest->expression;
+    size_t pos = expression.find('|');
+    while (pos != std::string_view::npos)
+    {
+        const size_t next = expression.find('|', pos + 1);
+        const std::string_view token = next == std::string_view::npos
+            ? expression.substr(pos + 1)
+            : expression.substr(pos + 1, next - pos - 1);
+        const uint32_t childId = FromString<uint32_t>(token);
+        if (childId && GetQuestDefinition(childId))
+        {
+            out.push_back(childId);
+        }
+        pos = next;
+    }
+
+    return out;
+}
+
+const QuestDefinition *ItemSchema::RepeatableCompetitiveQuestForCard(
+    uint32_t cardId,
+    std::string_view mapName) const
+{
+    const OperationMissionCard *card = GetOperationMissionCard(cardId);
+    if (!card || !RevivalCompetitiveMissionMapSupported(mapName))
+    {
+        return nullptr;
+    }
+
+    const QuestDefinition *generic = nullptr;
+    for (uint32_t questId : card->questIds)
+    {
+        const QuestDefinition *quest = GetQuestDefinition(questId);
+        if (!quest || quest->gameMode.rfind("competitive", 0) != 0)
+        {
+            continue;
+        }
+
+        if (quest->map == mapName
+            || (quest->mapGroup.rfind("mg_", 0) == 0
+                && quest->mapGroup.substr(3) == mapName))
+        {
+            return quest;
+        }
+
+        if (quest->map == "lobby_mapveto")
+        {
+            generic = quest;
+        }
+    }
+
+    return generic;
+}
+
 std::string ItemSchema::PreferredOperationMissionMap(uint32_t cardId) const
 {
     const OperationMissionCard *card = GetOperationMissionCard(cardId);
@@ -717,7 +810,15 @@ std::string ItemSchema::PreferredOperationMissionMap(uint32_t cardId) const
     for (uint32_t questId : card->questIds)
     {
         const QuestDefinition *quest = GetQuestDefinition(questId);
-        if (!quest || quest->gameMode.find("competitive") != 0)
+        if (!quest || quest->gameMode.rfind("competitive", 0) != 0)
+        {
+            continue;
+        }
+
+        // lobby_mapveto is intentionally left empty here: it is a valid
+        // repeatable Premier-style mission on ANY curated map, so normal
+        // matchmaking chooses one of the currently installed pool maps.
+        if (quest->map == "lobby_mapveto")
         {
             continue;
         }
@@ -727,8 +828,6 @@ std::string ItemSchema::PreferredOperationMissionMap(uint32_t cardId) const
             return quest->map;
         }
 
-        // Old mission definitions commonly encode a specific map as
-        // "mg_de_dust2"/"mg_de_cache" instead of using the map field.
         if (quest->mapGroup.rfind("mg_", 0) == 0)
         {
             const std::string candidate = quest->mapGroup.substr(3);
