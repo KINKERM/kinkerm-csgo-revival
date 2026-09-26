@@ -734,6 +734,45 @@ var OperationUtil = ( function () {
 		}
 		return true;
 	};
+	var _RevivalRepeatableMissionMap = function( missionId )
+	{
+		var missionItemId = InventoryAPI.GetQuestItemIDFromQuestID( Number( missionId ) );
+		if ( !missionItemId )
+			return '';
+
+		var gameMode = InventoryAPI.GetQuestGameMode( missionItemId );
+		var map = InventoryAPI.GetQuestMap( missionItemId );
+		var mapGroup = InventoryAPI.GetQuestMapGroup( missionItemId );
+
+		// Riptide Premier uses lobby_mapveto. In the revival that is a valid
+		// repeatable Competitive mission on any map in the curated pool.
+		if ( gameMode === 'competitive' && map === 'lobby_mapveto' )
+			return 'lobby_mapveto';
+
+		if ( gameMode !== 'competitive' )
+			return '';
+
+		if ( !map && mapGroup && mapGroup.indexOf( 'mg_' ) === 0 )
+			map = mapGroup.substr( 3 );
+
+		var allowed = {
+			de_dust2: true,
+			de_mirage: true,
+			de_cache: true,
+			de_cbble: true,
+			de_inferno: true,
+			de_ancient: true,
+			de_nuke: true,
+			cs_insertion2: true
+		};
+
+		return allowed[ map ] ? map : '';
+	};
+	var _IsRevivalRepeatableCompetitiveMission = function( missionId )
+	{
+		return _RevivalRepeatableMissionMap( missionId ) !== '';
+	};
+
 	var _GetOperationInfo = function()
 	{
 		return {
@@ -774,5 +813,7 @@ var OperationUtil = ( function () {
 		SetLocalizationStringAndVarsForMission: _SetLocalizationStringAndVarsForMission,
 		GetMissionDetails: _GetMissionDetails,
 		GetMissionCardEarnedPoints: _GetMissionCardEarnedPoints,
+		RevivalRepeatableMissionMap: _RevivalRepeatableMissionMap,
+		IsRevivalRepeatableCompetitiveMission: _IsRevivalRepeatableCompetitiveMission,
 	};
 })();
