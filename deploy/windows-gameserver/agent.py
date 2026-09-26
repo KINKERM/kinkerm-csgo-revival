@@ -48,7 +48,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_LIVE_OPERATION_ROUNDS_V36"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_SHORT_MATCH_OPERATION_V37"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -366,11 +366,11 @@ mp_autokick 0
 mp_autoteambalance 0
 mp_limitteams 0
 mp_friendlyfire 1
-mp_maxrounds 30
+mp_maxrounds 16
 mp_winlimit 0
 mp_halftime 1
-mp_overtime_enable 1
-mp_overtime_maxrounds 6
+mp_overtime_enable 0
+mp_overtime_maxrounds 0
 mp_match_can_clinch 1
 mp_ignore_round_win_conditions 0
 mp_timelimit 0
@@ -631,6 +631,14 @@ class ServerSlot:
         self.connected_account_ids: set[int] = set()
         self.player_teams: dict[int, str] = {}
         self.player_rounds_won: dict[int, int] = {}
+        # Track the two logical squads independently of physical CT/T sides.
+        # MR8 swaps CT/T at halftime, but a player's squad identity must not
+        # change. This is the authority for live mission rounds and match wins.
+        self.side_squads: dict[str, str] = {"CT": "A", "TERRORIST": "B"}
+        self.player_squads: dict[int, str] = {}
+        self.squad_scores: dict[str, int] = {"A": 0, "B": 0}
+        self.last_side_score: dict[str, int] = {"CT": 0, "TERRORIST": 0}
+        self.total_scored_rounds = 0
         self.match_play_started_at = 0.0
         self.ready_at = 0.0
         self.source_match_started_at = 0.0
@@ -780,6 +788,11 @@ class ServerSlot:
             self.connected_account_ids.clear()
             self.player_teams.clear()
             self.player_rounds_won.clear()
+            self.side_squads = {"CT": "A", "TERRORIST": "B"}
+            self.player_squads.clear()
+            self.squad_scores = {"A": 0, "B": 0}
+            self.last_side_score = {"CT": 0, "TERRORIST": 0}
+            self.total_scored_rounds = 0
             self.match_play_started_at = 0.0
             self.ready_at = 0.0
             self.source_match_started_at = 0.0
@@ -898,33 +911,59 @@ class ServerSlot:
         if m:
             score = int(m.group(2))
             side = m.group(1).upper()
-            changed = False
+            scoring_event = False
+            halftime_flip = False
             with self._lock:
-                old_score = self.ct_score if side == "CT" else self.t_score
-                changed = old_score != score
+                # The same Source scoring line can appear in both console.log
+                # and the L*.log. Deduplicate by the side's latest score value,
+                # but NEVER derive progress from score-old_score: CT/T score
+                # values can move backwards when sides swap at halftime.
+                previous_logged_score = self.last_side_score.get(side, 0)
+                scoring_event = score > 0 and score != previous_logged_score
+                self.last_side_score[side] = score
+
                 if side == "CT":
                     self.ct_score = score
                 else:
                     self.t_score = score
 
-                # Keep a player-centric round-win counter across halftime.
-                # Reading only the player's CURRENT team score would become
-                # wrong after CT/T swap because the scoreboard totals belong to
-                # team sides, not to the same player across both halves.
-                delta = max(0, score - old_score)
-                if delta:
-                    for account_id in self.expected_account_ids:
-                        if self.player_teams.get(account_id) == side:
-                            self.player_rounds_won[account_id] = (
-                                self.player_rounds_won.get(account_id, 0) + delta
-                            )
+                if scoring_event:
+                    winning_squad = self.side_squads.get(side, "")
+                    if winning_squad:
+                        self.squad_scores[winning_squad] = (
+                            self.squad_scores.get(winning_squad, 0) + 1
+                        )
+                        for account_id in self.expected_account_ids:
+                            if self.player_squads.get(account_id) == winning_squad:
+                                self.player_rounds_won[account_id] = (
+                                    self.player_rounds_won.get(account_id, 0) + 1
+                                )
+
+                    self.total_scored_rounds += 1
+
+                    # Short Competitive is MR8: after eight completed rounds,
+                    # logical squad A/B stays fixed while physical CT/T swaps.
+                    if self.total_scored_rounds == 8:
+                        self.side_squads = {
+                            "CT": self.side_squads.get("TERRORIST", "B"),
+                            "TERRORIST": self.side_squads.get("CT", "A"),
+                        }
+                        halftime_flip = True
+
                 match_id = self.match_id
                 live_rounds = dict(self.player_rounds_won)
-            if changed and match_id:
+                squad_scores = dict(self.squad_scores)
+
+            if scoring_event and match_id:
                 print(
-                    f"[agent] REVIVAL_LIVE_OPERATION_ROUNDS_V1 "
+                    f"[agent] REVIVAL_LIVE_OPERATION_ROUNDS_V2 "
                     f"match={match_id} score={self.ct_score}-{self.t_score} "
-                    f"player_rounds={live_rounds}"
+                    f"squads={squad_scores} player_rounds={live_rounds}"
+                )
+            if halftime_flip and match_id:
+                print(
+                    f"[agent] REVIVAL_SHORT_MATCH_HALFTIME_V1 "
+                    f"match={match_id} physical-sides-swapped logical-squads-preserved"
                 )
 
         seen_account_id = account_id_from_text(line)
@@ -935,6 +974,15 @@ class ServerSlot:
                 if team in ("CT", "TERRORIST"):
                     with self._lock:
                         self.player_teams[seen_account_id] = team
+                        # Assign a logical squad once. Do not overwrite it after
+                        # halftime just because the player's physical side flips.
+                        if seen_account_id not in self.player_squads:
+                            squad = self.side_squads.get(team, "")
+                            if squad:
+                                self.player_squads[seen_account_id] = squad
+                                self.player_rounds_won.setdefault(
+                                    seen_account_id, 0
+                                )
 
             with self._lock:
                 expected = (
@@ -1108,6 +1156,8 @@ class ServerSlot:
                     "bot_quota_mode fill; bot_quota 10; "
                     "mp_autokick 0; mp_autoteambalance 0; mp_limitteams 0; "
                     "mp_friendlyfire 1; "
+                    "mp_maxrounds 16; mp_winlimit 0; mp_halftime 1; "
+                    "mp_overtime_enable 0; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_timelimit 0; mp_match_restart_delay 15; "
                     "mp_competitive_endofmatch_extra_time 20; "
@@ -1333,7 +1383,8 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5 1; "
-                    "mp_timelimit 0; "
+                    "mp_timelimit 0; mp_maxrounds 16; mp_winlimit 0; "
+                    "mp_halftime 1; mp_overtime_enable 0; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
                     "bot_quota_mode fill; bot_quota 10"
@@ -1351,6 +1402,20 @@ class ServerSlot:
             elapsed = 0
             if self.match_play_started_at:
                 elapsed = max(0, int(time.monotonic() - self.match_play_started_at))
+            player_rounds = {
+                str(account_id): int(self.player_rounds_won.get(account_id, 0))
+                for account_id in self.expected_account_ids
+            }
+            player_won: dict[str, bool] = {}
+            player_tied: dict[str, bool] = {}
+            for account_id in self.expected_account_ids:
+                squad = self.player_squads.get(account_id, "")
+                ours = int(self.squad_scores.get(squad, 0)) if squad else 0
+                other_squad = "B" if squad == "A" else ("A" if squad == "B" else "")
+                theirs = int(self.squad_scores.get(other_squad, 0)) if other_squad else 0
+                player_won[str(account_id)] = bool(squad and ours > theirs)
+                player_tied[str(account_id)] = bool(squad and ours == theirs)
+
             result = {
                 "reason": reason,
                 "ct_score": self.ct_score,
@@ -1362,6 +1427,11 @@ class ServerSlot:
                     for account_id, team in self.player_teams.items()
                     if account_id in self.expected_account_ids
                 },
+                "player_rounds_won": player_rounds,
+                "player_won": player_won,
+                "player_tied": player_tied,
+                "logical_squad_scores": dict(self.squad_scores),
+                "total_scored_rounds": int(self.total_scored_rounds),
             }
 
         # Tell the injected server GC to create the actual reward items and add
@@ -1381,6 +1451,20 @@ class ServerSlot:
                 for account_id, team in sorted(self.player_teams.items()):
                     if account_id in self.expected_account_ids:
                         fh.write(f"team_{account_id}={team}\n")
+                for account_id in sorted(self.expected_account_ids):
+                    key = str(account_id)
+                    fh.write(
+                        f"rounds_{account_id}="
+                        f"{int(result['player_rounds_won'].get(key, 0))}\n"
+                    )
+                    fh.write(
+                        f"won_{account_id}="
+                        f"{1 if result['player_won'].get(key, False) else 0}\n"
+                    )
+                    fh.write(
+                        f"tied_{account_id}="
+                        f"{1 if result['player_tied'].get(key, False) else 0}\n"
+                    )
             os.replace(trigger_tmp, trigger_path)
             print(f"[agent] native drop reveal trigger written for match {match_id}")
         except OSError as exc:
@@ -1428,6 +1512,11 @@ class ServerSlot:
         self.connected_account_ids.clear()
         self.player_teams.clear()
         self.player_rounds_won.clear()
+        self.side_squads = {"CT": "A", "TERRORIST": "B"}
+        self.player_squads.clear()
+        self.squad_scores = {"A": 0, "B": 0}
+        self.last_side_score = {"CT": 0, "TERRORIST": 0}
+        self.total_scored_rounds = 0
         self.match_play_started_at = 0.0
         self.assignment_missing_since = 0.0
         self.launched_at = 0.0
