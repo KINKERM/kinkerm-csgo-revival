@@ -118,6 +118,7 @@ var HudMissionPanel = ( function() {
 		{
 			_UpdateMission();
 		}
+		$.Schedule( 2.5, _UpdateMission );
 	};
 
 	var _OnRoundFreezeTimeEnd = function()
