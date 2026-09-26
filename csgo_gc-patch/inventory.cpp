@@ -2730,6 +2730,15 @@ bool Inventory::SetOperationMissionCard(uint32_t season,
     return true;
 }
 
+std::string Inventory::PreferredOperationMissionMap() const
+{
+    if (!m_operationMissionId)
+    {
+        return {};
+    }
+    return m_itemSchema.PreferredOperationMissionMap(m_operationMissionId);
+}
+
 
 bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     int normalPointsEarned,
@@ -2755,65 +2764,94 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     }
 
     OperationQuestProgressState &state = m_operationQuestProgress[questId];
-    const uint32_t oldProgress = state.progress;
-    uint64_t progressSum = static_cast<uint64_t>(oldProgress)
-        + static_cast<uint32_t>(std::max(normalPointsEarned, 0));
-    state.progress = static_cast<uint32_t>(
-        std::min<uint64_t>(progressSum, quest->Goal()));
+    const uint32_t goal = quest->Goal();
+    const uint32_t oldProgress = std::min(state.progress, goal ? goal - 1 : 0u);
+    const uint64_t added = static_cast<uint32_t>(std::max(normalPointsEarned, 0));
+    const uint64_t total = static_cast<uint64_t>(oldProgress) + added;
 
-    if (bonusPointsEarned > 0)
+    // Revival mission loop:
+    //   - preserve Valve's per-threshold star award
+    //   - remove the historical 10/6-stars-per-week card cap
+    //   - add +1 bonus star whenever the full mission is completed
+    //   - wrap progress back around so the same mission can be played forever
+    const uint64_t completedCycles = goal ? total / goal : 0;
+    const uint32_t newProgress = goal
+        ? static_cast<uint32_t>(total % goal)
+        : oldProgress;
+
+    uint64_t crossedSegments = 0;
+    if (!quest->thresholds.empty())
     {
-        uint64_t bonusSum = static_cast<uint64_t>(state.bonusPoints)
+        if (completedCycles == 0)
+        {
+            for (uint32_t threshold : quest->thresholds)
+            {
+                if (oldProgress < threshold && total >= threshold)
+                    ++crossedSegments;
+            }
+        }
+        else
+        {
+            // Finish the current cycle.
+            for (uint32_t threshold : quest->thresholds)
+            {
+                if (oldProgress < threshold)
+                    ++crossedSegments;
+            }
+
+            // Any fully completed extra cycles.
+            if (completedCycles > 1)
+            {
+                crossedSegments +=
+                    (completedCycles - 1) * quest->thresholds.size();
+            }
+
+            // Thresholds already reached in the new wrapped cycle.
+            for (uint32_t threshold : quest->thresholds)
+            {
+                if (newProgress >= threshold)
+                    ++crossedSegments;
+            }
+        }
+    }
+
+    uint64_t stars64 =
+        crossedSegments * static_cast<uint64_t>(quest->operationalPoints);
+    stars64 += completedCycles; // +1 revival completion bonus per full mission
+    const uint32_t starsEarnedNow = stars64 > UINT32_MAX
+        ? UINT32_MAX : static_cast<uint32_t>(stars64);
+
+    state.progress = newProgress;
+
+    if (completedCycles > 0)
+    {
+        // A completed repeatable mission immediately becomes available again.
+        // Clear uncommitted bonus progress and the active-card pin so a normal
+        // Competitive queue after completion does not keep forcing the mission map.
+        state.bonusPoints = 0;
+        m_operationMissionId = 0;
+    }
+    else if (bonusPointsEarned > 0)
+    {
+        const uint64_t bonusSum = static_cast<uint64_t>(state.bonusPoints)
             + static_cast<uint32_t>(bonusPointsEarned);
-        state.bonusPoints = bonusSum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(bonusSum);
-    }
-
-    // Stars are awarded when a progress threshold is crossed. Then clamp the
-    // award to the mission card's weekly maximum (10 for week 1, 6 thereafter).
-    uint32_t starsEarnedNow = 0;
-    const OperationMissionCard *card = m_itemSchema.GetOperationMissionCardForQuest(questId);
-    if (card)
-    {
-        // Temporarily restore old progress to compute the card total before this update.
-        const uint32_t newProgress = state.progress;
-        state.progress = oldProgress;
-        const uint32_t oldRaw = OperationMissionCardRawStars(*card);
-        state.progress = newProgress;
-        const uint32_t newRaw = OperationMissionCardRawStars(*card);
-
-        const uint32_t oldCapped = std::min(oldRaw, card->maxStars);
-        const uint32_t newCapped = std::min(newRaw, card->maxStars);
-        if (newCapped > oldCapped)
-        {
-            starsEarnedNow = newCapped - oldCapped;
-        }
-    }
-    else
-    {
-        uint32_t oldSegments = 0;
-        uint32_t newSegments = 0;
-        for (uint32_t threshold : quest->thresholds)
-        {
-            if (oldProgress >= threshold) ++oldSegments;
-            if (state.progress >= threshold) ++newSegments;
-        }
-        if (newSegments > oldSegments)
-        {
-            starsEarnedNow = (newSegments - oldSegments) * quest->operationalPoints;
-        }
+        state.bonusPoints = bonusSum > UINT32_MAX
+            ? UINT32_MAX : static_cast<uint32_t>(bonusSum);
     }
 
     if (starsEarnedNow > 0)
     {
         const uint32_t oldWalletStars = OperationStars(*coin);
-        const uint64_t walletSum = static_cast<uint64_t>(oldWalletStars) + starsEarnedNow;
+        const uint64_t walletSum =
+            static_cast<uint64_t>(oldWalletStars) + starsEarnedNow;
         const uint32_t newWalletStars = walletSum > UINT32_MAX
             ? UINT32_MAX : static_cast<uint32_t>(walletSum);
 
         CSOEconItemAttribute *starAttribute = nullptr;
         for (int i = 0; i < coin->attribute_size(); ++i)
         {
-            if (coin->mutable_attribute(i)->def_index() == GetConfig().OperationStarAttribute())
+            if (coin->mutable_attribute(i)->def_index()
+                == GetConfig().OperationStarAttribute())
             {
                 starAttribute = coin->mutable_attribute(i);
                 break;
@@ -2830,20 +2868,20 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
             return false;
         }
 
-        uint64_t earnedSum = static_cast<uint64_t>(m_operationEarnedStars) + starsEarnedNow;
+        const uint64_t earnedSum =
+            static_cast<uint64_t>(m_operationEarnedStars) + starsEarnedNow;
         m_operationEarnedStars = earnedSum > UINT32_MAX
             ? UINT32_MAX : static_cast<uint32_t>(earnedSum);
 
-        // Valve's Riptide UI compares SeasonalOperations.missions_completed
-        // against the coin's 33/66/100 "upgrade threshold". Those thresholds
-        // are mission-earned stars; purchased stars intentionally never touch
-        // this counter.
+        // Coin tiers still use Valve's Riptide mission-earned thresholds:
+        // 33 Silver, 66 Gold, 100 Diamond. Purchased stars remain wallet-only.
         m_operationMissionsCompleted = m_operationEarnedStars;
 
         const uint32_t targetCoinDef = OperationCoinDefForEarnedStars();
         if (targetCoinDef && coin->def_index() != targetCoinDef)
         {
-            Platform::Print("operation: coin upgraded def %u -> %u at %u earned stars\n",
+            Platform::Print(
+                "operation: coin upgraded def %u -> %u at %u earned stars\n",
                 coin->def_index(), targetCoinDef, m_operationEarnedStars);
             coin->set_def_index(targetCoinDef);
         }
@@ -2856,8 +2894,11 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     WriteToFile();
 
     Platform::Print(
-        "operation: quest %u +%d normal +%d bonus, progress %u/%u, +%u stars (earned=%u)\n",
-        questId, normalPointsEarned, bonusPointsEarned, state.progress, quest->Goal(),
+        "REVIVAL_REPEATABLE_MISSIONS_V1 quest=%u +%d normal +%d bonus "
+        "progress %u/%u cycles=%llu +%u stars (earned=%u)\n",
+        questId, normalPointsEarned, bonusPointsEarned,
+        state.progress, goal,
+        static_cast<unsigned long long>(completedCycles),
         starsEarnedNow, m_operationEarnedStars);
     return true;
 }
