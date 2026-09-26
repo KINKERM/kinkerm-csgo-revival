@@ -79,6 +79,7 @@ $stageOperationMissionsJs = Join-Path $stageDir "scripts\operation\operation_mis
 $stageOperationUtilJs = Join-Path $stageDir "scripts\operation\operation_util.js"
 $stageMissionContextJs = Join-Path $stageDir "scripts\context_menus\context_menu_select_mission_card.js"
 $stageActivateMissionJs = Join-Path $stageDir "scripts\popups\popup_activate_mission.js"
+$stageHudMissionJs = Join-Path $stageDir "scripts\hud\hudmissionpanel.js"
 Need-Path $stageXml "Staged mainmenu_play.xml"
 Need-Path $stageJs "Staged mainmenu_play.js"
 Need-Path $stageCss "Staged mainmenu_play.css"
@@ -88,6 +89,7 @@ Need-Path $stageOperationMissionsJs "Staged operation_missions.js"
 Need-Path $stageOperationUtilJs "Staged operation_util.js"
 Need-Path $stageMissionContextJs "Staged context_menu_select_mission_card.js"
 Need-Path $stageActivateMissionJs "Staged popup_activate_mission.js"
+Need-Path $stageHudMissionJs "Staged hudmissionpanel.js"
 
 $xmlText = [IO.File]::ReadAllText($stageXml)
 $xmlText = [Text.RegularExpressions.Regex]::Replace($xmlText, ">\s+<", "><")
@@ -101,7 +103,8 @@ foreach ($compactFile in @(
     $stageOperationMissionsJs,
     $stageOperationUtilJs,
     $stageMissionContextJs,
-    $stageActivateMissionJs
+    $stageActivateMissionJs,
+    $stageHudMissionJs
 )) {
     $raw = [IO.File]::ReadAllText($compactFile)
     $compactLines = [Text.RegularExpressions.Regex]::Split($raw, "\r?\n") |
@@ -164,7 +167,10 @@ if (-not $packedText.Contains("_GetRevivalValidationMapGroup")) {
 if (-not $packedText.Contains("REVIVAL_MISSION_SELECT_V1")) {
     throw "Packed code.pbin is missing the exact Operation mission-selection bridge"
 }
-Write-Host "PBIN queue + Operation mission markers OK" -ForegroundColor Green
+if (-not $packedText.Contains("revival operation hud")) {
+    throw "Packed code.pbin is missing the in-game Operation mission HUD fallback"
+}
+Write-Host "PBIN queue + Operation mission/HUD markers OK" -ForegroundColor Green
 
 $newHash = (Get-FileHash $codePbin -Algorithm SHA256).Hash
 $oldHash = (Get-FileHash $originalPbin -Algorithm SHA256).Hash
