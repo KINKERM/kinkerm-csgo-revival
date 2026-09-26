@@ -1307,10 +1307,13 @@ void ItemSchema::ParseQuests(const KeyValue *questsKey)
         quest.mapGroup = std::string{ questKey.GetString("mapgroup") };
         quest.expression = std::string{ questKey.GetString("expression") };
 
-        // Tournament/challenge quests can live in the same table but are not
-        // Operation-star missions. Keep only definitions that have both a goal
-        // and an Operation star value.
-        if (!quest.thresholds.empty() && quest.operationalPoints > 0)
+        // Keep every quest that has a real goal. Riptide's visible
+        // Competitive missions are often QQ parent graphs whose child quests
+        // carry the actual "win a match" / "win rounds" expressions but zero
+        // operational_points. The parent still owns the star reward; retaining
+        // its children lets the revival reproduce the stock mission objective
+        // and feed progress back into the original Operation UI.
+        if (!quest.thresholds.empty())
         {
             m_questDefinitions.emplace(id, std::move(quest));
         }
