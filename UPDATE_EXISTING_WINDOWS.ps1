@@ -214,6 +214,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_REPEATABLE_MISSIONS_V5")) {
         throw "Built csgo_gc.dll does not contain repeatable Operation Competitive missions V5."
     }
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_ACTIVE_QUEST_V1")) {
+        throw "Built csgo_gc.dll does not contain native Operation active-quest HUD support."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -394,6 +397,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_REPEATABLE_MISSIONS_V5")) {
         throw "Installed csgo_gc.dll is missing repeatable Operation Competitive missions V5."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_NATIVE_ACTIVE_QUEST_V1")) {
+        throw "Installed csgo_gc.dll is missing native Operation active-quest HUD support."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
