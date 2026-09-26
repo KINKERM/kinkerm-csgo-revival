@@ -1,0 +1,42 @@
+syntax = "proto2";
+
+option cc_generic_services = false;
+option optimize_for = SPEED;
+
+// Wire-compatible subset of CS:GO's stock end-match usermessages.
+// These names are revival-local; Source sends only the message id + wire bytes.
+
+message RevivalXpProgressData {
+    optional uint32 xp_points = 1;
+    optional int32 xp_category = 2;
+}
+
+message RevivalXpRewarded {
+    repeated RevivalXpProgressData xp_progress_data = 1;
+    optional uint32 account_id = 2;
+    optional uint32 current_xp = 3;
+    optional uint32 current_level = 4;
+    optional uint32 upgraded_defidx = 5;
+    optional uint32 operation_points_awarded = 6;
+}
+
+message RevivalUsrMsgXpUpdate {
+    optional RevivalXpRewarded data = 1;
+}
+
+message RevivalRankUpdateEntry {
+    optional int32 account_id = 1;
+    optional int32 rank_old = 2;
+    optional int32 rank_new = 3;
+    optional int32 num_wins = 4;
+    optional float rank_change = 5;
+    optional int32 rank_type_id = 6;
+}
+
+message RevivalUsrMsgServerRankUpdate {
+    repeated RevivalRankUpdateEntry rank_update = 1;
+}
+
+message RevivalUsrMsgServerRankRevealAll {
+    optional int32 seconds_till_shutdown = 1;
+}
