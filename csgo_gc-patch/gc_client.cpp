@@ -1215,6 +1215,17 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
             << "account_id=" << AccountId() << "\n"
             << "game_type=" << m_matchmakingGameType << "\n"
             << "client_version=" << m_matchmakingClientVersion << "\n";
+
+    const std::string operationMissionMap =
+        m_inventory.PreferredOperationMissionMap();
+    if (!operationMissionMap.empty())
+    {
+        request << "map=" << operationMissionMap << "\n";
+        Platform::Print(
+            "REVIVAL_REPEATABLE_MISSIONS_V1 targeting mission map %s\n",
+            operationMissionMap.c_str());
+    }
+
     if (!WriteMatchmakingBridgeFile(MatchmakingRequestPath, request.str()))
         Platform::Print("matchmaking: failed to write %s\n", MatchmakingRequestPath);
 
