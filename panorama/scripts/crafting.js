@@ -57,7 +57,7 @@ var Crafting = ( function ()
             'any',
             'any',
             sortType,
-            'recipe',                                 
+            '' /* REVIVAL_COVERT_TRADEUP_UI_V2 */,                                 
             ''               
         );
     }
