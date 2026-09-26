@@ -126,6 +126,14 @@ public:
     bool CreateRandomCaseMatchDrop(
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool CreateRareLegacyStickerCapsuleMatchDrop(
+        uint32_t oneIn,
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
+    bool CreateRareLegacySouvenirPackageMatchDrop(
+        uint32_t oneIn,
+        CMsgSOSingleObject &create,
+        CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
     bool CreateWeeklyLevelReward(
         CMsgSOSingleObject &create,
         CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification);
