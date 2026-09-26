@@ -172,10 +172,10 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_CURATED_DROPS_V34")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_CURATED_DROPS_V34"
+if (-not $agentText.Contains("REVIVAL_AGENT_REPEATABLE_MISSIONS_V35")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_REPEATABLE_MISSIONS_V35"
 }
-Write-Host "    Verified current V34 curated-map/drop laptop agent." -ForegroundColor Green
+Write-Host "    Verified current V35 repeatable-mission laptop agent." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
