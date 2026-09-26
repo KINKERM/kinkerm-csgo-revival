@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
-"""Patch CS:GO Legacy items_game.txt for CS2-style 5-Covert trade-ups.
+"""Patch CS:GO Legacy items_game.txt for 5-Covert trade-ups.
 
-This follows Valve's October 22, 2025 schema change instead of faking a
-"next_rarity" on Covert items:
-- recipes 5 / 15 are the five-Covert Unique / StatTrak contracts;
-- rare-special prefabs expose craft_class "unusual";
-- case item_sets get an "unusuals" mapping to their knife/glove pool;
-- unusual loot-list definitions are copied into client_loot_lists so the legacy
-  client can resolve those mappings.
+The 2018 client only needs a valid trade-up recipe to allow Covert items into
+the normal Trade Up Contract UI. The revival GC is authoritative for the gold
+result, so the client schema must NOT be backported with modern CS2-only
+item_set/loot-list metadata.
 
-The revival GC remains authoritative for consuming inputs and creating output.
+This patch:
+- removes old revival recipes 900/901, even if they were accidentally nested;
+- removes the previous V3 item_set / unusual-loot-list / prefab additions;
+- installs recipe 5 (Unique) and recipe 15 (StatTrak) using the same legacy
+  shape as stock recipes 4 and 14, but with di_A=5 and output rarity unusual.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 from dataclasses import dataclass
 import pathlib
 import re
 import sys
 from typing import Iterator
 
-MARKER = "REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
-OLD_MARKER = "REVIVAL_COVERT_TRADEUP_V1"
+MARKER = "REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY"
+OLD_MARKER_V3 = "REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
+OLD_MARKER_V1 = "REVIVAL_COVERT_TRADEUP_V1"
 
 
 def _find_matching_brace(text: str, open_pos: int) -> int:
@@ -71,30 +72,18 @@ def _find_matching_brace(text: str, open_pos: int) -> int:
     raise ValueError("unmatched KeyValues brace")
 
 
-def _find_named_block(text: str, name: str, start: int = 0, end: int | None = None) -> tuple[int, int]:
+def _find_named_blocks(
+    text: str,
+    name: str,
+    start: int = 0,
+    end: int | None = None,
+) -> list[tuple[int, int]]:
     if end is None:
         end = len(text)
-    pat = re.compile(r'(?m)^[ \t]*"' + re.escape(name) + r'"[ \t]*(?:\r?\n[ \t]*)?\{')
-    match = pat.search(text, start, end)
-    if not match:
-        raise ValueError(f'KeyValues block "{name}" not found')
-    open_pos = text.find("{", match.start(), match.end())
-    close_pos = _find_matching_brace(text, open_pos)
-    if close_pos >= end:
-        raise ValueError(f'KeyValues block "{name}" escapes parent block')
-    return open_pos, close_pos
-
-
-def _find_named_blocks(text: str, name: str, start: int = 0, end: int | None = None) -> list[tuple[int, int]]:
-    """Return every sibling/top-level section with this KeyValues name.
-
-    Legacy items_game.txt legitimately contains many repeated client_loot_lists
-    and item_sets sections. The old patcher only read the first one.
-    """
-    if end is None:
-        end = len(text)
-    pat = re.compile(r'(?m)^[ \t]*"' + re.escape(name) + r'"[ \t]*(?:\r?\n[ \t]*)?\{')
-    blocks: list[tuple[int, int]] = []
+    pat = re.compile(
+        r'(?m)^[ \t]*"' + re.escape(name) + r'"[ \t]*(?:\r?\n[ \t]*)?\{'
+    )
+    out: list[tuple[int, int]] = []
     pos = start
     while True:
         match = pat.search(text, pos, end)
@@ -104,9 +93,22 @@ def _find_named_blocks(text: str, name: str, start: int = 0, end: int | None = N
         close_pos = _find_matching_brace(text, open_pos)
         if close_pos >= end:
             raise ValueError(f'KeyValues block "{name}" escapes parent block')
-        blocks.append((open_pos, close_pos))
+        out.append((open_pos, close_pos))
         pos = close_pos + 1
-    return blocks
+    return out
+
+
+def _find_named_block(
+    text: str,
+    name: str,
+    start: int = 0,
+    end: int | None = None,
+) -> tuple[int, int]:
+    blocks = _find_named_blocks(text, name, start, end)
+    if not blocks:
+        raise ValueError(f'KeyValues block "{name}" not found')
+    return blocks[0]
+
 
 def _skip_space_comments(text: str, pos: int, end: int) -> int:
     while pos < end:
@@ -171,6 +173,7 @@ def _iter_entries_range(text: str, start: int, end: int) -> Iterator[KVEntry]:
         pos = _skip_space_comments(text, pos, end)
         if pos >= end:
             return
+
         entry_start = pos
         key, pos = _parse_token(text, pos, end)
         pos = _skip_space_comments(text, pos, end)
@@ -184,9 +187,9 @@ def _iter_entries_range(text: str, start: int, end: int) -> Iterator[KVEntry]:
             yield KVEntry(key, "block", "", entry_start, close + 1, pos, close)
             pos = close + 1
         else:
-            value, new_pos = _parse_token(text, pos, end)
-            yield KVEntry(key, "scalar", value, entry_start, new_pos)
-            pos = new_pos
+            value, pos2 = _parse_token(text, pos, end)
+            yield KVEntry(key, "scalar", value, entry_start, pos2)
+            pos = pos2
 
 
 def _iter_block_entries(text: str, open_pos: int, close_pos: int) -> Iterator[KVEntry]:
@@ -201,83 +204,41 @@ def _direct_blocks(text: str, open_pos: int, close_pos: int) -> dict[str, KVEntr
     }
 
 
-def _external_unusual_blocks(text: str) -> dict[str, str]:
-    start, end = 0, len(text)
-    try:
-        root_open, root_close = _find_named_block(text, "unusual_loot_lists")
-    except ValueError:
-        pass
-    else:
-        start, end = root_open + 1, root_close
-
-    out: dict[str, str] = {}
-    for entry in _iter_entries_range(text, start, end):
-        if entry.kind == "block":
-            out[entry.key] = text[entry.start:entry.end].strip()
-    if not out:
-        raise ValueError("unusual_loot_lists.txt contains no loot-list blocks")
-    return out
+def _condition_block(lines: list[tuple[str, str]], indent: str) -> str:
+    chunks: list[str] = []
+    for i, (field, value) in enumerate(lines):
+        chunks.append(
+            f'{indent}"{i}"\n'
+            f'{indent}{{\n'
+            f'{indent}\t"field"\t\t"{field}"\n'
+            f'{indent}\t"operator"\t\t"string=="\n'
+            f'{indent}\t"value"\t\t"{value}"\n'
+            f'{indent}\t"required"\t\t"1"\n'
+            f'{indent}}}\n'
+        )
+    return "".join(chunks)
 
 
-def _leaf_keys(raw_block: str) -> set[str]:
-    open_pos = raw_block.find("{")
-    if open_pos < 0:
-        return set()
-    close_pos = _find_matching_brace(raw_block, open_pos)
-    leaves: set[str] = set()
-
-    def walk(a: int, b: int) -> None:
-        for entry in _iter_entries_range(raw_block, a, b):
-            if entry.kind == "block":
-                walk(entry.open_pos + 1, entry.close_pos)
-            else:
-                leaves.add(entry.key)
-
-    walk(open_pos + 1, close_pos)
-    return leaves
-
-
-def _is_painted_weapon_key(key: str) -> bool:
-    return key.startswith("[") and "]weapon_" in key
-
-
-def _is_knife_key(key: str) -> bool:
-    return "weapon_knife" in key
-
-
-def _recipe_block(recipe_id: int, quality: str, stattrak: bool) -> str:
+def _recipe_block(recipe_id: int, stattrak: bool) -> str:
     input_lines = [
-        ('*rarity', 'ancient'),
-        ('*quality', quality),
+        ("*rarity", "ancient"),
+        ("*quality", "strange" if stattrak else "unique"),
     ]
     if stattrak:
-        input_lines.append(('*kill_eater_score_type', '0'))
-    input_lines.append(('craft_class', 'weapon'))
+        input_lines.append(("*kill_eater_score_type", "0"))
+    # This exists in the stock Legacy recipes and is safe on the old client.
+    input_lines.append(("craft_class", "weapon"))
 
-    output_lines = [('*match_set_rarity', 'unusual')]
+    output_lines = [("*match_set_rarity", "unusual")]
     if stattrak:
-        output_lines.append(('*stattrak_recipe', 'yes'))
-    output_lines.append(('craft_class', 'unusual'))
+        output_lines.append(("*stattrak_recipe", "yes"))
 
-    def conditions(lines: list[tuple[str, str]], base_indent: str) -> str:
-        chunks: list[str] = []
-        for i, (field, value) in enumerate(lines):
-            chunks.append(
-                f'{base_indent}"{i}"\n'
-                f'{base_indent}{{\n'
-                f'{base_indent}\t"field"\t\t"{field}"\n'
-                f'{base_indent}\t"operator"\t\t"string=="\n'
-                f'{base_indent}\t"value"\t\t"{value}"\n'
-                f'{base_indent}\t"required"\t\t"1"\n'
-                f'{base_indent}}}\n'
-            )
-        return "".join(chunks)
-
-    input_conditions = conditions(input_lines, "\t\t\t\t\t\t")
-    output_conditions = conditions(output_lines, "\t\t\t\t\t\t")
+    input_conditions = _condition_block(input_lines, "\t\t\t\t\t\t")
+    output_conditions = _condition_block(output_lines, "\t\t\t\t\t\t")
+    requires_tool = '\n\t\t\t"requires_tool"\t\t"0"' if stattrak else ""
 
     return f"""
-\t\t// {MARKER}: Valve-style 5 Covert -> rare special contract
+\t\t// {MARKER}: Legacy-native 5 Covert -> GC-resolved rare special
 \t\t"{recipe_id}"
 \t\t{{
 \t\t\t"name"\t\t"#RT_MP_A"
@@ -311,334 +272,220 @@ def _recipe_block(recipe_id: int, quality: str, stattrak: bool) -> str:
 \t\t\t\t}}
 \t\t\t}}
 \t\t\t"category"\t\t"crafting"
-\t\t\t"filter"\t\t"-3"
+\t\t\t"filter"\t\t"-3"{requires_tool}
 \t\t}}
 """
 
 
-def _remove_old_patch(text: str) -> tuple[str, bool]:
-    changed = False
+def _remove_block_ranges(text: str, ranges: list[tuple[int, int]]) -> tuple[str, int]:
+    if not ranges:
+        return text, 0
 
-    rar_open, rar_close = _find_named_block(text, "rarities")
-    ancient_open, ancient_close = _find_named_block(text, "ancient", rar_open + 1, rar_close)
-    body = text[ancient_open + 1:ancient_close]
-    cleaned = re.sub(
-        r'(?m)^[ \t]*"next_rarity"[ \t]+"unusual"[ \t]*(?:\r?\n)?',
-        "",
-        body,
-    )
-    if cleaned != body:
-        text = text[:ancient_open + 1] + cleaned + text[ancient_close:]
-        changed = True
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
 
+    for start, end in reversed(merged):
+        text = text[:start] + text[end:]
+    return text, len(merged)
+
+
+def _remove_old_recipe_blocks(text: str) -> tuple[str, int]:
     recipes_open, recipes_close = _find_named_block(text, "recipes")
-
-    # Older revival builds inserted recipe 900/901 inside recipe 4/14 instead
-    # of as siblings. Search the entire recipes range, not only direct children.
     removals: list[tuple[int, int]] = []
-    for recipe_id in ("900", "901"):
+
+    # Remove all revival 5-Covert recipe generations. 900/901 were sometimes
+    # accidentally nested inside recipe 4/14, so search the whole recipes range.
+    for recipe_id in ("5", "15", "900", "901"):
         for open_pos, close_pos in _find_named_blocks(
             text, recipe_id, recipes_open + 1, recipes_close
         ):
-            raw = text[open_pos + 1:close_pos]
-            if (
-                OLD_MARKER in raw
+            line_start = text.rfind("\n", recipes_open + 1, open_pos) + 1
+            raw = text[line_start:close_pos + 1]
+
+            is_revival = (
+                MARKER in raw
+                or OLD_MARKER_V3 in raw
+                or OLD_MARKER_V1 in raw
                 or (
                     '"di_A"' in raw
-                    and '"5"' in raw
+                    and re.search(r'"di_A"[ \t]+"5"', raw)
                     and '"*rarity"' in raw
                     and '"ancient"' in raw
                 )
-            ):
-                line_start = text.rfind("\n", recipes_open + 1, open_pos) + 1
+            )
+            if is_revival:
                 removals.append((line_start, close_pos + 1))
 
-    for remove_start, remove_end in sorted(removals, reverse=True):
-        text = text[:remove_start] + text[remove_end:]
-        changed = True
-
-    return text, changed
-
-def _ensure_prefab_craft_class(text: str, prefab_name: str) -> tuple[str, bool]:
-    prefabs_open, prefabs_close = _find_named_block(text, "prefabs")
-    block_open, block_close = _find_named_block(text, prefab_name, prefabs_open + 1, prefabs_close)
-    body = text[block_open + 1:block_close]
-    if re.search(r'(?m)^[ \t]*"craft_class"[ \t]+"unusual"', body):
-        return text, False
-    insertion = f'\n\t\t\t"craft_class"\t\t"unusual"\t// {MARKER}'
-    return text[:block_open + 1] + insertion + text[block_open + 1:], True
+    return _remove_block_ranges(text, removals)
 
 
-def _collect_list_info(
-    name: str,
-    client_blocks: dict[str, str],
-    unusual_blocks: dict[str, str],
-    memo: dict[str, tuple[set[str], set[str]]],
-    stack: set[str],
-) -> tuple[set[str], set[str]]:
-    if name in memo:
-        a, b = memo[name]
-        return set(a), set(b)
-    if name in stack:
-        return set(), set()
-
-    stack.add(name)
-    skins: set[str] = set()
-    unusuals: set[str] = set()
-
-    if name in unusual_blocks:
-        unusuals.add(name)
-        raw = unusual_blocks[name]
-    else:
-        raw = client_blocks.get(name, "")
-        if not raw:
-            stack.remove(name)
-            return skins, unusuals
-
-    open_pos = raw.find("{")
-    if open_pos >= 0:
-        close_pos = _find_matching_brace(raw, open_pos)
-        for entry in _iter_entries_range(raw, open_pos + 1, close_pos):
-            if entry.kind == "block":
-                for key in _leaf_keys(raw[entry.start:entry.end]):
-                    if _is_painted_weapon_key(key):
-                        skins.add(key)
-                continue
-
-            key = entry.key
-            if _is_painted_weapon_key(key):
-                skins.add(key)
-            elif key in client_blocks or key in unusual_blocks:
-                sub_skins, sub_unusuals = _collect_list_info(
-                    key, client_blocks, unusual_blocks, memo, stack
-                )
-                skins.update(sub_skins)
-                unusuals.update(sub_unusuals)
-
-    stack.remove(name)
-    memo[name] = (set(skins), set(unusuals))
-    return skins, unusuals
+def _remove_v3_prefab_lines(text: str) -> tuple[str, int]:
+    pat = re.compile(
+        r'(?m)^[ \t]*"craft_class"[ \t]+"unusual"[^\r\n]*'
+        + re.escape(OLD_MARKER_V3)
+        + r'[^\r\n]*(?:\r?\n)?'
+    )
+    text2, count = pat.subn("", text)
+    return text2, count
 
 
-def _build_skin_pool_map(client_blocks: dict[str, str], unusual_blocks: dict[str, str]) -> dict[str, str]:
-    memo: dict[str, tuple[set[str], set[str]]] = {}
-    candidates: list[tuple[int, str, set[str]]] = []
+def _remove_v3_itemset_blocks(text: str) -> tuple[str, int]:
+    marker = f"// {OLD_MARKER_V3}: case collection -> rare-special pool"
+    removals: list[tuple[int, int]] = []
+    pos = 0
+    while True:
+        marker_pos = text.find(marker, pos)
+        if marker_pos < 0:
+            break
 
-    for name in client_blocks:
-        skins, unusuals = _collect_list_info(name, client_blocks, unusual_blocks, memo, set())
-        if skins and len(unusuals) == 1:
-            candidates.append((len(skins), next(iter(unusuals)), skins))
+        line_start = text.rfind("\n", 0, marker_pos) + 1
+        unusual_match = re.search(
+            r'(?m)^[ \t]*"unusuals"[ \t]*(?:\r?\n[ \t]*)?\{',
+            text[marker_pos:],
+        )
+        if not unusual_match:
+            pos = marker_pos + len(marker)
+            continue
 
-    candidates.sort(key=lambda row: row[0])
-    out: dict[str, str] = {}
-    for _, pool, skins in candidates:
-        for skin in skins:
-            out.setdefault(skin, pool)
-    return out
+        abs_match_start = marker_pos + unusual_match.start()
+        abs_match_end = marker_pos + unusual_match.end()
+        open_pos = text.find("{", abs_match_start, abs_match_end)
+        close_pos = _find_matching_brace(text, open_pos)
+        removals.append((line_start, close_pos + 1))
+        pos = close_pos + 1
+
+    return _remove_block_ranges(text, removals)
 
 
-def _pool_has_knife(pool_name: str, unusual_blocks: dict[str, str]) -> bool:
-    skins, _ = _collect_list_info(pool_name, {}, unusual_blocks, {}, set())
-    return any(_is_knife_key(key) for key in skins)
+def _remove_v3_copied_loot_lists(text: str) -> tuple[str, int]:
+    marker = f"// {OLD_MARKER_V3}: copied from csgo_gc/unusual_loot_lists.txt"
+    removals: list[tuple[int, int]] = []
+
+    for open_pos, close_pos in _find_named_blocks(text, "client_loot_lists"):
+        marker_pos = text.find(marker, open_pos + 1, close_pos)
+        if marker_pos < 0:
+            continue
+        # V3 always inserted this payload at the end of the chosen section.
+        line_start = text.rfind("\n", open_pos + 1, marker_pos) + 1
+        removals.append((line_start, close_pos))
+
+    return _remove_block_ranges(text, removals)
 
 
-def _client_loot_blocks(text: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    sections = _find_named_blocks(text, "client_loot_lists")
-    if not sections:
-        raise ValueError('KeyValues block "client_loot_lists" not found')
+def _remove_obsolete_next_rarity(text: str) -> tuple[str, int]:
+    rar_open, rar_close = _find_named_block(text, "rarities")
+    ancient_open, ancient_close = _find_named_block(
+        text, "ancient", rar_open + 1, rar_close
+    )
+    body = text[ancient_open + 1:ancient_close]
+    cleaned, count = re.subn(
+        r'(?m)^[ \t]*"next_rarity"[ \t]+"unusual"[^\r\n]*(?:\r?\n)?',
+        "",
+        body,
+    )
+    if count:
+        text = text[:ancient_open + 1] + cleaned + text[ancient_close:]
+    return text, count
 
-    for open_pos, close_pos in sections:
-        for entry in _iter_block_entries(text, open_pos, close_pos):
-            if entry.kind == "block":
-                out.setdefault(entry.key, text[entry.start:entry.end])
-    return out
-
-def _inject_unusual_loot_lists(text: str, unusual_blocks: dict[str, str]) -> tuple[str, int]:
-    sections = _find_named_blocks(text, "client_loot_lists")
-    if not sections:
-        raise ValueError('KeyValues block "client_loot_lists" not found')
-
-    # Treat all repeated legacy sections as one logical dictionary.
-    existing_all = _client_loot_blocks(text)
-    missing = [(name, raw) for name, raw in unusual_blocks.items() if name not in existing_all]
-    if not missing:
-        return text, 0
-
-    # Put the definitions next to the case lists that already reference them,
-    # rather than in the first map-collection-only client_loot_lists section.
-    best_open, best_close = sections[0]
-    best_score = -1
-    for open_pos, close_pos in sections:
-        raw = text[open_pos + 1:close_pos]
-        score = sum(1 for name in unusual_blocks if name in raw)
-        if score > best_score:
-            best_score = score
-            best_open, best_close = open_pos, close_pos
-
-    chunks = [f"\n\t\t// {MARKER}: copied from csgo_gc/unusual_loot_lists.txt"]
-    for _, raw in missing:
-        chunks.append("\n".join("\t\t" + line.lstrip("\t") for line in raw.splitlines()))
-    addition = "\n".join(chunks) + "\n"
-    return text[:best_close] + addition + text[best_close:], len(missing)
-
-def _patch_item_set_unusuals(
-    text: str,
-    skin_to_pool: dict[str, str],
-    unusual_blocks: dict[str, str],
-) -> tuple[str, int, list[str]]:
-    sections = _find_named_blocks(text, "item_sets")
-    if not sections:
-        raise ValueError('KeyValues block "item_sets" not found')
-
-    edits: list[tuple[int, str]] = []
-    ambiguous: list[str] = []
-
-    for item_sets_open, item_sets_close in sections:
-        entries = list(_iter_block_entries(text, item_sets_open, item_sets_close))
-
-        for set_entry in entries:
-            if set_entry.kind != "block":
-                continue
-
-            raw = text[set_entry.start:set_entry.end]
-            if re.search(r'(?m)^[ \t]*"unusuals"[ \t]*(?:\r?\n[ \t]*)?\{', raw):
-                continue
-
-            try:
-                items_open, items_close = _find_named_block(raw, "items")
-            except ValueError:
-                continue
-
-            pools = Counter()
-            for item in _iter_block_entries(raw, items_open, items_close):
-                if item.kind == "scalar":
-                    pool = skin_to_pool.get(item.key)
-                    if pool:
-                        pools[pool] += 1
-
-            if not pools:
-                continue
-            if len(pools) != 1:
-                ambiguous.append(
-                    f'{set_entry.key}: ' + ", ".join(
-                        f"{name} ({count})" for name, count in pools.most_common()
-                    )
-                )
-                continue
-
-            pool = next(iter(pools))
-            strange = ""
-            if _pool_has_knife(pool, unusual_blocks):
-                strange = f'\n\t\t\t\t"strange"\t\t"{pool}"'
-
-            block = (
-                f'\n\t\t\t// {MARKER}: case collection -> rare-special pool'
-                f'\n\t\t\t"unusuals"'
-                f'\n\t\t\t{{'
-                f'\n\t\t\t\t"unique"\t\t"{pool}"'
-                f'{strange}'
-                f'\n\t\t\t}}'
-            )
-            edits.append((set_entry.close_pos, block))
-
-    for pos, block in reversed(edits):
-        text = text[:pos] + block + text[pos:]
-
-    return text, len(edits), ambiguous
 
 def _ensure_recipes(text: str) -> tuple[str, int]:
     recipes_open, recipes_close = _find_named_block(text, "recipes")
     existing = _direct_blocks(text, recipes_open, recipes_close)
+
     additions: list[str] = []
     if "5" not in existing:
-        additions.append(_recipe_block(5, "unique", False))
+        additions.append(_recipe_block(5, False))
     if "15" not in existing:
-        additions.append(_recipe_block(15, "strange", True))
+        additions.append(_recipe_block(15, True))
+
     if not additions:
         return text, 0
     return text[:recipes_close] + "".join(additions) + text[recipes_close:], len(additions)
 
 
-def _validate(text: str) -> None:
-    prefabs_open, prefabs_close = _find_named_block(text, "prefabs")
-    for prefab in ("melee_unusual", "hands_paintable"):
-        open_pos, close_pos = _find_named_block(text, prefab, prefabs_open + 1, prefabs_close)
-        if not re.search(
-            r'(?m)^[ \t]*"craft_class"[ \t]+"unusual"',
-            text[open_pos + 1:close_pos],
-        ):
-            raise ValueError(f'{prefab} is missing craft_class "unusual"')
+def _validate_recipe(raw: str, recipe_id: str, stattrak: bool) -> None:
+    required = [
+        '"di_A"\t\t"5"',
+        '"*rarity"',
+        '"ancient"',
+        '"*quality"',
+        '"strange"' if stattrak else '"unique"',
+        '"craft_class"',
+        '"weapon"',
+        '"*match_set_rarity"',
+        '"unusual"',
+        '"filter"\t\t"-3"',
+    ]
+    for needle in required:
+        if needle not in raw:
+            raise ValueError(f"recipe {recipe_id} is missing expected field: {needle}")
 
+    if '"craft_class"\t\t"unusual"' in raw:
+        raise ValueError(f"recipe {recipe_id} still contains modern output craft_class unusual")
+
+
+def _validate(text: str) -> None:
     recipes_open, recipes_close = _find_named_block(text, "recipes")
     recipes = _direct_blocks(text, recipes_open, recipes_close)
-    for recipe_id in ("5", "15"):
-        if recipe_id not in recipes:
-            raise ValueError(f"missing Valve-style recipe {recipe_id}")
-        raw = text[recipes[recipe_id].start:recipes[recipe_id].end]
-        if '"di_A"' not in raw or '"ancient"' not in raw or '"craft_class"' not in raw:
-            raise ValueError(f"recipe {recipe_id} is not the expected five-Covert recipe")
+
+    for recipe_id, stattrak in (("5", False), ("15", True)):
+        entry = recipes.get(recipe_id)
+        if entry is None:
+            raise ValueError(f"missing Legacy 5-Covert recipe {recipe_id}")
+        raw = text[entry.start:entry.end]
+        if MARKER not in raw:
+            raise ValueError(f"recipe {recipe_id} is not the revival Legacy recipe")
+        _validate_recipe(raw, recipe_id, stattrak)
+
+    if OLD_MARKER_V3 in text:
+        raise ValueError("obsolete V3 client-schema injection is still present")
 
     rar_open, rar_close = _find_named_block(text, "rarities")
-    ancient_open, ancient_close = _find_named_block(text, "ancient", rar_open + 1, rar_close)
+    ancient_open, ancient_close = _find_named_block(
+        text, "ancient", rar_open + 1, rar_close
+    )
     if re.search(
         r'(?m)^[ \t]*"next_rarity"[ \t]+"unusual"',
         text[ancient_open + 1:ancient_close],
     ):
         raise ValueError('obsolete ancient next_rarity "unusual" is still present')
 
-    item_sections = _find_named_blocks(text, "item_sets")
-    if not item_sections or not any(
-        '"unusuals"' in text[open_pos + 1:close_pos]
-        for open_pos, close_pos in item_sections
-    ):
-        raise ValueError("no item_set unusuals mappings were installed")
+    # Old malformed 900/901 blocks must be gone even if they were nested.
+    for recipe_id in ("900", "901"):
+        if _find_named_blocks(text, recipe_id, recipes_open + 1, recipes_close):
+            raise ValueError(f"obsolete revival recipe {recipe_id} is still present")
 
-    client_sections = _find_named_blocks(text, "client_loot_lists")
-    if not client_sections or not any(
-        MARKER in text[open_pos + 1:close_pos]
-        for open_pos, close_pos in client_sections
-    ):
-        raise ValueError("rare-special loot-list definitions were not installed")
 
-def patch_text(text: str, unusual_text: str) -> tuple[str, bool, dict[str, object]]:
-    changed = False
+def patch_text(text: str, unusual_text: str = "") -> tuple[str, bool, dict[str, object]]:
+    del unusual_text  # kept for backward-compatible callers; GC still uses that file.
+
+    original = text
     stats: dict[str, object] = {}
 
-    text, did = _remove_old_patch(text)
-    changed |= did
-    stats["removed_old_patch"] = did
+    text, n = _remove_v3_copied_loot_lists(text)
+    stats["removed_v3_loot_payloads"] = n
 
-    unusual_blocks = _external_unusual_blocks(unusual_text)
-    client_blocks = _client_loot_blocks(text)
-    skin_to_pool = _build_skin_pool_map(client_blocks, unusual_blocks)
-    if not skin_to_pool:
-        raise ValueError(
-            "could not derive any case skin -> rare-special mappings from client_loot_lists"
-        )
-    stats["mapped_skins"] = len(skin_to_pool)
+    text, n = _remove_v3_itemset_blocks(text)
+    stats["removed_v3_itemsets"] = n
 
-    for prefab in ("melee_unusual", "hands_paintable"):
-        text, did = _ensure_prefab_craft_class(text, prefab)
-        changed |= did
+    text, n = _remove_v3_prefab_lines(text)
+    stats["removed_v3_prefab_lines"] = n
 
-    text, set_count, ambiguous = _patch_item_set_unusuals(
-        text, skin_to_pool, unusual_blocks
-    )
-    changed |= set_count > 0
-    stats["mapped_item_sets"] = set_count
-    stats["ambiguous_item_sets"] = ambiguous
+    text, n = _remove_obsolete_next_rarity(text)
+    stats["removed_next_rarity"] = n
 
-    text, copied = _inject_unusual_loot_lists(text, unusual_blocks)
-    changed |= copied > 0
-    stats["copied_unusual_lists"] = copied
+    text, n = _remove_old_recipe_blocks(text)
+    stats["removed_old_recipes"] = n
 
-    text, recipes = _ensure_recipes(text)
-    changed |= recipes > 0
-    stats["added_recipes"] = recipes
+    text, n = _ensure_recipes(text)
+    stats["added_recipes"] = n
 
     _validate(text)
-    return text, changed, stats
+    return text, text != original, stats
 
 
 def main() -> int:
@@ -646,7 +493,7 @@ def main() -> int:
     ap.add_argument("path")
     ap.add_argument(
         "--unusual-loot-lists",
-        help="csgo_gc/unusual_loot_lists.txt from the same legacy build",
+        help="accepted for compatibility; rare-special resolution is GC-side",
     )
     ap.add_argument("--output")
     ap.add_argument("--check", action="store_true")
@@ -668,19 +515,11 @@ def main() -> int:
         print(f"[tradeup] {MARKER} validation passed")
         return 0
 
-    if not args.unusual_loot_lists:
-        print(
-            "[tradeup] ERROR: --unusual-loot-lists is required for a fresh patch",
-            file=sys.stderr,
-        )
-        return 2
-
-    unusual_path = pathlib.Path(args.unusual_loot_lists)
-    if not unusual_path.is_file():
-        print(f"[tradeup] missing unusual loot lists: {unusual_path}", file=sys.stderr)
-        return 2
-
-    unusual_text = unusual_path.read_text(encoding="utf-8", errors="strict")
+    unusual_text = ""
+    if args.unusual_loot_lists:
+        unusual_path = pathlib.Path(args.unusual_loot_lists)
+        if unusual_path.is_file():
+            unusual_text = unusual_path.read_text(encoding="utf-8", errors="strict")
 
     try:
         patched, changed, stats = patch_text(original, unusual_text)
@@ -695,17 +534,12 @@ def main() -> int:
     print(f"[tradeup] {'patched' if changed else 'already current'}: {dst} ({MARKER})")
     print(
         "[tradeup] "
-        f"mapped_skins={stats['mapped_skins']} "
-        f"mapped_item_sets={stats['mapped_item_sets']} "
-        f"copied_unusual_lists={stats['copied_unusual_lists']} "
+        f"removed_old_recipes={stats['removed_old_recipes']} "
+        f"removed_v3_itemsets={stats['removed_v3_itemsets']} "
+        f"removed_v3_loot_payloads={stats['removed_v3_loot_payloads']} "
+        f"removed_v3_prefab_lines={stats['removed_v3_prefab_lines']} "
         f"added_recipes={stats['added_recipes']}"
     )
-    ambiguous = stats.get("ambiguous_item_sets", [])
-    if ambiguous:
-        print("[tradeup] skipped ambiguous item_sets:")
-        for item in ambiguous:
-            print(f"    {item}")
-
     return 0
 
 
