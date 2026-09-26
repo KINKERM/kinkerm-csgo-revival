@@ -649,18 +649,58 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
 
         // 9116: updated Competitive ranking. The 9105 reservation now carries
         // the pre-match rank, so SRCDS can build the native old->new transition.
-        CMsgGCCStrike15_v2_MatchmakingGC2ServerRankUpdate rankNotice;
-        rankNotice.set_match_id(matchId);
-        PlayerRankingInfo *ranking = rankNotice.add_rankings();
-        ranking->set_account_id(accountId);
-        ranking->set_rank_id(inventory.CompetitiveRank());
-        ranking->set_wins(inventory.CompetitiveWins());
-        ranking->set_rank_type_id(RankTypeCompetitive);
-        GCMessageWrite rankWrite{
-            RevivalMsgMatchmakingGC2ServerRankUpdate, rankNotice };
+        // The compatible legacy generated protobuf headers expose the 9116
+        // enum but omit its wrapper C++ class. Its wire schema is simply:
+        //   repeated PlayerRankingInfo rankings = 1;
+        // Build that tiny protobuf body manually from the PlayerRankingInfo type
+        // which does exist in this tree, then wrap it in the normal GC protobuf
+        // transport header.
+        PlayerRankingInfo ranking;
+        ranking.set_account_id(accountId);
+        ranking.set_rank_id(inventory.CompetitiveRank());
+        ranking.set_wins(inventory.CompetitiveWins());
+        ranking.set_rank_type_id(RankTypeCompetitive);
+
+        std::string rankingBytes;
+        ranking.SerializeToString(&rankingBytes);
+
+        std::vector<uint8_t> rankBody;
+        rankBody.push_back(0x0A); // field 1, length-delimited
+
+        auto appendVarint = [&rankBody](uint64_t value)
+        {
+            while (value >= 0x80)
+            {
+                rankBody.push_back(
+                    static_cast<uint8_t>((value & 0x7Fu) | 0x80u));
+                value >>= 7;
+            }
+            rankBody.push_back(static_cast<uint8_t>(value));
+        };
+        appendVarint(rankingBytes.size());
+        rankBody.insert(
+            rankBody.end(), rankingBytes.begin(), rankingBytes.end());
+
+        std::vector<uint8_t> rankPacket;
+        const uint32_t rankType =
+            RevivalMsgMatchmakingGC2ServerRankUpdate | ProtobufMask;
+        const uint32_t protoHeaderSize = 0;
+        const auto *rankTypeBytes =
+            reinterpret_cast<const uint8_t *>(&rankType);
+        const auto *headerSizeBytes =
+            reinterpret_cast<const uint8_t *>(&protoHeaderSize);
+        rankPacket.insert(
+            rankPacket.end(), rankTypeBytes,
+            rankTypeBytes + sizeof(rankType));
+        rankPacket.insert(
+            rankPacket.end(), headerSizeBytes,
+            headerSizeBytes + sizeof(protoHeaderSize));
+        rankPacket.insert(
+            rankPacket.end(), rankBody.begin(), rankBody.end());
+
         PostToHost(
-            HostEvent::Message, rankWrite.TypeMasked(),
-            rankWrite.Data(), rankWrite.Size());
+            HostEvent::Message, rankType,
+            rankPacket.data(), static_cast<uint32_t>(rankPacket.size()));
 
         Platform::Print(
             "REVIVAL_NATIVE_ENDMATCH_UI_V1 queued 9166+9116 account=%u xp=%u level=%u rank=%u->%u wins=%u->%u team=%s\n",
