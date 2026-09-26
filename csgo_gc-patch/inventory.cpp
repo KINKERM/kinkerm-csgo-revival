@@ -2742,6 +2742,17 @@ std::string Inventory::PreferredOperationMissionMap() const
     return m_itemSchema.PreferredOperationMissionMap(m_operationMissionId);
 }
 
+uint32_t Inventory::PreferredOperationMissionQuest(
+    std::string_view actualMap) const
+{
+    if (!m_operationMissionId)
+    {
+        return 0;
+    }
+    return m_itemSchema.PreferredOperationMissionQuest(
+        m_operationMissionId, actualMap);
+}
+
 
 bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     int normalPointsEarned,
