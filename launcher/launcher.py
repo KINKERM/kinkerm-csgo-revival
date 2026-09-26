@@ -168,8 +168,25 @@ def _mm_reward_path(config: dict) -> str:
     return os.path.join(config["csgo_dir"], "csgo_gc", "mm_reward.bin")
 
 
-def _operation_bridge_path(config: dict) -> str:
-    return os.path.join(config["csgo_dir"], "revival_mission_select.log")
+def _operation_bridge_paths(config: dict) -> list[str]:
+    root = config["csgo_dir"]
+    return [
+        os.path.join(root, "revival_mission_select.log"),
+        os.path.join(root, "csgo", "revival_mission_select.log"),
+        os.path.join(root, "csgo_gc", "revival_mission_select.log"),
+        os.path.join(root, "csgo", "csgo_gc", "revival_mission_select.log"),
+    ]
+
+
+def _write_operation_bridge(config: dict, marker: str) -> None:
+    # csgo_gc uses std::ifstream with a process-relative path. Legacy Source
+    # can change cwd during bootstrap, so write every harmless candidate rather
+    # than guessing which directory is active at the exact click frame.
+    for path in _operation_bridge_paths(config):
+        try:
+            _atomic_write_text(path, marker)
+        except OSError:
+            pass
 
 
 def _console_log_paths(config: dict) -> list[str]:
@@ -211,7 +228,7 @@ def _relay_operation_selection(config: dict,
 
     season, card, quest = selection
     marker = f"REVIVAL_MISSION_SELECT_V1 {season} {card} {quest}\n"
-    _atomic_write_text(_operation_bridge_path(config), marker)
+    _write_operation_bridge(config, marker)
     print(
         f"[launcher] operation click captured: "
         f"season={season} card={card} quest={quest}"
@@ -250,6 +267,44 @@ def _wait_for_operation_selection_persist(
     except OSError:
         body = b""
     card, quest = _operation_selection_from_inventory_bytes(body)
+    existing_bridge_paths = [
+        p for p in _operation_bridge_paths(config) if os.path.exists(p)
+    ]
+    if existing_bridge_paths:
+        print(
+            "[launcher] bridge marker still exists at: "
+            + ", ".join(existing_bridge_paths)
+        )
+    else:
+        print(
+            "[launcher] bridge marker was consumed by csgo_gc, "
+            "so persistence was rejected after parsing."
+        )
+
+    # Surface the GC's own reason from the same condebug log Panorama uses.
+    operation_lines: list[str] = []
+    for log_path in _console_log_paths(config):
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    low = line.lower()
+                    if (
+                        "[gc]" in low
+                        and (
+                            "operation" in low
+                            or "mission" in low
+                            or "quest" in low
+                        )
+                    ):
+                        operation_lines.append(line.rstrip())
+        except OSError:
+            pass
+
+    if operation_lines:
+        print("[launcher] latest csgo_gc Operation lines:")
+        for line in operation_lines[-20:]:
+            print("    " + line)
+
     print(
         "[launcher] ERROR: mission click was captured but csgo_gc did not "
         f"persist it (expected card={expected_card} quest={expected_quest}, "
@@ -381,8 +436,8 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                         # Re-write once at queue time in case the GC consumed an
                         # earlier path before Panorama finished the click.
                         season, card, quest = last_operation_selection
-                        _atomic_write_text(
-                            _operation_bridge_path(config),
+                        _write_operation_bridge(
+                            config,
                             f"REVIVAL_MISSION_SELECT_V1 {season} {card} {quest}\n",
                         )
                         if not _wait_for_operation_selection_persist(
@@ -483,7 +538,7 @@ def launch_and_wait(config: dict) -> None:
     for path in (
         _mm_request_path(config),
         _mm_state_path(config),
-        _operation_bridge_path(config),
+        *_operation_bridge_paths(config),
     ):
         try:
             os.remove(path)
