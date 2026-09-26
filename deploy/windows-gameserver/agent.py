@@ -45,7 +45,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V29"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V30"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -53,7 +53,6 @@ GAME_OVER_PATTERNS = (
     re.compile(r'Going to intermission(?:\.\.\.)?$', re.I),
     re.compile(r'\bGAMEPHASE_MATCH_ENDED\b', re.I),
 )
-
 TEAM_SCORE_RE = re.compile(r'Team "(CT|TERRORIST)" scored "(\d+)"', re.I)
 STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
@@ -876,8 +875,6 @@ class ServerSlot:
         if not line:
             return
 
-        # Keep the agent console readable. The raw Source/GC logs remain on disk
-        # for crash diagnostics; only high-signal revival/fatal lines are echoed.
         lower_line = line.lower()
         if (
             "revival_" in lower_line
@@ -934,19 +931,14 @@ class ServerSlot:
                 )
             if not valid_live_match:
                 return
-            print(f"[agent] match end detected")
+            print("[agent] match end detected")
             self._report_end_once(
                 "game_over",
                 grace=float(self.cfg.get("post_match_grace_seconds", 70)),
             )
 
     def _reader(self) -> None:
-        """Tail both Source L*.log and console.log.
-
-        Some legacy CS:GO builds emit the authoritative transition to
-        intermission only to the console stream, not the L*.log file. Rewards
-        must not depend on one logging backend happening to contain Game_Over.
-        """
+        """Tail Source's normal L*.log files; srcds owns a real Win32 console."""
         proc = self.proc
         if proc is None:
             return
@@ -956,7 +948,6 @@ class ServerSlot:
         current_path = ""
         position = 0
         console_position = 0
-        console_announced = False
 
         def newest_match_log() -> str:
             try:
@@ -981,7 +972,7 @@ class ServerSlot:
             except OSError:
                 return ""
 
-        def drain_match_log() -> None:
+        def drain() -> None:
             nonlocal current_path, position
             path = newest_match_log()
             if not path:
@@ -990,6 +981,9 @@ class ServerSlot:
                 current_path = path
                 position = 0
             try:
+                # Track a byte offset explicitly. TextIO iteration + tell() is
+                # unreliable on growing Windows log files and could silently
+                # kill/rewind the old tailer before the human join line arrived.
                 with open(path, "rb") as fh:
                     fh.seek(position)
                     while True:
@@ -1003,13 +997,11 @@ class ServerSlot:
             except Exception as exc:
                 print(f"[agent] Source log tail error: {exc}")
 
-        def drain_console_log() -> None:
-            nonlocal console_position, console_announced
+        def drain_console() -> None:
+            nonlocal console_position
             try:
                 if not os.path.isfile(console_path):
                     return
-                if not console_announced:
-                    console_announced = True
                 with open(console_path, "rb") as fh:
                     size = os.fstat(fh.fileno()).st_size
                     if size < console_position:
@@ -1023,16 +1015,16 @@ class ServerSlot:
                         self._handle_server_log_line(
                             raw.decode("utf-8", errors="replace")
                         )
-            except Exception as exc:
-                print(f"[agent] Source console tail error: {exc}")
+            except Exception:
+                return
 
         while proc.poll() is None:
-            drain_match_log()
-            drain_console_log()
+            drain()
+            drain_console()
             time.sleep(0.20)
 
-        drain_match_log()
-        drain_console_log()
+        drain()
+        drain_console()
         code = proc.wait()
         # A disappeared SRCDS is diagnostic-worthy regardless of exit code.
         # Only suppress the report when ServerSlot.stop() explicitly asked it
@@ -1320,8 +1312,8 @@ class ServerSlot:
                     "bot_quota_mode fill; bot_quota 10"
                 ),
             )
-        except Exception as exc:
-            print(f"[agent] Competitive runtime guard retry: {exc}")
+        except Exception:
+            return
 
     def _report_end_once(self, reason: str, grace: float = 0.0) -> None:
         with self._lock:
