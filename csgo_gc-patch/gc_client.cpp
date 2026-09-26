@@ -1269,7 +1269,7 @@ void ClientGC::ProcessCompletedMatchBridge(
     {
         CMsgSOMultipleObjects profileUpdate;
         m_inventory.BuildProfilePersonaUpdate(profileUpdate);
-        SendMessageToGame(false, k_ESOMsg_UpdateMultiple, profileUpdate);
+        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, profileUpdate);
 
         CMsgGCCStrike15_v2_MatchmakingGC2ClientHello profileHello;
         BuildMatchmakingHello(profileHello);
