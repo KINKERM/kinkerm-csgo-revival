@@ -136,7 +136,16 @@ ItemSchema::ItemSchema()
         ParseItems(itemsKey, itemsGame->GetSubkey("prefabs"));
     }
 
-    const KeyValue *questsKey = itemsGame->GetSubkey("quests");
+    // Riptide-era items_game stores missions under "quest_definitions".
+    // The previous revival parser looked for "quests", so the entire table was
+    // skipped: the card parsed, but zero quest ids were ever resolvable.
+    const KeyValue *questsKey = itemsGame->GetSubkey("quest_definitions");
+    if (!questsKey)
+    {
+        // Keep compatibility with older/custom schemas that used the shorter
+        // revival key during early development.
+        questsKey = itemsGame->GetSubkey("quests");
+    }
     if (questsKey)
     {
         ParseQuests(questsKey);
@@ -1309,17 +1318,28 @@ void ItemSchema::ParseQuests(const KeyValue *questsKey)
         quest.mapGroup = std::string{ questKey.GetString("mapgroup") };
         quest.expression = std::string{ questKey.GetString("expression") };
 
-        // Keep every quest that has a real goal. Riptide's visible
-        // Competitive missions are often QQ parent graphs whose child quests
-        // carry the actual "win a match" / "win rounds" expressions but zero
-        // operational_points. The parent still owns the star reward; retaining
-        // its children lets the revival reproduce the stock mission objective
-        // and feed progress back into the original Operation UI.
-        if (!quest.thresholds.empty())
+        // Do not require "points". Operation mission parents/graph nodes can
+        // legitimately omit thresholds while still carrying mode/map/expression
+        // metadata and being referenced by a mission card. Dropping those ids
+        // makes ActionRequestSeasonalOperationMissionCardID impossible to
+        // resolve even though Panorama selected a valid quest.
+        const bool meaningful =
+            !quest.thresholds.empty()
+            || quest.operationalPoints != 0
+            || !quest.gameMode.empty()
+            || !quest.map.empty()
+            || !quest.mapGroup.empty()
+            || !quest.expression.empty();
+
+        if (meaningful)
         {
             m_questDefinitions.emplace(id, std::move(quest));
         }
     }
+
+    Platform::Print(
+        "REVIVAL_OPERATION_SCHEMA_V2 parsed %zu quest_definitions entries\n",
+        m_questDefinitions.size());
 }
 
 void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, uint32_t season)
