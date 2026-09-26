@@ -553,7 +553,11 @@ static bool RevivalRecordPlayerItemDrop(
             callback_anchor,
             callback_anchor
             + "\n\n#ifdef _WIN32\n"
-            + "    RevivalInstallNativeDropRevealHooks();\n"
+            + "    static bool s_revNativeHookCrashGuardLogged = false;\n"
+            + "    if (!s_revNativeHookCrashGuardLogged) {\n"
+            + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 crash-guard active; reward bridge remains enabled\\n\");\n"
+            + "        s_revNativeHookCrashGuardLogged = true;\n"
+            + "    }\n"
             + "#endif",
             1,
         )
@@ -562,15 +566,11 @@ static bool RevivalRecordPlayerItemDrop(
         if install_anchor not in patched:
             print("[patch_steam_hook] ERROR: SteamGameServer_RunCallbacks install anchor missing")
             return 15
-        patched = patched.replace(
-            install_anchor,
-            install_anchor
-            + "\n#ifdef _WIN32\n"
-            + "    if (dedicated)\n"
-            + "        RevivalInstallNativeDropRevealHooks();\n"
-            + "#endif",
-            1,
-        )
+        # Do not invoke the optional raw server.dll detour on the old compatible
+        # dedicated-server tree. The proper 9136/9137 reward bridge, guaranteed
+        # drops, persistence, XP/rank processing, and server reward spool remain
+        # enabled. This only removes the crash-prone extra CCSGameRules detour.
+
 
         reserve_case_anchor = '''            case HostEvent::ReserveServerForQueuedGame:
 #ifdef _WIN32
