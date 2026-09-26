@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -76,6 +77,32 @@ def inventory_path(config: dict) -> str:
     return os.path.join(config["csgo_dir"], "csgo_gc", "inventory.txt")
 
 
+def _operation_selection_from_inventory_bytes(body: bytes) -> tuple[int, int]:
+    """Return (mission_card, selected_quest) from revival inventory text."""
+    text = body.decode("utf-8", "replace")
+    pos = text.find('"operation_riptide"')
+    if pos < 0:
+        return 0, 0
+    section = text[pos:pos + 8192]
+
+    def _number(name: str) -> int:
+        match = re.search(
+            rf'"{re.escape(name)}"\s+"?(\d+)"?',
+            section,
+        )
+        return int(match.group(1)) if match else 0
+
+    return _number("mission_id"), _number("selected_quest_id")
+
+
+def _print_operation_selection(body: bytes, prefix: str) -> None:
+    mission_card, selected_quest = _operation_selection_from_inventory_bytes(body)
+    print(
+        f"[launcher] operation {prefix}: "
+        f"mission_card={mission_card} selected_quest={selected_quest}"
+    )
+
+
 def fetch_inventory(config: dict) -> None:
     url = inventory_url(config)
     print(f"[launcher] syncing inventory for {config['steam_id']}")
@@ -93,6 +120,7 @@ def fetch_inventory(config: dict) -> None:
     with open(path, "wb") as fh:
         fh.write(body)
     print(f"[launcher] wrote {len(body)} bytes -> {path}")
+    _print_operation_selection(body, "after sync")
 
 
 def upload_inventory(config: dict) -> None:
@@ -108,6 +136,11 @@ def upload_inventory(config: dict) -> None:
 
     with open(path, "rb") as fh:
         body = fh.read()
+
+    # This is deliberately printed on every matchmaking-triggered upload. It
+    # proves whether the mission click reached persistent GC state BEFORE the
+    # laptop allocation starts, so a broken mission never looks like a HUD bug.
+    _print_operation_selection(body, "before upload")
 
     req = urllib.request.Request(
         inventory_url(config), data=body, method="POST",
