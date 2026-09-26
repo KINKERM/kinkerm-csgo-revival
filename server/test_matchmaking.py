@@ -162,6 +162,21 @@ class DropInMatchmakingTests(unittest.TestCase):
         self.assertIsNotNone(assignment)
         self.assertEqual(assignment["map"], "de_nuke")
 
+    def test_operation_missing_map_is_rejected_not_substituted(self) -> None:
+        mm = MatchmakingCoordinator(map_pool=["de_dust2", "cs_insertion2"])
+        mm.server_heartbeat({
+            "agent_id": "test-laptop",
+            "public_host": "test.example",
+            "public_port": 30123,
+            "maps": ["de_dust2"],
+        })
+
+        state = mm.start(steamid(83), preferred_map="cs_insertion2")
+        self.assertEqual(state["state"], "error")
+        self.assertEqual(state["map"], "cs_insertion2")
+        self.assertIn("not installed", state["error"])
+        self.assertIsNone(mm.snapshot()["assignment"])
+
     def test_operation_player_waits_for_incompatible_live_map(self) -> None:
         mm = MatchmakingCoordinator(map_pool=["de_dust2", "de_nuke"])
         mm.server_heartbeat({
