@@ -238,9 +238,6 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_RANK_STATE_V2")) {
         throw "Built csgo_gc.dll does not refresh post-match native ranking state."
     }
-    if (-not $gcDllText.Contains("REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V2")) {
-        throw "Built csgo_gc.dll does not queue stock XP/rank UI before EndOfMatch_Show."
-    }
     if (-not $gcDllText.Contains("REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V3")) {
         throw "Built csgo_gc.dll does not contain the complete stock XP/rank/reveal UI bridge."
     }
