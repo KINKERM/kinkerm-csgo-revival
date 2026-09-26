@@ -45,13 +45,38 @@ if ($LASTEXITCODE -ne 0) { throw "Trade-up schema patcher failed Python syntax p
 $repoItemsGame = Join-Path $RevivalRepo "items_game.txt"
 Need-Path $repoItemsGame "Repository items_game.txt"
 $tradeupPreflight = Join-Path $env:TEMP "revival_tradeup_items_game_preflight.txt"
-Remove-Item $tradeupPreflight -Force -ErrorAction SilentlyContinue
-& py -3 $tradeupPatcher $repoItemsGame --unusual-loot-lists $unusualLootLists --output $tradeupPreflight
-if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up full-schema preflight failed." }
-& py -3 $tradeupPatcher $tradeupPreflight --check
+$tradeupPreflight2 = Join-Path $env:TEMP "revival_tradeup_items_game_preflight_rerun.txt"
+Remove-Item $tradeupPreflight, $tradeupPreflight2 -Force -ErrorAction SilentlyContinue
+
+$preflightOutput = & py -3 $tradeupPatcher $repoItemsGame --unusual-loot-lists $unusualLootLists --output $tradeupPreflight 2>&1
+$preflightExit = $LASTEXITCODE
+$preflightOutput | ForEach-Object { Write-Host $_ }
+if ($preflightExit -ne 0) { throw "5-Covert trade-up full-schema preflight failed." }
+
+$mappingLine = $preflightOutput | Where-Object { $_ -match "mapped_skins=(\d+).*mapped_item_sets=(\d+)" } | Select-Object -Last 1
+if (-not $mappingLine) {
+    throw "5-Covert trade-up preflight did not report mapping counts."
+}
+$null = $mappingLine -match "mapped_skins=(\d+).*mapped_item_sets=(\d+)"
+$mappedSkins = [int]$Matches[1]
+$mappedSets = [int]$Matches[2]
+if ($mappedSkins -lt 100 -or $mappedSets -lt 10) {
+    throw "5-Covert trade-up mapping coverage is unexpectedly low: skins=$mappedSkins item_sets=$mappedSets"
+}
+
+& py -3 $tradeupPatcher $tradeupPreflight --unusual-loot-lists $unusualLootLists --output $tradeupPreflight2
+if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up idempotency rerun failed." }
+
+$preflightHash1 = (Get-FileHash $tradeupPreflight -Algorithm SHA256).Hash
+$preflightHash2 = (Get-FileHash $tradeupPreflight2 -Algorithm SHA256).Hash
+if ($preflightHash1 -ne $preflightHash2) {
+    throw "5-Covert trade-up patch is not idempotent; refusing to touch installed items_game.txt."
+}
+
+& py -3 $tradeupPatcher $tradeupPreflight2 --check
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up preflight output failed validation." }
-Remove-Item $tradeupPreflight -Force -ErrorAction SilentlyContinue
-Write-Host "    Full legacy schema preflight passed." -ForegroundColor Green
+Remove-Item $tradeupPreflight, $tradeupPreflight2 -Force -ErrorAction SilentlyContinue
+Write-Host "    Full legacy schema preflight passed: $mappedSkins skins, $mappedSets item sets, idempotent." -ForegroundColor Green
 
 & py -3 $tradeupPatcher $itemsGame --unusual-loot-lists $unusualLootLists
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
