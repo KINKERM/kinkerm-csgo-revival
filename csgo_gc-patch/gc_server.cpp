@@ -528,6 +528,7 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         if (!trigger.is_open())
             return;
 
+        Platform::Print("REVIVAL_MATCH_END_TRIGGER_V2 consuming trigger\n");
         std::string line;
         while (std::getline(trigger, line))
         {
@@ -542,16 +543,28 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
     if (!matchId || matchId == m_lastSyntheticDropMatchId)
     {
         if (!nativeIntermission)
+        {
+            Platform::Print(
+                "REVIVAL_MATCH_END_TRIGGER_V2 rejected match=%llu duplicate=%u\n",
+                static_cast<unsigned long long>(matchId),
+                matchId && matchId == m_lastSyntheticDropMatchId ? 1u : 0u);
             std::remove(TriggerPath);
+        }
         return;
     }
 
     const auto reservation = ReadServerReservationFile();
     if (ReservationNumber(reservation, "match_id") != matchId)
     {
-        // Ignore a stale trigger from a previous srcds allocation.
         if (!nativeIntermission)
+        {
+            Platform::Print(
+                "REVIVAL_MATCH_END_TRIGGER_V2 reservation mismatch trigger=%llu reservation=%llu\n",
+                static_cast<unsigned long long>(matchId),
+                static_cast<unsigned long long>(
+                    ReservationNumber(reservation, "match_id")));
             std::remove(TriggerPath);
+        }
         return;
     }
 
