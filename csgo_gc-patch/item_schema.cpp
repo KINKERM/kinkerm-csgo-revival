@@ -841,6 +841,44 @@ std::string ItemSchema::PreferredOperationMissionMap(uint32_t cardId) const
     return {};
 }
 
+uint32_t ItemSchema::PreferredOperationMissionQuest(
+    uint32_t cardId, std::string_view actualMap) const
+{
+    const OperationMissionCard *card = GetOperationMissionCard(cardId);
+    if (!card || !RevivalCompetitiveMissionMapSupported(actualMap))
+    {
+        return 0;
+    }
+
+    for (uint32_t questId : card->questIds)
+    {
+        const QuestDefinition *quest = GetQuestDefinition(questId);
+        if (!quest || quest->gameMode.rfind("competitive", 0) != 0)
+        {
+            continue;
+        }
+
+        // Week 1 Premier-style mission is valid on any curated queue map.
+        if (quest->map == "lobby_mapveto")
+        {
+            return questId;
+        }
+
+        if (quest->map == actualMap)
+        {
+            return questId;
+        }
+
+        if (quest->mapGroup.rfind("mg_", 0) == 0
+            && quest->mapGroup.substr(3) == actualMap)
+        {
+            return questId;
+        }
+    }
+
+    return 0;
+}
+
 
 bool ItemSchema::CreateItemFromLootListItem(Random &random,
     const LootListItem &lootListItem,
