@@ -12,6 +12,11 @@ struct OperationQuestProgressState
 {
     uint32_t progress{};
     uint32_t bonusPoints{};
+
+    // Revival-only accumulator for repeatable Competitive "win a match OR
+    // win 21 rounds" missions. This is persisted but never exposed as the
+    // quest's normal progress, so Panorama can keep using the stock mission UI.
+    uint32_t repeatableRounds{};
 };
 
 class Inventory
@@ -167,6 +172,16 @@ public:
     bool ApplyOperationQuestProgress(uint32_t questId,
         int normalPointsEarned,
         int bonusPointsEarned,
+        CMsgSOMultipleObjects &update);
+
+    // Convert one completed revival Competitive match into progress for the
+    // currently selected Riptide mission card. Only missions that target the
+    // curated map pool are eligible. Riptide's competitive OR missions complete
+    // by winning the match or accumulating 21 round wins across attempts.
+    bool ApplySelectedOperationCompetitiveMission(
+        std::string_view mapName,
+        uint32_t roundsWon,
+        bool wonMatch,
         CMsgSOMultipleObjects &update);
 
     bool SetOperationMissionCard(uint32_t season,
