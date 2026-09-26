@@ -2229,21 +2229,21 @@ bool Inventory::CreateRandomCaseMatchDrop(
     CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
 {
     // Every stock weapon case in the installed legacy schema is eligible.
-    // The six cases that were in the normal 2021 drop pool remain common;
-    // discontinued/older cases are a separate 1-in-10 rare roll.
-    constexpr std::array<uint32_t, 6> Active2021{
-        4471, 4548, 4598, 4695, 4698, 4747
-    };
-
+    // Cases first sold in 2017 or earlier live in a rarer 1-in-10 sub-pool.
+    // The regular pool therefore naturally includes newer cases such as
+    // Danger Zone/Prisma/Fracture/Snakebite/Riptide-era containers.
     const std::vector<uint32_t> &allCases = m_itemSchema.MatchDropWeaponCases();
-    std::vector<uint32_t> activeCases;
-    std::vector<uint32_t> oldCases;
+    const std::vector<uint32_t> &oldCases = m_itemSchema.MatchDropOldWeaponCases();
 
+    std::vector<uint32_t> regularCases;
+    regularCases.reserve(allCases.size());
     for (uint32_t defIndex : allCases)
     {
-        const bool active = std::find(
-            Active2021.begin(), Active2021.end(), defIndex) != Active2021.end();
-        (active ? activeCases : oldCases).push_back(defIndex);
+        if (std::find(oldCases.begin(), oldCases.end(), defIndex)
+            == oldCases.end())
+        {
+            regularCases.push_back(defIndex);
+        }
     }
 
     uint32_t defIndex = 0;
@@ -2256,15 +2256,13 @@ bool Inventory::CreateRandomCaseMatchDrop(
         defIndex = oldCases[
             m_random.Integer<size_t>(0, oldCases.size() - 1)];
     }
-    else if (!activeCases.empty())
+    else if (!regularCases.empty())
     {
-        defIndex = activeCases[
-            m_random.Integer<size_t>(0, activeCases.size() - 1)];
+        defIndex = regularCases[
+            m_random.Integer<size_t>(0, regularCases.size() - 1)];
     }
     else if (!allCases.empty())
     {
-        // Schema/version fallback: never silently disable case drops just
-        // because none of the 2021 active defs exist in this particular build.
         defIndex = allCases[
             m_random.Integer<size_t>(0, allCases.size() - 1)];
     }
@@ -2280,9 +2278,9 @@ bool Inventory::CreateRandomCaseMatchDrop(
             "drops: WARNING schema case pool empty; using six-case fallback\n");
     }
 
-    Platform::Print("drops: case roll %s def=%u (all=%zu old=%zu)\n",
+    Platform::Print("drops: case roll %s def=%u (all=%zu old=%zu regular=%zu)\n",
         oldCase ? "OLD/RARE" : "regular",
-        defIndex, allCases.size(), oldCases.size());
+        defIndex, allCases.size(), oldCases.size(), regularCases.size());
 
     return CreateMatchDrop(
         defIndex, false, UnacknowledgedDropped, create, notification);
