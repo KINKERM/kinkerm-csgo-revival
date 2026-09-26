@@ -190,6 +190,8 @@ public:
     // for the currently selected Riptide card. Only maps in the curated queue
     // are ever returned.
     std::string PreferredOperationMissionMap(uint32_t cardId) const;
+    uint32_t PreferredOperationMissionQuest(uint32_t cardId,
+        std::string_view actualMap) const;
     const QuestDefinition *RepeatableCompetitiveQuestForCard(
         uint32_t cardId, std::string_view mapName) const;
     std::vector<uint32_t> QuestGraphChildren(uint32_t questId) const;
