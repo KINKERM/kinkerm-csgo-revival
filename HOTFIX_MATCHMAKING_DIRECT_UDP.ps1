@@ -35,9 +35,13 @@ Write-Host ""
 Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
 
 Write-Host "[1/5] Installing CS2-style 5-Covert recipe metadata..." -ForegroundColor Yellow
-& py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame --unusual-loot-lists $unusualLootLists
+$tradeupPatcher = Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py"
+Need-Path $tradeupPatcher "Trade-up schema patcher"
+& py -3 -m py_compile $tradeupPatcher
+if ($LASTEXITCODE -ne 0) { throw "Trade-up schema patcher failed Python syntax preflight." }
+& py -3 $tradeupPatcher $itemsGame --unusual-loot-lists $unusualLootLists
 if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
-& py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame --check
+& py -3 $tradeupPatcher $itemsGame --check
 if ($LASTEXITCODE -ne 0) { throw "Installed 5-Covert client schema failed validation." }
 $itemsText = Get-Content $itemsGame -Raw
 if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_SCHEMA_V3")) {
