@@ -1981,10 +1981,28 @@ void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
         return;
     }
 
+    // Riptide Panorama addresses the active operation through season_access=1,
+    // while the SeasonalOperations shared object is keyed by season 10. Accept
+    // either representation and always normalize to the configured real season
+    // before validating/persisting the selected mission card.
+    const uint32_t requestedCampaign = message.campaign_id();
+    const uint32_t operationSeason = GetConfig().OperationSeason();
+    if (requestedCampaign != operationSeason && requestedCampaign != 1)
+    {
+        Platform::Print(
+            "operation: refused mission %u for campaign/access %u (active season %u)\n",
+            message.mission_id(), requestedCampaign, operationSeason);
+        return;
+    }
+
     CMsgSOMultipleObjects update;
     if (m_inventory.SetOperationMissionCard(
-        message.campaign_id(), message.mission_id(), update))
+        operationSeason, message.mission_id(), update))
     {
+        Platform::Print(
+            "REVIVAL_OPERATION_MISSION_ACTIVATION_V1 campaign/access=%u -> season=%u card=%u\n",
+            requestedCampaign, operationSeason, message.mission_id());
+
         // Panorama waits for the SeasonalOperations SO update before it closes
         // the activation spinner and configures matchmaking.
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
