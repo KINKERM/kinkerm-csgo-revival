@@ -2000,8 +2000,6 @@ void ClientGC::PollMatchmakingBridge()
     {
         const uint64_t reservationId = BridgeU64(state, "reservation_id", 0);
         const uint64_t matchId = BridgeU64(state, "match_id", reservationId);
-        if (!reservationId || reservationId == m_lastMatchmakingReservation)
-            return;
 
         auto addressIt = state.find("server_address");
         auto mapIt = state.find("map");
@@ -2009,6 +2007,59 @@ void ClientGC::PollMatchmakingBridge()
             addressIt == state.end() ? std::string{} : addressIt->second;
         const std::string mapName =
             mapIt == state.end() ? std::string{"de_dust2"} : mapIt->second;
+
+        // LIVE OPERATION PROGRESS
+        // The laptop publishes cumulative round wins for this specific player.
+        // Apply only the positive delta so a round updates the stock mission HUD
+        // once, survives halftime team swaps, and cannot double-count a score
+        // repeated by the 2-second heartbeat.
+        if (phase == "in_match" && matchId)
+        {
+            if (m_operationLiveMatchId != matchId)
+            {
+                m_operationLiveMatchId = matchId;
+                m_operationLiveRoundsApplied = 0;
+            }
+
+            const uint32_t liveRounds = static_cast<uint32_t>(
+                std::min<uint64_t>(
+                    BridgeU64(state, "live_rounds_won", 0), UINT32_MAX));
+
+            if (liveRounds > m_operationLiveRoundsApplied)
+            {
+                const uint32_t delta =
+                    liveRounds - m_operationLiveRoundsApplied;
+                CMsgSOMultipleObjects liveOperationUpdate;
+                if (m_inventory.ApplySelectedOperationCompetitiveMission(
+                        mapName, delta, false, liveOperationUpdate))
+                {
+                    SendMessageToGame(
+                        true, k_ESOMsg_UpdateMultiple, liveOperationUpdate);
+                    Platform::Print(
+                        "REVIVAL_LIVE_OPERATION_ROUNDS_V1 match=%llu "
+                        "map=%s total=%u delta=%u applied\n",
+                        static_cast<unsigned long long>(matchId),
+                        mapName.c_str(), liveRounds, delta);
+                }
+                else
+                {
+                    Platform::Print(
+                        "REVIVAL_LIVE_OPERATION_ROUNDS_V1 match=%llu "
+                        "map=%s total=%u delta=%u no-applicable-round-quest\n",
+                        static_cast<unsigned long long>(matchId),
+                        mapName.c_str(), liveRounds, delta);
+                }
+
+                // The backend value is cumulative and authoritative. Record it
+                // even when the selected mission is not a round-win mission so
+                // one heartbeat cannot be retried forever.
+                m_operationLiveRoundsApplied = liveRounds;
+            }
+        }
+
+        if (!reservationId || reservationId == m_lastMatchmakingReservation)
+            return;
+
         const uint32_t port = static_cast<uint32_t>(BridgeU64(state, "public_port", 27015));
         const uint32_t gameType = static_cast<uint32_t>(
             BridgeU64(state, "game_type", m_matchmakingGameType));
