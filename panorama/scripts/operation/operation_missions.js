@@ -19,7 +19,7 @@ var OperationMissions = ( function()
                                                                       
         for ( var i = 0; i < numMissionCards; ++ i )
         {
-            OperationMissionCard.GetMissionCardDetails( i, nSeasonAccess, m_missionsList );
+            OperationMissionCard.UpdateMissionCard( i, m_missionsList );
         }
                                             
     };
