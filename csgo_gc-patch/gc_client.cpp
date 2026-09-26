@@ -973,11 +973,30 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                 missionMap = message.serverinfo().map();
             }
 
+            uint32_t remainingMissionRounds = roundsWon;
+            if (matchId == m_operationLiveMatchId)
+            {
+                remainingMissionRounds =
+                    roundsWon > m_operationLiveRoundsApplied
+                        ? roundsWon - m_operationLiveRoundsApplied
+                        : 0;
+            }
+
             if (m_inventory.ApplySelectedOperationCompetitiveMission(
-                    missionMap, roundsWon, won, operationUpdate))
+                    missionMap, remainingMissionRounds, won, operationUpdate))
             {
                 operationChanged = true;
             }
+
+            Platform::Print(
+                "REVIVAL_LIVE_OPERATION_FINAL_V1 match=%llu total_rounds=%u "
+                "live_already=%u remaining=%u won=%u\n",
+                static_cast<unsigned long long>(matchId),
+                roundsWon,
+                matchId == m_operationLiveMatchId
+                    ? m_operationLiveRoundsApplied : 0,
+                remainingMissionRounds,
+                won ? 1u : 0u);
         }
         else if (operationEligible)
         {
@@ -1840,9 +1859,18 @@ void ClientGC::ProcessCompletedMatchBridge(
                 ? mapIt->second
                 : m_matchmakingMap;
 
+        uint32_t remainingMissionRounds = roundsWon;
+        if (matchId == m_operationLiveMatchId)
+        {
+            remainingMissionRounds =
+                roundsWon > m_operationLiveRoundsApplied
+                    ? roundsWon - m_operationLiveRoundsApplied
+                    : 0;
+        }
+
         CMsgSOMultipleObjects operationUpdate;
         if (m_inventory.ApplySelectedOperationCompetitiveMission(
-                completedMap, roundsWon, won, operationUpdate))
+                completedMap, remainingMissionRounds, won, operationUpdate))
         {
             SendMessageToGame(true, k_ESOMsg_UpdateMultiple, operationUpdate);
 
@@ -1853,9 +1881,15 @@ void ClientGC::ProcessCompletedMatchBridge(
                 operationHello);
 
             Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V5 applied end-match Operation update map=%s match=%llu\n",
+                "REVIVAL_REPEATABLE_MISSIONS_V5 applied end-match Operation update "
+                "map=%s match=%llu total_rounds=%u live_already=%u remaining=%u won=%u\n",
                 completedMap.c_str(),
-                static_cast<unsigned long long>(matchId));
+                static_cast<unsigned long long>(matchId),
+                roundsWon,
+                matchId == m_operationLiveMatchId
+                    ? m_operationLiveRoundsApplied : 0,
+                remainingMissionRounds,
+                won ? 1u : 0u);
         }
 
         m_lastMissionProgressMatchId = matchId;
