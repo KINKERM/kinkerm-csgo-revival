@@ -172,7 +172,7 @@ Write-Host "    Verified current matchmaking DLL markers on laptop." -Foreground
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_CURATED_DROPS_V34")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_MATCH_FINAL_V33"
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_CURATED_DROPS_V34"
 }
 Write-Host "    Verified current V34 curated-map/drop laptop agent." -ForegroundColor Green
 
