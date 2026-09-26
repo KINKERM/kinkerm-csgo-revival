@@ -841,7 +841,7 @@ var ItemContextEntires = ( function (){
 			AvailableForItem: function ( id ) {
 				var slot = ItemInfo.GetSlotSubPosition(id);
 				return slot && slot !=="melee" && slot !=="c4" && slot !=="clothing_hands" && !ItemInfo.IsEquippalbleButNotAWeapon(id) &&
-					( InventoryAPI.CanTradeUp( id ) || InventoryAPI.GetNumItemsNeededToTradeUp( id ) > 0 );
+					( InventoryAPI.CanTradeUp( id ) || InventoryAPI.GetNumItemsNeededToTradeUp( id ) > 0 || ( InventoryAPI.GetItemRarity( id ) === 6 && ItemInfo.IsWeapon( id ) ) ) /* REVIVAL_COVERT_TRADEUP_UI_V2 */;
 			},
 			OnSelected: function ( id ) {
 				$.DispatchEvent( 'ContextMenuEvent', '' );
