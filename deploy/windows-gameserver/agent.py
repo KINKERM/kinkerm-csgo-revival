@@ -45,7 +45,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V21"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_MATCH_FINAL_V22"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -336,6 +336,7 @@ sv_pure 0
 sv_allow_votes 1
 sv_hibernate_when_empty 0
 sv_hibernate_postgame_delay 5
+sv_mmqueue_reservation_timeout 600
 sv_setsteamaccount "__REVIVAL_STEAM_TOKEN__"
 log on
 """
@@ -349,6 +350,7 @@ log on
     late_path = os.path.join(cfg_dir, "gamemode_competitive_server.cfg")
     late = r"""// CS:GO Revival - final matchmaking overrides
 sv_competitive_official_5v5 1
+sv_mmqueue_reservation_timeout 600
 
 bot_quota 10
 bot_quota_mode fill
@@ -640,6 +642,8 @@ class ServerSlot:
         self.log_started_at = 0.0
         self.log_files_before: set[str] = set()
         self.assignment_missing_since = 0.0
+        self.launched_at = 0.0
+        self.intentional_stop = False
 
     def alive(self) -> bool:
         with self._lock:
@@ -712,6 +716,7 @@ class ServerSlot:
                 "-maxplayers_override", "10",
                 "+game_type", "0",
                 "+game_mode", "1",
+                "+sv_mmqueue_reservation_timeout", "600",
                 "+map", map_name,
                 "+exec", "revival_competitive.cfg",
                 "+rcon_password", self.rcon_password,
@@ -782,6 +787,8 @@ class ServerSlot:
             self.human_presence_seen = False
             self._ended = False
             self.assignment_missing_since = 0.0
+            self.launched_at = time.monotonic()
+            self.intentional_stop = False
             threading.Thread(target=self._reader, daemon=True, name="srcds-output").start()
             threading.Thread(target=self._mark_ready_after_boot, daemon=True, name="srcds-ready").start()
 
@@ -977,7 +984,10 @@ class ServerSlot:
 
         drain()
         code = proc.wait()
-        if code != 0:
+        # A disappeared SRCDS is diagnostic-worthy regardless of exit code.
+        # Only suppress the report when ServerSlot.stop() explicitly asked it
+        # to exit.
+        if not self.intentional_stop:
             write_srcds_crash_report(self.cfg, code)
         if not self._ended and self.match_id:
             self._report_end_once(f"srcds_exit_{code}")
@@ -1331,6 +1341,7 @@ class ServerSlot:
 
     def stop(self) -> None:
         proc = self.proc
+        self.intentional_stop = True
         self.proc = None
         self.ready_match_id = 0
         self.reservation_id = 0
@@ -1348,6 +1359,7 @@ class ServerSlot:
         self.player_teams.clear()
         self.match_play_started_at = 0.0
         self.assignment_missing_since = 0.0
+        self.launched_at = 0.0
         if proc is None or proc.poll() is not None:
             return
         try:
@@ -1420,15 +1432,20 @@ def main() -> None:
                     slot.assignment_missing_since = 0.0
                     slot.start(assignment)
                 elif slot.alive() and not slot.started:
-                    # Never kill a healthy GC-active server because of one empty
-                    # heartbeat. Backend allocation/ready-up can legitimately lag.
-                    # Require 45 continuous seconds without an assignment first.
+                    # Never tear down a GC-active server merely because the HTTP
+                    # coordinator omitted the assignment. Once the engine has a
+                    # reservation, check_accept_timeout() owns cleanup. Before
+                    # readiness, allow a full five-minute boot/recovery window.
                     now = time.monotonic()
                     if not slot.assignment_missing_since:
                         slot.assignment_missing_since = now
                         print("[agent] assignment temporarily absent; keeping srcds alive")
-                    elif now - slot.assignment_missing_since >= 45.0:
-                        print("[agent] assignment absent for 45s; stopping unstarted srcds")
+                    if (
+                        not slot.ready_match_id
+                        and slot.launched_at
+                        and now - slot.launched_at >= 300.0
+                    ):
+                        print("[agent] no assignment/readiness for 300s; stopping stale srcds")
                         slot.stop()
                 slot.check_accept_timeout()
             except (urllib.error.URLError, ValueError, OSError) as exc:
