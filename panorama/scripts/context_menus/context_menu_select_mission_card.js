@@ -21,7 +21,11 @@ var SelectMissionCardContextMenu = ( function (){
 		for( var i = 0; i < nMissionCards; i++ )
 		{
 			var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( nSeasonIndex, i );
-			var isUnlocked = i < nBacklog
+			var revivalCardDetails = OperationMissionCard.GetMissionCardDetails( i );
+			if ( !jsoCardDetails || !revivalCardDetails )
+				continue;
+			jsoCardDetails = revivalCardDetails;
+			var isUnlocked = true;
 			var nWeek = i + 1;
 
 			var newEntry = $.CreatePanel( 'Panel', elParent, 'mission-card-entry-'+i );
@@ -40,17 +44,7 @@ var SelectMissionCardContextMenu = ( function (){
 			newEntry.SetPanelEvent( 'onactivate',_OnActivate.bind( undefined, i ));
 
 			var elTimer = newEntry.FindChildInLayoutFile( 'id-mission-context-entry-timer' );
-			var seconds = InventoryAPI.GetSecondsUntilNextMission();
-
-			if( seconds && seconds > 0 && i === nBacklog )
-			{
-				newEntry.SetDialogVariable( 'time', FormatText.SecondsToSignificantTimeString( seconds ));
-				elTimer.visible = true;
-			}
-			else
-			{
-				elTimer.visible = false;
-			}
+			elTimer.visible = false;
 		}
 	};
 
