@@ -2228,11 +2228,108 @@ bool Inventory::CreateRandomCaseMatchDrop(
     CMsgSOSingleObject &create,
     CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
 {
-    // 2021 regular drop pool: Clutch, Danger Zone, Prisma, Prisma 2, Fracture,
-    // Snakebite. Operation Riptide Case is intentionally excluded: Valve sold
-    // that one through Operation stars instead of the normal timed case drop.
-    constexpr std::array<uint32_t, 6> Cases{ 4471, 4548, 4598, 4695, 4698, 4747 };
-    const uint32_t defIndex = Cases[m_random.Integer<size_t>(0, Cases.size() - 1)];
+    // Every stock weapon case in the installed legacy schema is eligible.
+    // The six cases that were in the normal 2021 drop pool remain common;
+    // discontinued/older cases are a separate 1-in-10 rare roll.
+    constexpr std::array<uint32_t, 6> Active2021{
+        4471, 4548, 4598, 4695, 4698, 4747
+    };
+
+    const std::vector<uint32_t> &allCases = m_itemSchema.MatchDropWeaponCases();
+    std::vector<uint32_t> activeCases;
+    std::vector<uint32_t> oldCases;
+
+    for (uint32_t defIndex : allCases)
+    {
+        const bool active = std::find(
+            Active2021.begin(), Active2021.end(), defIndex) != Active2021.end();
+        (active ? activeCases : oldCases).push_back(defIndex);
+    }
+
+    uint32_t defIndex = 0;
+    bool oldCase = false;
+
+    if (!oldCases.empty()
+        && m_random.Integer<uint32_t>(1, 10) == 1)
+    {
+        oldCase = true;
+        defIndex = oldCases[
+            m_random.Integer<size_t>(0, oldCases.size() - 1)];
+    }
+    else if (!activeCases.empty())
+    {
+        defIndex = activeCases[
+            m_random.Integer<size_t>(0, activeCases.size() - 1)];
+    }
+    else if (!allCases.empty())
+    {
+        // Schema/version fallback: never silently disable case drops just
+        // because none of the 2021 active defs exist in this particular build.
+        defIndex = allCases[
+            m_random.Integer<size_t>(0, allCases.size() - 1)];
+    }
+    else
+    {
+        // Last-resort compatibility fallback for a malformed/incomplete schema.
+        constexpr std::array<uint32_t, 6> Fallback{
+            4471, 4548, 4598, 4695, 4698, 4747
+        };
+        defIndex = Fallback[
+            m_random.Integer<size_t>(0, Fallback.size() - 1)];
+        Platform::Print(
+            "drops: WARNING schema case pool empty; using six-case fallback\n");
+    }
+
+    Platform::Print("drops: case roll %s def=%u (all=%zu old=%zu)\n",
+        oldCase ? "OLD/RARE" : "regular",
+        defIndex, allCases.size(), oldCases.size());
+
+    return CreateMatchDrop(
+        defIndex, false, UnacknowledgedDropped, create, notification);
+}
+
+bool Inventory::CreateRareLegacyStickerCapsuleMatchDrop(
+    uint32_t oneIn,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    const std::vector<uint32_t> &pool = m_itemSchema.LegacyStickerCapsules();
+    if (!oneIn || pool.empty()
+        || m_random.Integer<uint32_t>(1, oneIn) != 1)
+    {
+        return false;
+    }
+
+    const uint32_t defIndex =
+        pool[m_random.Integer<size_t>(0, pool.size() - 1)];
+
+    Platform::Print(
+        "drops: RARE 2014-2017 sticker capsule def=%u pool=%zu\n",
+        defIndex, pool.size());
+
+    return CreateMatchDrop(
+        defIndex, false, UnacknowledgedDropped, create, notification);
+}
+
+bool Inventory::CreateRareLegacySouvenirPackageMatchDrop(
+    uint32_t oneIn,
+    CMsgSOSingleObject &create,
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification &notification)
+{
+    const std::vector<uint32_t> &pool = m_itemSchema.LegacySouvenirPackages();
+    if (!oneIn || pool.empty()
+        || m_random.Integer<uint32_t>(1, oneIn) != 1)
+    {
+        return false;
+    }
+
+    const uint32_t defIndex =
+        pool[m_random.Integer<size_t>(0, pool.size() - 1)];
+
+    Platform::Print(
+        "drops: VERY RARE 2014-2017 souvenir package def=%u pool=%zu\n",
+        defIndex, pool.size());
+
     return CreateMatchDrop(
         defIndex, false, UnacknowledgedDropped, create, notification);
 }
