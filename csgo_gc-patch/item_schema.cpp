@@ -72,6 +72,7 @@ ItemInfo::ItemInfo(uint32_t defIndex)
     , m_quality{ ItemSchema::QualityNormal }
     , m_level{ 1 }
     , m_supplyCrateSeries{ 0 }
+    , m_hasTournamentEvent{ false }
     , m_isCoupon{ false }
     , m_willProduceStatTrak{ false }
 {
@@ -543,14 +544,16 @@ static bool LooksLikeSouvenirPackage(
     }
 
     if (traits.hasTournamentQuality
-        || info.m_quality == ItemSchema::QualityTournament)
+        || info.m_quality == ItemSchema::QualityTournament
+        || info.m_hasTournamentEvent)
     {
         return true;
     }
 
     const std::string lower = LowerAscii(info.m_name);
     return lower.find("souvenir") != std::string::npos
-        || lower.find("tournament") != std::string::npos;
+        || lower.find("tournament") != std::string::npos
+        || lower.find("_promo") != std::string::npos;
 }
 }
 
@@ -1023,6 +1026,11 @@ void ItemSchema::ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, con
         if (supplyCrateSeries)
         {
             info.m_supplyCrateSeries = supplyCrateSeries->GetNumber<uint32_t>("value");
+        }
+
+        if (attributes->GetSubkey("tournament event id"))
+        {
+            info.m_hasTournamentEvent = true;
         }
     }
 }
