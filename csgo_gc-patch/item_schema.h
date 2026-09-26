@@ -190,6 +190,9 @@ public:
     // for the currently selected Riptide card. Only maps in the curated queue
     // are ever returned.
     std::string PreferredOperationMissionMap(uint32_t cardId) const;
+    const QuestDefinition *RepeatableCompetitiveQuestForCard(
+        uint32_t cardId, std::string_view mapName) const;
+    std::vector<uint32_t> QuestGraphChildren(uint32_t questId) const;
 
     // for case opening FIXME: do we want to keep this here???
     bool CreateItemFromLootListItem(Random &random,
