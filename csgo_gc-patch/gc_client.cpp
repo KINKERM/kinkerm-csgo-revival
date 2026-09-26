@@ -1635,6 +1635,36 @@ void ClientGC::ProcessCompletedMatchBridge(
     if (m_inventory.ApplyCompetitiveMatchResult(won, tied))
         SendRankUpdate();
 
+    // Revival Operation mission progression rides the same authoritative
+    // completed-match state as XP/rank. The mission was selected in the stock
+    // Operation UI before queueing, and MatchmakingStart carried its target map
+    // through the revival bridge. Completion immediately resets the quest so it
+    // can be selected again forever.
+    {
+        auto mapIt = state.find("last_map");
+        const std::string completedMap =
+            (mapIt != state.end() && !mapIt->second.empty())
+                ? mapIt->second
+                : m_matchmakingMap;
+
+        CMsgSOMultipleObjects operationUpdate;
+        if (m_inventory.ApplySelectedOperationCompetitiveMission(
+                completedMap, roundsWon, won, operationUpdate))
+        {
+            SendMessageToGame(true, k_ESOMsg_UpdateMultiple, operationUpdate);
+
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello operationHello;
+            BuildMatchmakingHello(operationHello);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
+                operationHello);
+
+            Platform::Print(
+                "REVIVAL_REPEATABLE_MISSIONS_V2 applied end-match Operation update map=%s\n",
+                completedMap.c_str());
+        }
+    }
+
     // Populate the stock Panorama end-match buffers BEFORE EndOfMatch_Show.
     // Waiting for the later reward bundle was too late: the item-drop reveal
     // had already started and the XP/skillgroup panels stayed hidden.
