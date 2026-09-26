@@ -161,6 +161,14 @@ public:
     // for case opening
     const LootList *GetCrateLootList(uint32_t crateDefIndex) const;
 
+    // Match-end container pools derived from the installed legacy item schema.
+    // Weapon cases include every stock weapon case. 2014-2017 sticker capsules
+    // and souvenir packages are kept in separate pools so end-match odds can be
+    // much lower than ordinary case drops.
+    const std::vector<uint32_t> &MatchDropWeaponCases() const { return m_matchDropWeaponCases; }
+    const std::vector<uint32_t> &LegacyStickerCapsules() const { return m_legacyStickerCapsules; }
+    const std::vector<uint32_t> &LegacySouvenirPackages() const { return m_legacySouvenirPackages; }
+
     // Operation/self-opening rewards: many Valve shop definitions (agent
     // dossiers, collection rewards, sticker/patch packs) point directly at a
     // named loot_list_name rather than a revolving case series.
@@ -316,6 +324,7 @@ private:
     void ParseMusicDefinitions(const KeyValue *musicDefinitionsKey);
     void ParseLootLists(const KeyValue *lootListsKey, bool unusual);
     void ParseRevolvingLootLists(const KeyValue *revolvingLootListsKey);
+    void BuildMatchDropContainerPools();
     void ParseQuests(const KeyValue *questsKey);
     void ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, uint32_t season);
 
@@ -340,6 +349,11 @@ private:
     std::unordered_map<std::string, LootList> m_lootLists;
 
     std::unordered_map<uint32_t, const LootList &> m_revolvingLootLists;
+
+    // Derived once after revolving loot lists are parsed.
+    std::vector<uint32_t> m_matchDropWeaponCases;
+    std::vector<uint32_t> m_legacyStickerCapsules;
+    std::vector<uint32_t> m_legacySouvenirPackages;
 
     std::unordered_map<uint32_t, QuestDefinition> m_questDefinitions;
     std::vector<OperationMissionCard> m_operationMissionCards;
