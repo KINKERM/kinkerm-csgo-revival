@@ -162,12 +162,17 @@ def download(url: str) -> bytes:
 def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     panorama_dir = os.path.join(csgo_dir, "csgo", "panorama")
     pbin_tool = os.path.join(panorama_dir, "pbin.py")
+    tradeup_ui_tool = os.path.join(panorama_dir, "patch_tradeup_panorama.py")
     code_pbin = os.path.join(panorama_dir, "code.pbin")
     original_pbin = os.path.join(panorama_dir, "_code.pbin")
     table_file = os.path.join(panorama_dir, "code.pbin.table")
     stage_dir = os.path.join(panorama_dir, "panorama")
 
-    for path, label in ((pbin_tool, "pbin.py"), (code_pbin, "code.pbin")):
+    for path, label in (
+        (pbin_tool, "pbin.py"),
+        (tradeup_ui_tool, "patch_tradeup_panorama.py"),
+        (code_pbin, "code.pbin"),
+    ):
         if not os.path.isfile(path):
             log(f"Panorama repack failed: missing {label}: {path}")
             sys.exit(3)
@@ -198,7 +203,10 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
         if member.is_dir() or not name.startswith(prefix):
             continue
         rel = name[len(prefix):]
-        if not rel or rel in {"pbin.py", "code.pbin", "_code.pbin", "code.pbin.table"}:
+        if not rel or rel in {
+            "pbin.py", "patch_tradeup_panorama.py",
+            "code.pbin", "_code.pbin", "code.pbin.table"
+        }:
             continue
         dest = os.path.abspath(os.path.join(stage_dir, rel))
         base = os.path.abspath(stage_dir)
@@ -208,13 +216,26 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
         with zf.open(member) as src, open(dest, "wb") as out:
             shutil.copyfileobj(src, out)
 
-    # PBIN slots are fixed-size. Compact only the matchmaking files modified by
-    # this branch so their packed payloads stay below the original slot sizes.
+    tradeup_ui = subprocess.run(
+        [sys.executable, tradeup_ui_tool, panorama_dir],
+        cwd=panorama_dir,
+    )
+    if tradeup_ui.returncode:
+        log(f"trade-up Panorama patch failed with exit code {tradeup_ui.returncode}")
+        sys.exit(3)
+
+    # PBIN slots are fixed-size. Compact the revival-modified files so their
+    # packed payloads stay below the original slot sizes.
     xml_path = os.path.join(stage_dir, "layout", "mainmenu_play.xml")
     js_path = os.path.join(stage_dir, "scripts", "mainmenu_play.js")
     css_path = os.path.join(stage_dir, "styles", "mainmenu_play.css")
     operation_js_path = os.path.join(
         stage_dir, "scripts", "operation", "operation_mainmenu.js"
+    )
+    tradeup_crafting_path = os.path.join(stage_dir, "scripts", "crafting.js")
+    tradeup_itemtile_path = os.path.join(stage_dir, "scripts", "itemtile.js")
+    tradeup_context_path = os.path.join(
+        stage_dir, "scripts", "common", "item_context_entries.js"
     )
 
     with open(xml_path, "r", encoding="utf-8-sig") as fh:
@@ -223,7 +244,10 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     with open(xml_path, "w", encoding="utf-8", newline="") as fh:
         fh.write(xml)
 
-    for path in (js_path, css_path, operation_js_path):
+    for path in (
+        js_path, css_path, operation_js_path,
+        tradeup_crafting_path, tradeup_itemtile_path, tradeup_context_path,
+    ):
         with open(path, "r", encoding="utf-8-sig") as fh:
             raw = fh.read()
         compact = "\n".join(
@@ -250,6 +274,9 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     if (b"m_revivalValidationMapGroup" not in packed_bytes
             or b"_GetRevivalValidationMapGroup" not in packed_bytes):
         log("rebuilt code.pbin is missing real stock-mapgroup Revival markers")
+        sys.exit(3)
+    if b"REVIVAL_COVERT_TRADEUP_UI_V2" not in packed_bytes:
+        log("rebuilt code.pbin is missing the 5-Covert selector bridge")
         sys.exit(3)
 
     log("Panorama code.pbin rebuilt and panorama.dll patch verified")
