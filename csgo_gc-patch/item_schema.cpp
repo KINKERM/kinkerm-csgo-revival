@@ -5,6 +5,8 @@
 #include "random.h"
 
 #include <algorithm>
+#include <cctype>
+#include <unordered_set>
 
 // ideally this would get parsed from the item schema...
 static uint32_t ItemRarityFromString(std::string_view name)
@@ -210,6 +212,10 @@ ItemSchema::ItemSchema()
     {
         ParseRevolvingLootLists(revolvingLootListsKey);
     }
+
+    // Build end-match case/capsule/souvenir pools directly from the schema so
+    // the revival does not have to maintain an incomplete hardcoded crate list.
+    BuildMatchDropContainerPools();
 
     // trade-up contracts (revival addition): map each skin to its case's knife/
     // glove pool for the 5 Covert -> gold recipe. Runs last so every loot list
@@ -431,6 +437,148 @@ const LootList *ItemSchema::GetCrateLootList(uint32_t crateDefIndex) const
     }
 
     return &lootListSearch->second;
+}
+
+namespace
+{
+struct MatchDropLootTraits
+{
+    bool hasSticker{};
+    bool hasPaintedWeapon{};
+    bool hasTournamentQuality{};
+};
+
+static void AccumulateMatchDropLootTraits(const LootList *lootList,
+    MatchDropLootTraits &traits,
+    std::unordered_set<const LootList *> &visited)
+{
+    if (!lootList || !visited.insert(lootList).second)
+    {
+        return;
+    }
+
+    for (const LootListItem &entry : lootList->items)
+    {
+        if (entry.type == LootListItemSticker)
+        {
+            traits.hasSticker = true;
+        }
+        else if (entry.type == LootListItemPaintable)
+        {
+            traits.hasPaintedWeapon = true;
+        }
+
+        if (entry.quality == ItemSchema::QualityTournament)
+        {
+            traits.hasTournamentQuality = true;
+        }
+    }
+
+    for (const LootList *subList : lootList->subLists)
+    {
+        AccumulateMatchDropLootTraits(subList, traits, visited);
+    }
+}
+
+static std::string LowerAscii(std::string_view value)
+{
+    std::string out{ value };
+    std::transform(out.begin(), out.end(), out.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+}
+
+static bool Is2014To2017Container(std::string_view internalName)
+{
+    const std::string lower = LowerAscii(internalName);
+    return lower.find("2014") != std::string::npos
+        || lower.find("2015") != std::string::npos
+        || lower.find("2016") != std::string::npos
+        || lower.find("2017") != std::string::npos;
+}
+
+static bool IsRevivalOnlyContainer(std::string_view internalName)
+{
+    const std::string lower = LowerAscii(internalName);
+    return lower.find("kinkerm") != std::string::npos
+        || lower.find("revival") != std::string::npos
+        || lower.find("gold_tradeup") != std::string::npos
+        || lower.find("gold trade") != std::string::npos;
+}
+}
+
+void ItemSchema::BuildMatchDropContainerPools()
+{
+    m_matchDropWeaponCases.clear();
+    m_legacyStickerCapsules.clear();
+    m_legacySouvenirPackages.clear();
+
+    for (const auto &pair : m_itemInfo)
+    {
+        const uint32_t defIndex = pair.first;
+        const ItemInfo &info = pair.second;
+
+        if (!info.m_supplyCrateSeries || IsRevivalOnlyContainer(info.m_name))
+        {
+            continue;
+        }
+
+        auto lootSearch = m_revolvingLootLists.find(info.m_supplyCrateSeries);
+        if (lootSearch == m_revolvingLootLists.end())
+        {
+            continue;
+        }
+
+        MatchDropLootTraits traits;
+        std::unordered_set<const LootList *> visited;
+        AccumulateMatchDropLootTraits(&lootSearch->second, traits, visited);
+
+        // Sticker capsules are independent from cases. Restrict the rare
+        // end-match capsule pool to the 2014-2017 era requested for the revival.
+        if (traits.hasSticker && !traits.hasPaintedWeapon)
+        {
+            if (Is2014To2017Container(info.m_name))
+            {
+                m_legacyStickerCapsules.push_back(defIndex);
+            }
+            continue;
+        }
+
+        // Souvenir packages contain painted weapons with tournament quality.
+        // They are also kept completely separate from the ordinary case roll.
+        if (traits.hasPaintedWeapon && traits.hasTournamentQuality)
+        {
+            if (Is2014To2017Container(info.m_name))
+            {
+                m_legacySouvenirPackages.push_back(defIndex);
+            }
+            continue;
+        }
+
+        // Every remaining painted-weapon revolving crate is an ordinary weapon
+        // case. This automatically includes old discontinued cases as long as
+        // they exist in the installed legacy schema.
+        if (traits.hasPaintedWeapon)
+        {
+            m_matchDropWeaponCases.push_back(defIndex);
+        }
+    }
+
+    auto normalize = [](std::vector<uint32_t> &pool)
+    {
+        std::sort(pool.begin(), pool.end());
+        pool.erase(std::unique(pool.begin(), pool.end()), pool.end());
+    };
+
+    normalize(m_matchDropWeaponCases);
+    normalize(m_legacyStickerCapsules);
+    normalize(m_legacySouvenirPackages);
+
+    Platform::Print(
+        "drops: schema pools cases=%zu old_capsules_2014_2017=%zu old_souvenirs_2014_2017=%zu\n",
+        m_matchDropWeaponCases.size(),
+        m_legacyStickerCapsules.size(),
+        m_legacySouvenirPackages.size());
 }
 
 const LootList *ItemSchema::GetDirectLootList(uint32_t defIndex) const
