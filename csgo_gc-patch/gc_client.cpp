@@ -29,6 +29,7 @@ constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
 
+constexpr int RevivalUserMsgServerRankRevealAll = 50;
 constexpr int RevivalUserMsgServerRankUpdate = 52;
 constexpr int RevivalUserMsgXpUpdate = 65;
 
@@ -74,6 +75,21 @@ bool RevivalBuildEndMatchUiMessages(
     RevivalAppendVarint(rankInner, newRank);
     rankInner.push_back(0x20); // num_wins = 4
     RevivalAppendVarint(rankInner, wins);
+
+    // rank_change = 5 (fixed32 float) and rank_type_id = 6 are part of
+    // Valve's stock RankUpdate object. Some client builds ignore incomplete
+    // skill-group records even when account/ranks/wins are present.
+    rankInner.push_back(0x2D);
+    const float rankChange =
+        newRank > oldRank ? 1.0f : (newRank < oldRank ? -1.0f : 0.0f);
+    const auto *rankChangeBytes =
+        reinterpret_cast<const uint8_t *>(&rankChange);
+    rankInner.insert(
+        rankInner.end(), rankChangeBytes,
+        rankChangeBytes + sizeof(rankChange));
+
+    rankInner.push_back(0x30); // rank_type_id = 6
+    RevivalAppendVarint(rankInner, 6); // Competitive
 
     rankMsg.clear();
     RevivalAppendLengthDelimited(
@@ -1435,9 +1451,19 @@ void ClientGC::PollRewardBridge()
                         RevivalUserMsgXpUpdate,
                         xpUiMessage.data(),
                         static_cast<uint32_t>(xpUiMessage.size()));
+
+                    std::vector<uint8_t> revealUiMessage;
+                    revealUiMessage.push_back(0x08); // seconds_till_shutdown = 1
+                    RevivalAppendVarint(revealUiMessage, 60);
+                    PostToHost(
+                        HostEvent::ClientUserMessage,
+                        RevivalUserMsgServerRankRevealAll,
+                        revealUiMessage.data(),
+                        static_cast<uint32_t>(revealUiMessage.size()));
+
                     m_lastUiDispatchedMatchId = matchId;
                     Platform::Print(
-                        "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V2 late fallback queued stock 52+65\n");
+                        "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V3 late fallback queued stock 52+65+50\n");
                 }
             }
 
@@ -1607,9 +1633,19 @@ void ClientGC::ProcessCompletedMatchBridge(
                 RevivalUserMsgXpUpdate,
                 xpUiMessage.data(),
                 static_cast<uint32_t>(xpUiMessage.size()));
+
+            std::vector<uint8_t> revealUiMessage;
+            revealUiMessage.push_back(0x08); // seconds_till_shutdown = 1
+            RevivalAppendVarint(revealUiMessage, 60);
+            PostToHost(
+                HostEvent::ClientUserMessage,
+                RevivalUserMsgServerRankRevealAll,
+                revealUiMessage.data(),
+                static_cast<uint32_t>(revealUiMessage.size()));
+
             m_lastUiDispatchedMatchId = matchId;
             Platform::Print(
-                "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V2 early queued stock 52+65 "
+                "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V3 early queued stock 52+65+50 "
                 "match=%llu\n",
                 static_cast<unsigned long long>(matchId));
         }
