@@ -168,6 +168,96 @@ def _mm_reward_path(config: dict) -> str:
     return os.path.join(config["csgo_dir"], "csgo_gc", "mm_reward.bin")
 
 
+def _operation_bridge_path(config: dict) -> str:
+    return os.path.join(config["csgo_dir"], "revival_mission_select.log")
+
+
+def _console_log_paths(config: dict) -> list[str]:
+    # Source writes console.log through the GAME filesystem. Legacy installs
+    # normally land it under csgo\, but keep the root candidate too.
+    return [
+        os.path.join(config["csgo_dir"], "csgo", "console.log"),
+        os.path.join(config["csgo_dir"], "console.log"),
+    ]
+
+
+def _read_latest_operation_selection(config: dict) -> tuple[int, int, int] | None:
+    pattern = re.compile(r"REVIVAL_MISSION_SELECT_V1\s+(\d+)\s+(\d+)\s+(\d+)")
+    newest: tuple[int, int, int] | None = None
+
+    for path in _console_log_paths(config):
+        try:
+            size = os.path.getsize(path)
+            with open(path, "rb") as fh:
+                # Only the recent console tail matters and avoids repeatedly
+                # scanning a multi-megabyte debug log.
+                fh.seek(max(0, size - 262144))
+                text = fh.read().decode("utf-8", "replace")
+        except OSError:
+            continue
+
+        for match in pattern.finditer(text):
+            newest = tuple(int(match.group(i)) for i in (1, 2, 3))
+
+    return newest
+
+
+def _relay_operation_selection(config: dict,
+                               last_selection: tuple[int, int, int] | None
+                               ) -> tuple[int, int, int] | None:
+    selection = _read_latest_operation_selection(config)
+    if not selection or selection == last_selection:
+        return last_selection
+
+    season, card, quest = selection
+    marker = f"REVIVAL_MISSION_SELECT_V1 {season} {card} {quest}\n"
+    _atomic_write_text(_operation_bridge_path(config), marker)
+    print(
+        f"[launcher] operation click captured: "
+        f"season={season} card={card} quest={quest}"
+    )
+    return selection
+
+
+def _wait_for_operation_selection_persist(
+    config: dict,
+    expected: tuple[int, int, int],
+    timeout: float = 2.5,
+) -> bool:
+    _, expected_card, expected_quest = expected
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        try:
+            with open(inventory_path(config), "rb") as fh:
+                body = fh.read()
+        except OSError:
+            body = b""
+
+        card, quest = _operation_selection_from_inventory_bytes(body)
+        if card == expected_card and quest == expected_quest:
+            print(
+                f"[launcher] operation persisted before allocation: "
+                f"mission_card={card} selected_quest={quest}"
+            )
+            return True
+
+        time.sleep(0.05)
+
+    try:
+        with open(inventory_path(config), "rb") as fh:
+            body = fh.read()
+    except OSError:
+        body = b""
+    card, quest = _operation_selection_from_inventory_bytes(body)
+    print(
+        "[launcher] ERROR: mission click was captured but csgo_gc did not "
+        f"persist it (expected card={expected_card} quest={expected_quest}, "
+        f"got card={card} quest={quest}). Refusing to start an ordinary queue."
+    )
+    return False
+
+
 def _write_binary_atomic(path: str, data: bytes) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -262,9 +352,16 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
     last_request = ""
     searching = False
     last_poll = 0.0
+    last_operation_selection: tuple[int, int, int] | None = None
 
-    while not stop_event.wait(0.20):
+    while not stop_event.wait(0.05):
         try:
+            # Panorama prints the exact selected Riptide mission to console.log.
+            # Relay that marker into a plain OS file the injected GC already
+            # polls. This avoids relying on Source's virtual con_logfile path.
+            last_operation_selection = _relay_operation_selection(
+                config, last_operation_selection
+            )
             try:
                 with open(request_path, "r", encoding="utf-8", errors="replace") as fh:
                     request_text = fh.read()
@@ -276,9 +373,29 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                 request = _read_kv(request_path)
                 action = request.get("action", "")
                 if action == "start":
-                    # Equip changes are persisted by the injected GC immediately.
+                    # If this queue came from an Operation click, do not allow
+                    # allocation until the injected GC has actually persisted
+                    # that exact card+quest. This prevents the old failure mode
+                    # where a mission click silently became ordinary Competitive.
+                    if last_operation_selection:
+                        # Re-write once at queue time in case the GC consumed an
+                        # earlier path before Panorama finished the click.
+                        season, card, quest = last_operation_selection
+                        _atomic_write_text(
+                            _operation_bridge_path(config),
+                            f"REVIVAL_MISSION_SELECT_V1 {season} {card} {quest}\n",
+                        )
+                        if not _wait_for_operation_selection_persist(
+                            config, last_operation_selection
+                        ):
+                            # Keep the backend completely untouched. The game's
+                            # local queue UI can be cancelled/retried after the
+                            # bridge problem is fixed; never allocate a wrong match.
+                            continue
+
+                    # Equip + Operation changes are persisted by the injected GC.
                     # Push that exact current inventory before allocation so the
-                    # laptop can build the server-side equipped SOCache.
+                    # laptop receives the same selected mission.
                     upload_inventory(config)
                     state = _http_json(
                         "POST", base + "/matchmaking/start",
@@ -293,7 +410,21 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                     searching = True
                     last_poll = 0.0
                     mission_map = str(request.get("map") or "")
-                    if mission_map:
+                    if last_operation_selection:
+                        _, selected_card, selected_quest = last_operation_selection
+                        if mission_map:
+                            print(
+                                f"[launcher] matchmaking: joined mission queue "
+                                f"card={selected_card} quest={selected_quest} "
+                                f"map={mission_map}"
+                            )
+                        else:
+                            print(
+                                f"[launcher] matchmaking: joined mission queue "
+                                f"card={selected_card} quest={selected_quest} "
+                                "using shared Competitive pool"
+                            )
+                    elif mission_map:
                         print(f"[launcher] matchmaking: joined repeatable mission queue for {mission_map}")
                     else:
                         print("[launcher] matchmaking: joined shared Competitive queue")
@@ -348,8 +479,21 @@ def launch_and_wait(config: dict) -> None:
         print("[launcher] check csgo_dir / game_exe in your config.")
         sys.exit(3)
 
-    # Clear stale matchmaking state before this session.
-    for path in (_mm_request_path(config), _mm_state_path(config)):
+    # Clear stale matchmaking/mission bridge state before this session.
+    for path in (
+        _mm_request_path(config),
+        _mm_state_path(config),
+        _operation_bridge_path(config),
+    ):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    # Force a fresh Source console.log. popup_activate_mission.js already emits
+    # REVIVAL_MISSION_SELECT_V1 through $.Msg; condebug makes that observable by
+    # the launcher without another DLL/Panorama rebuild.
+    for path in _console_log_paths(config):
         try:
             os.remove(path)
         except OSError:
@@ -363,6 +507,10 @@ def launch_and_wait(config: dict) -> None:
     bridge.start()
 
     args = [exe] + config["game_args"].split()
+    if "-condebug" not in args:
+        args.append("-condebug")
+    if "-conclearlog" not in args:
+        args.append("-conclearlog")
     print(f"[launcher] launching {exe} ...")
     try:
         proc = subprocess.Popen(args, cwd=config["csgo_dir"])
