@@ -852,6 +852,9 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
                 publishDrop(create, drop);
         }
 
+        // Keep the revival's two case drops per completed match, but each
+        // roll now uses the full schema-derived weapon-case pool. Old cases are
+        // handled as a rarer sub-pool inside CreateRandomCaseMatchDrop().
         for (int i = 0; i < 2; ++i)
         {
             CMsgSOSingleObject create;
@@ -860,13 +863,33 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
                 publishDrop(create, drop);
         }
 
-        static const std::vector<std::string_view> Dust2021{
-            "set_dust_2_2021"
-        };
-        static const std::vector<std::string_view> DustLegacy{
-            "set_dust_2"
-        };
-        static const std::vector<std::string_view> Cache{
+        // Old event containers are independent bonus rolls, never replacements
+        // for the normal cases. Capsules are rare; souvenir packages rarer.
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateRareLegacyStickerCapsuleMatchDrop(
+                50, create, drop))
+            {
+                publishDrop(create, drop);
+            }
+        }
+
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateRareLegacySouvenirPackageMatchDrop(
+                200, create, drop))
+            {
+                publishDrop(create, drop);
+            }
+        }
+
+        // Collection skins are bonuses now, not guaranteed every match.
+        // 1/3 gives one weighted Dust II 2021 / Cache skin. Cobblestone keeps
+        // its own 1/20 bonus roll so Dragon Lore remains actual luck.
+        static const std::vector<std::string_view> StandardSkinCollections{
+            "set_dust_2_2021",
             "set_cache"
         };
         static const std::vector<std::string_view> Cobblestone{
@@ -876,18 +899,11 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (inventory.CreateRandomCollectionMatchDrop(Dust2021, create, drop)
-                || inventory.CreateRandomCollectionMatchDrop(DustLegacy, create, drop))
+            if (inventory.CreateRareCollectionBonusMatchDrop(
+                StandardSkinCollections, 3, create, drop))
             {
                 publishDrop(create, drop);
             }
-        }
-
-        {
-            CMsgSOSingleObject create;
-            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (inventory.CreateRandomCollectionMatchDrop(Cache, create, drop))
-                publishDrop(create, drop);
         }
 
         {
