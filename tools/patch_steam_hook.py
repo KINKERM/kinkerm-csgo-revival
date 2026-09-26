@@ -504,6 +504,32 @@ static bool RevivalDispatchReserveServerForQueuedGame(
 '''
         patched = patched[:m.start()] + server_case_new + patched[m.end():]
 
+
+    # Direct stock end-match UI messages are produced by ClientGC's worker
+    # thread but must be dispatched into client.dll on SteamAPI's main callback
+    # thread. Patch the existing client HostEvent switch to drain them there.
+    if "case HostEvent::ClientUserMessage:" not in patched:
+        client_case_anchor = '''            case HostEvent::NetMessage:
+                s_clientGC->m_networking.SendMessage(event.buffer.data(), static_cast<uint32_t>(event.buffer.size()));
+                break;
+'''
+        if client_case_anchor not in patched:
+            print("[patch_steam_hook] ERROR: client HostEvent switch anchor missing for usermessage bridge")
+            return 22
+        client_case_new = client_case_anchor + r'''
+            case HostEvent::ClientUserMessage:
+#ifdef _WIN32
+                Platform::DispatchClientUserMessage(
+                    static_cast<int>(event.id), 0,
+                    event.buffer.data(),
+                    static_cast<uint32_t>(event.buffer.size()));
+#else
+                Platform::Print("REVIVAL_CLIENT_USERMESSAGE_UI_V1 unsupported platform\n");
+#endif
+                break;
+'''
+        patched = patched.replace(client_case_anchor, client_case_new, 1)
+
     if NATIVE_DROP_REVEAL_MARKER not in patched:
         # The user's compatible Win32 tree predates the newer
         # InitializeSteamAPI helper. Hook code only needs to be emitted after
