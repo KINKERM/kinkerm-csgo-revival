@@ -240,6 +240,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_LIVE_OPERATION_ROUNDS_V1")) {
         throw "Built csgo_gc.dll does not contain live Operation round-win progression."
     }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_END_AUTHORITY_V1")) {
+        throw "Built csgo_gc.dll does not contain authoritative MR8 Operation match-end handling."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -446,6 +449,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_LIVE_OPERATION_ROUNDS_V1")) {
         throw "Installed csgo_gc.dll is missing live Operation round-win progression."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_OPERATION_END_AUTHORITY_V1")) {
+        throw "Installed csgo_gc.dll is missing authoritative MR8 Operation match-end handling."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
