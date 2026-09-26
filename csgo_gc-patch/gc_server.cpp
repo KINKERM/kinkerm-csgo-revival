@@ -408,7 +408,10 @@ void ServerGC::SendServerWelcome()
 
 namespace
 {
-constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;\nconstexpr uint32_t RevivalMsgMatchmakingGC2ServerRankUpdate = 9116;\nconstexpr uint32_t RevivalMsgMatchEndRewardDropsNotification = 9137;\nconstexpr uint32_t RevivalMsgGC2ServerNotifyXPRewarded = 9166;
+constexpr uint32_t RevivalMsgMatchmakingGC2ServerReserve = 9105;
+constexpr uint32_t RevivalMsgMatchmakingGC2ServerRankUpdate = 9116;
+constexpr uint32_t RevivalMsgMatchEndRewardDropsNotification = 9137;
+constexpr uint32_t RevivalMsgGC2ServerNotifyXPRewarded = 9166;
 constexpr const char *ServerReservationPath = "csgo_gc/server_reservation.txt";
 
 std::unordered_map<std::string, std::string> ReadServerReservationFile()
