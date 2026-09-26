@@ -19,6 +19,49 @@ PLATFORM_FATAL_LOG_MARKER = "REVIVAL_PLATFORM_FATAL_LOG_V1"
 RICH_PRESENCE_MARKER = "REVIVAL_MATCHMAKING_RICH_PRESENCE_V1"
 
 
+SCHEMA_SPAM_MARKER = "REVIVAL_SCHEMA_SPAM_FILTER_V1"
+
+
+def patch_schema_spam(schema_path: pathlib.Path) -> bool:
+    if not schema_path.is_file():
+        print(f"[patch_steam_hook] ERROR: missing {schema_path}")
+        return False
+
+    schema = schema_path.read_text(encoding="utf-8")
+    if SCHEMA_SPAM_MARKER in schema:
+        return True
+
+    noisy_prints = (
+        '            Platform::Print("Unsupported attribute type %s\\n", std::string{ type }.c_str());',
+        '                Platform::Print("Non coupon item associated loot list in %s!!!\\n", itemInfo.m_name.c_str());',
+        '                Platform::Print("No such prefab \'%s\'\\n", std::string{ prefabName }.c_str());',
+        '                Platform::Print("Unhandled loot list entry %s!!!!\\n", entryNameKey.c_str());',
+        '        Platform::Print("No such item %s!!!\\n", std::string{ itemName }.c_str());',
+    )
+
+    replaced = 0
+    for line in noisy_prints:
+        if line in schema:
+            schema = schema.replace(
+                line,
+                line.split("Platform::Print", 1)[0]
+                + "// REVIVAL_SCHEMA_SPAM_FILTER_V1: suppressed noisy schema warning",
+                1,
+            )
+            replaced += 1
+
+    if replaced != len(noisy_prints):
+        print(
+            f"[patch_steam_hook] ERROR: schema spam filter matched "
+            f"{replaced}/{len(noisy_prints)} expected warnings"
+        )
+        return False
+
+    schema_path.write_text(schema, encoding="utf-8", newline="\n")
+    print("[patch_steam_hook] suppressed noisy item-schema warnings")
+    return True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("path")
@@ -28,6 +71,9 @@ def main() -> int:
     if not path.is_file():
         print(f"[patch_steam_hook] ERROR: missing {path}")
         return 2
+
+    if not patch_schema_spam(path.with_name("item_schema.cpp")):
+        return 20
 
     text = path.read_text(encoding="utf-8")
 
