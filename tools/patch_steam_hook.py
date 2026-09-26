@@ -661,7 +661,11 @@ static bool RevivalRecordPlayerItemDrop(
             + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 native GC-message UI path active; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 raw detour disabled\\n\");\n"
             + "        s_revNativeHookCrashGuardLogged = true;\n"
             + "    }\n"
-            + "#endif",
+            + "#endif\n"
+            + "    // Poll the agent's match-end trigger from a callback path that\n"
+            + "    // actually executes every server frame. SharedGC::WorkerThread\n"
+            + "    // has no idle callback, so ServerGC::HandleIdle was dead code.\n"
+            + "    s_serverGC->m_gc.ProcessRevivalMatchEndTrigger();",
             1,
         )
 
