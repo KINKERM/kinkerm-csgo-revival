@@ -161,13 +161,21 @@ foreach ($marker in @(
     "REVIVAL_NATIVE_DROP_CRASH_GUARD_V1",
     "REVIVAL_NATIVE_DROP_TIMING_V3",
     "REVIVAL_NATIVE_DROP_BUNDLE_V1",
-    "REVIVAL_SERVER_DROP_IMPORT_V1"
+    "REVIVAL_SERVER_DROP_IMPORT_V1",
+    "REVIVAL_COVERT_TRADEUP_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
     }
 }
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
+
+$installedItems = Join-Path $CsgoDir "csgo\scripts\items\items_game.txt"
+$installedItemsText = Get-Content $installedItems -Raw
+if (-not $installedItemsText.Contains("REVIVAL_COVERT_TRADEUP_V1")) {
+    throw "Installed laptop items_game.txt is stale; missing REVIVAL_COVERT_TRADEUP_V1"
+}
+Write-Host "    Verified 5-Covert Trade Up Contract recipe metadata." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_MATCH_FINAL_V33")) {
