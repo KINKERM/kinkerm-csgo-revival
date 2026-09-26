@@ -136,6 +136,24 @@ $activateLines = [Text.RegularExpressions.Regex]::Split($activateRaw, "\r?\n") |
 Write-Host ("[pbin] compact popup_activate_mission.js -> {0} B" -f
     ([IO.File]::ReadAllBytes($stageActivateMissionJs).Length))
 
+# hudmissionpanel.js also has a fixed PBIN slot. The fallback is intentionally
+# small; strip indentation/blank lines/whole-line comments to guarantee it stays
+# within the stock slot without changing executable statements or strings.
+$hudRaw = [IO.File]::ReadAllText($stageHudMissionJs)
+$hudLines = [Text.RegularExpressions.Regex]::Split($hudRaw, "\r?\n") |
+    ForEach-Object { $_.Trim() } |
+    Where-Object {
+        $_.Length -gt 0 -and
+        -not $_.StartsWith("//")
+    }
+[IO.File]::WriteAllText(
+    $stageHudMissionJs,
+    ($hudLines -join [Environment]::NewLine),
+    [Text.UTF8Encoding]::new($false)
+)
+Write-Host ("[pbin] compact hudmissionpanel.js -> {0} B" -f
+    ([IO.File]::ReadAllBytes($stageHudMissionJs).Length))
+
 Push-Location $panoramaDir
 try {
     & py -3 ".\pbin.py" pack
