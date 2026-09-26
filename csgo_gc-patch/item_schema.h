@@ -27,6 +27,7 @@ public:
 
     uint32_t m_defIndex;
     std::string m_name;
+    std::string m_firstSaleDate;
     uint32_t m_rarity;
     uint32_t m_quality;
     uint32_t m_level;
@@ -166,6 +167,7 @@ public:
     // and souvenir packages are kept in separate pools so end-match odds can be
     // much lower than ordinary case drops.
     const std::vector<uint32_t> &MatchDropWeaponCases() const { return m_matchDropWeaponCases; }
+    const std::vector<uint32_t> &MatchDropOldWeaponCases() const { return m_matchDropOldWeaponCases; }
     const std::vector<uint32_t> &LegacyStickerCapsules() const { return m_legacyStickerCapsules; }
     const std::vector<uint32_t> &LegacySouvenirPackages() const { return m_legacySouvenirPackages; }
 
@@ -352,6 +354,7 @@ private:
 
     // Derived once after revolving loot lists are parsed.
     std::vector<uint32_t> m_matchDropWeaponCases;
+    std::vector<uint32_t> m_matchDropOldWeaponCases;
     std::vector<uint32_t> m_legacyStickerCapsules;
     std::vector<uint32_t> m_legacySouvenirPackages;
 
