@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import json
 import os
@@ -97,6 +98,71 @@ def load_config() -> dict:
     cfg["accept_timeout_seconds"] = max(300.0, float(cfg.get("accept_timeout_seconds", 300)))
     cfg.setdefault("post_match_grace_seconds", 35)
     return cfg
+
+
+def write_srcds_crash_report(cfg: dict, exit_code: int) -> None:
+    """Persist enough diagnostics to debug a disappearing SRCDS console."""
+    try:
+        out_dir = os.path.join(HERE, "crash-reports")
+        os.makedirs(out_dir, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        out_path = os.path.join(out_dir, f"srcds-crash-{stamp}.txt")
+        lines = [
+            f"timestamp={time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"exit_code={exit_code}",
+            f"exit_code_hex=0x{(exit_code & 0xFFFFFFFF):08X}",
+            f"csgo_dir={cfg.get('csgo_dir', '')}",
+            "",
+        ]
+
+        logs_dir = os.path.join(cfg["csgo_dir"], "csgo", "logs")
+        try:
+            candidates = [
+                os.path.join(logs_dir, name)
+                for name in os.listdir(logs_dir)
+                if name.lower().endswith(".log")
+            ]
+            candidates = [p for p in candidates if os.path.isfile(p)]
+            if candidates:
+                newest = max(candidates, key=os.path.getmtime)
+                lines.append(f"source_log={newest}")
+                with open(newest, "rb") as fh:
+                    data = fh.read()
+                tail = data[-65536:].decode("utf-8", errors="replace")
+                lines.append("===== LAST SOURCE LOG BYTES =====")
+                lines.append(tail)
+                lines.append("===== END SOURCE LOG =====")
+        except Exception as exc:
+            lines.append(f"source_log_capture_error={exc}")
+
+        if os.name == "nt":
+            try:
+                ps = (
+                    "$ErrorActionPreference='SilentlyContinue';"
+                    "$since=(Get-Date).AddMinutes(-5);"
+                    "Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=$since} | "
+                    "Where-Object { $_.ProviderName -in @('Application Error','Windows Error Reporting') "
+                    "-and $_.Message -match 'srcds\\.exe' } | "
+                    "Select-Object -First 8 TimeCreated,Id,ProviderName,Message | Format-List | Out-String"
+                )
+                event = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", ps],
+                    capture_output=True, text=True, timeout=12,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                lines.append("===== WINDOWS APPLICATION CRASH EVENTS =====")
+                lines.append(event.stdout or "(none found)")
+                if event.stderr:
+                    lines.append(event.stderr)
+                lines.append("===== END WINDOWS EVENTS =====")
+            except Exception as exc:
+                lines.append(f"windows_event_capture_error={exc}")
+
+        with open(out_path, "w", encoding="utf-8", errors="replace") as fh:
+            fh.write("\n".join(lines))
+        print(f"[agent] SRCDS CRASH REPORT SAVED: {out_path}")
+    except Exception as exc:
+        print(f"[agent] failed to save SRCDS crash report: {exc}")
 
 
 def post_json(url: str, body: dict) -> dict:
@@ -876,6 +942,8 @@ class ServerSlot:
 
         drain()
         code = proc.wait()
+        if code != 0:
+            write_srcds_crash_report(self.cfg, code)
         if not self._ended and self.match_id:
             self._report_end_once(f"srcds_exit_{code}")
 
