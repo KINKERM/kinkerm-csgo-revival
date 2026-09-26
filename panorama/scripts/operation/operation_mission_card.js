@@ -60,8 +60,6 @@ var OperationMissionCard = ( function()
 					var missionId = oCardDetails.quests[ iMission ];
 					
 					var oMissionDetails = OperationUtil.GetMissionDetails( missionId );
-					if ( oMissionDetails.nOpPointsPerSegment > 0 )
-						++oMissionDetails.nOpPointsPerSegment;
 					aMissions.push( oMissionDetails );
 					nActiveMissionInCardCount = currentlyPlayingMissionId === missionId ? 
 						nActiveMissionInCardCount++ : nActiveMissionInCardCount;
@@ -267,6 +265,7 @@ var OperationMissionCard = ( function()
 	};
 
 	return {
+		MissionCardPrefix: _m_missionCardPrefix,
 		GetMissionCardDetails: _GetMissionCardDetails,
 		UpdateMissionCard: _UpdateMissionCard,
 		CancelUnlockTimer: _CancelUnlockTimer
