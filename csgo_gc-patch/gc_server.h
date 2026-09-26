@@ -2,6 +2,7 @@
 
 #include "gc_shared.h"
 #include <string>
+#include <atomic>
 
 class ServerGC final : public SharedGC
 {
@@ -35,4 +36,5 @@ private:
     std::string m_lastReservationSignature;
     std::string m_lastQueueReservationPayload;
     uint64_t m_lastSyntheticDropMatchId{};
+    std::atomic_bool m_processingRevivalMatchEnd{ false };
 };
