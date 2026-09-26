@@ -13,7 +13,7 @@ var HudMissionPanel = ( function() {
 		if( q ) return q;
 		var s = GameInterfaceAPI.GetSettingString( 'con_filter_text_out' ) || '';
 		if( s.indexOf( 'REVIVALQ:' ) === 0 ) q = parseInt( s.substr( 9 ) ) || 0;
-		$.Msg( '[revival operation hud] cvar quest=' + q );
+		$.Msg( '[revival operation hud] cvar raw=' + s + ' quest=' + q );
 		return q;
 	}
 
