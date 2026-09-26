@@ -613,6 +613,7 @@ void ItemSchema::BuildMatchDropContainerPools()
         m_matchDropOldWeaponCases.size(),
         m_legacyStickerCapsules.size(),
         m_legacySouvenirPackages.size());
+    Platform::Print("REVIVAL_RANDOMIZED_LEGACY_DROPS_V2 active\n");
 }
 
 const LootList *ItemSchema::GetDirectLootList(uint32_t defIndex) const
