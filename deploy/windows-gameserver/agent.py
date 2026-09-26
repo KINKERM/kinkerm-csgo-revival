@@ -115,6 +115,24 @@ def write_srcds_crash_report(cfg: dict, exit_code: int) -> None:
             "",
         ]
 
+        # Capture the GC fatal text and Source console log as well. The
+        # compatible Win32 GC's Platform::Error exits the process with code 1,
+        # so Windows Error Reporting may legitimately have no crash event.
+        for diag_path in (
+            os.path.join(cfg["csgo_dir"], "gc_fatal.txt"),
+            os.path.join(cfg["csgo_dir"], "gc_log.txt"),
+            os.path.join(cfg["csgo_dir"], "csgo", "console.log"),
+        ):
+            try:
+                if os.path.isfile(diag_path):
+                    lines.append(f"===== {os.path.basename(diag_path)} =====")
+                    with open(diag_path, "rb") as fh:
+                        data = fh.read()
+                    lines.append(data[-131072:].decode("utf-8", errors="replace"))
+                    lines.append(f"===== END {os.path.basename(diag_path)} =====")
+            except Exception as exc:
+                lines.append(f"diagnostic_capture_error[{diag_path}]={exc}")
+
         logs_dir = os.path.join(cfg["csgo_dir"], "csgo", "logs")
         try:
             candidates = [
@@ -683,6 +701,8 @@ class ServerSlot:
                 srcds,
                 "-game", "csgo",
                 "-console",
+                "-condebug",
+                "-conclearlog",
                 "-usercon",
                 "-secure",
                 "-tickrate", "64",
@@ -705,6 +725,18 @@ class ServerSlot:
             except OSError:
                 self.log_files_before = set()
             self.log_started_at = time.time()
+
+            # Clear prior-run diagnostics so any captured fatal belongs to
+            # this allocation only.
+            for diag_path in (
+                os.path.join(self.cfg["csgo_dir"], "gc_fatal.txt"),
+                os.path.join(self.cfg["csgo_dir"], "gc_log.txt"),
+                os.path.join(self.cfg["csgo_dir"], "csgo", "console.log"),
+            ):
+                try:
+                    os.remove(diag_path)
+                except OSError:
+                    pass
 
             print(f"[agent] starting match {match_id} on {map_name} @ 64 tick")
             if os.name == "nt":
