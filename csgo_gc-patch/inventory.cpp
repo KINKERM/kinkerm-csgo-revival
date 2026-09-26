@@ -439,6 +439,23 @@ void Inventory::ReadFromFile()
                 m_operationQuestProgress[questId] = state;
             }
         }
+
+        // Self-heal inventories created by older revival builds. If a mission
+        // was already selected before progress-cache seeding existed, make sure
+        // the next full SOCache subscription still contains the parent and all
+        // graph-child CSOQuestProgress objects.
+        if (m_operationSelectedQuestId
+            && m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId))
+        {
+            m_operationQuestProgress.try_emplace(
+                m_operationSelectedQuestId);
+
+            for (uint32_t childId :
+                m_itemSchema.QuestGraphChildren(m_operationSelectedQuestId))
+            {
+                m_operationQuestProgress.try_emplace(childId);
+            }
+        }
     }
     RefreshProfileWeek();
 }
