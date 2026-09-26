@@ -29,6 +29,15 @@ constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
 
+// Panorama's con_logfile path can be rooted at either the game directory or
+// the csgo subdirectory depending on how this Legacy build was launched.
+// Poll all harmless local candidates and consume whichever exists.
+constexpr const char *OperationMissionBridgePaths[] = {
+    "revival_mission_select.log",
+    "csgo/revival_mission_select.log",
+    "csgo_gc/revival_mission_select.log",
+};
+
 constexpr int RevivalUserMsgServerRankRevealAll = 50;
 constexpr int RevivalUserMsgServerRankUpdate = 52;
 constexpr int RevivalUserMsgXpUpdate = 65;
@@ -450,6 +459,7 @@ ClientGC::~ClientGC()
 void ClientGC::HandleIdle()
 {
     PollRewardBridge();
+    PollOperationMissionSelectionBridge();
 
 #ifdef _WIN32
     if (g_revAcceptFullyAccepted.exchange(false, std::memory_order_acq_rel))
@@ -1292,6 +1302,80 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
 }
 
+void ClientGC::PollOperationMissionSelectionBridge()
+{
+    for (const char *path : OperationMissionBridgePaths)
+    {
+        std::ifstream in(path);
+        if (!in.is_open())
+            continue;
+
+        std::string line;
+        std::string latest;
+        while (std::getline(in, line))
+        {
+            if (line.find("REVIVAL_MISSION_SELECT_V1") != std::string::npos)
+                latest = line;
+        }
+        in.close();
+
+        // Consume first. If parsing fails, a stale malformed line cannot keep
+        // reapplying forever on every SharedGC idle tick.
+        std::remove(path);
+
+        if (latest.empty())
+            continue;
+
+        const size_t marker = latest.find("REVIVAL_MISSION_SELECT_V1");
+        unsigned season = 0;
+        unsigned card = 0;
+        unsigned quest = 0;
+        if (std::sscanf(
+                latest.c_str() + marker,
+                "REVIVAL_MISSION_SELECT_V1 %u %u %u",
+                &season, &card, &quest) != 3)
+        {
+            Platform::Print(
+                "operation bridge: malformed selection line '%s'\n",
+                latest.c_str());
+            continue;
+        }
+
+        Platform::Print(
+            "operation bridge: received Panorama selection season=%u card=%u quest=%u from %s\n",
+            season, card, quest, path);
+
+        CMsgSOMultipleObjects update;
+        if (m_inventory.SetOperationMissionSelection(
+                static_cast<uint32_t>(season),
+                static_cast<uint32_t>(card),
+                static_cast<uint32_t>(quest),
+                update))
+        {
+            // Local client must receive both the SeasonalOperations state and
+            // the modified Operation coin before matchmaking starts. Sending to
+            // the server too is harmless and keeps an already-connected test
+            // process coherent.
+            SendMessageToGame(
+                true, k_ESOMsg_UpdateMultiple, update);
+
+            Platform::Print(
+                "REVIVAL_OPERATION_SELECTION_BRIDGE_V2 applied season=%u card=%u quest=%u\n",
+                season, card, quest);
+        }
+        else
+        {
+            Platform::Print(
+                "REVIVAL_OPERATION_SELECTION_BRIDGE_V2 rejected season=%u card=%u quest=%u\n",
+                season, card, quest);
+        }
+
+        // One click produces one selection. Do not let duplicate candidate
+        // paths override the first successfully consumed event.
+        return;
+    }
+}
+
 void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
 {
     CMsgGCCStrike15_v2_MatchmakingStart message;
@@ -1300,6 +1384,11 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
         Platform::Print("matchmaking: failed to parse MatchmakingStart\n");
         return;
     }
+
+    // The popup writes its local selection marker immediately before calling
+    // LobbyAPI.StartMatchmaking. Consume it synchronously here as a final race
+    // guard so mm_request.txt can never be created from the previous card.
+    PollOperationMissionSelectionBridge();
 
     m_matchmakingGameType = message.has_game_type() ? message.game_type() : 8;
     m_matchmakingClientVersion = message.has_client_version() ? message.client_version() : 0;
@@ -1998,22 +2087,33 @@ void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
     CMsgGCCstrike15_v2_ClientRequestNewMission message;
     if (!messageRead.ReadProtobuf(message))
     {
-        Platform::Print("Parsing CMsgGCCstrike15_v2_ClientRequestNewMission failed, ignoring\n");
+        Platform::Print(
+            "Parsing CMsgGCCstrike15_v2_ClientRequestNewMission failed, ignoring\n");
         return;
     }
 
-    if (!message.has_mission_id() || !message.has_campaign_id())
+    Platform::Print(
+        "REVIVAL_NATIVE_MISSION_REQUEST_V2 has_mission=%d mission=%u "
+        "has_campaign=%d campaign=%u\n",
+        message.has_mission_id() ? 1 : 0,
+        message.has_mission_id() ? message.mission_id() : 0,
+        message.has_campaign_id() ? 1 : 0,
+        message.has_campaign_id() ? message.campaign_id() : 0);
+
+    if (!message.has_mission_id())
     {
-        Platform::Print("operation: ClientRequestNewMission missing mission/campaign id\n");
+        Platform::Print(
+            "operation: ClientRequestNewMission missing mission id\n");
         return;
     }
 
-    // Riptide Panorama addresses the active operation through season_access=1,
-    // while the SeasonalOperations shared object is keyed by season 10. Accept
-    // either representation and always normalize to the configured real season
-    // before validating/persisting the selected mission card.
-    const uint32_t requestedCampaign = message.campaign_id();
+    // Some Riptide-era/native client paths omit campaign_id or expose the
+    // access index instead of the SeasonalOperations key. Normalize both.
+    const uint32_t requestedCampaign = message.has_campaign_id()
+        ? message.campaign_id()
+        : GetConfig().OperationSeason();
     const uint32_t operationSeason = GetConfig().OperationSeason();
+
     if (requestedCampaign != operationSeason && requestedCampaign != 1)
     {
         Platform::Print(
@@ -2024,15 +2124,15 @@ void ClientGC::ClientRequestNewMission(GCMessageRead &messageRead)
 
     CMsgSOMultipleObjects update;
     if (m_inventory.SetOperationMissionCard(
-        operationSeason, message.mission_id(), update))
+            operationSeason, message.mission_id(), update))
     {
         Platform::Print(
-            "REVIVAL_OPERATION_MISSION_ACTIVATION_V1 campaign/access=%u -> season=%u card=%u\n",
+            "REVIVAL_OPERATION_MISSION_ACTIVATION_V2 campaign/access=%u -> "
+            "season=%u mission_field=%u\n",
             requestedCampaign, operationSeason, message.mission_id());
 
-        // Panorama waits for the SeasonalOperations SO update before it closes
-        // the activation spinner and configures matchmaking.
-        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
+        SendMessageToGame(
+            true, k_ESOMsg_UpdateMultiple, update);
     }
 }
 
