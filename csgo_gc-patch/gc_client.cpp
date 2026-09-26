@@ -749,10 +749,9 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        // Revival Competitive drop policy: every completed match gives two
-        // regular cases plus one Dust II 2021 and one Cache collection skin.
-        // Collection selection still uses the schema's rarity weights, so rare
-        // top-tier finishes remain actual luck rather than hardcoded grants.
+        // Revival Competitive drop policy: two cases remain guaranteed, but
+        // each roll uses the full schema-derived case pool with old cases rarer.
+        // Skins and old event containers are separate chance-based bonuses.
         for (int guaranteedCase = 0; guaranteedCase < 2; ++guaranteedCase)
         {
             CMsgSOSingleObject create;
@@ -765,23 +764,11 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        static const std::vector<std::string_view> Dust2021Collection{
-            "set_dust_2_2021"
-        };
-        static const std::vector<std::string_view> CacheCollection{
-            "set_cache"
-        };
-        static const std::vector<std::string_view> CobblestoneCollection{
-            "set_cobblestone"
-        };
-
-        for (const auto *collection :
-            { &Dust2021Collection, &CacheCollection })
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
-            if (m_inventory.CreateRandomCollectionMatchDrop(
-                *collection, create, drop))
+            if (m_inventory.CreateRareLegacyStickerCapsuleMatchDrop(
+                50, create, drop))
             {
                 SendMessageToGame(true, k_ESOMsg_Create, create);
                 SendMessageToGame(false,
@@ -789,9 +776,41 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
         }
 
-        // Rare extra Cobblestone roll. The roll only decides whether a bonus
-        // collection item exists; the collection's own rarity weighting still
-        // decides the actual skin, so Dragon Lore remains extremely rare.
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRareLegacySouvenirPackageMatchDrop(
+                200, create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        static const std::vector<std::string_view> StandardSkinCollections{
+            "set_dust_2_2021",
+            "set_cache"
+        };
+        static const std::vector<std::string_view> CobblestoneCollection{
+            "set_cobblestone"
+        };
+
+        // Standard map skin: 1/3 per completed match, rather than always.
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (m_inventory.CreateRareCollectionBonusMatchDrop(
+                StandardSkinCollections, 3, create, drop))
+            {
+                SendMessageToGame(true, k_ESOMsg_Create, create);
+                SendMessageToGame(false,
+                    k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, drop);
+            }
+        }
+
+        // Separate 1/20 Cobblestone bonus roll; the collection's own rarity
+        // weighting still makes Dragon Lore extremely rare.
         {
             CMsgSOSingleObject create;
             CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
