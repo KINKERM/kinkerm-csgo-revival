@@ -757,6 +757,14 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
                 static_cast<unsigned long long>(drop.iteminfo().itemid()));
         };
 
+        if (levelsGained)
+        {
+            CMsgSOSingleObject create;
+            CMsgGCCStrike15_v2_MatchEndRewardDropsNotification drop;
+            if (inventory.CreateWeeklyLevelReward(create, drop))
+                publishDrop(create, drop);
+        }
+
         for (int i = 0; i < 2; ++i)
         {
             CMsgSOSingleObject create;
@@ -816,36 +824,67 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             }
         }
 
-        if (bridgeMessages.empty())
-        {
-            Platform::Print(
-                "REVIVAL_NATIVE_DROP_REVEAL_V1 no drops generated for account=%u\n",
-                accountId);
-            continue;
-        }
-
         std::vector<uint8_t> bundle;
-        const char magic[8] = { 'R','V','M','S','G','V','1','\0' };
+        const char magic[8] = { 'R','V','M','S','G','V','2','\0' };
         bundle.insert(bundle.end(), magic, magic + sizeof(magic));
+
+        auto appendScalar = [&bundle](const auto &value)
+        {
+            const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+            bundle.insert(bundle.end(), bytes, bytes + sizeof(value));
+        };
+
+        const uint64_t bundleMatchId = matchId;
+        const uint32_t bundleLevel = inventory.ProfileLevel();
+        const uint32_t bundleXp = inventory.ProfileXp();
+        const uint32_t bundleProfileWeek = inventory.ProfileWeek();
+        const uint32_t bundleWeeklyBaseXp = inventory.WeeklyBaseXp();
+        const uint32_t bundleWeeklyRewardClaimed =
+            inventory.WeeklyLevelRewardClaimed() ? 1u : 0u;
+        const uint32_t bundleCasePlaytime = inventory.CasePlaytimeSeconds();
+        const uint32_t bundleCaseDrops = inventory.CaseDropsThisWeek();
+        const uint32_t bundleNextCaseDrop = inventory.NextCaseDropSeconds();
+        const uint32_t bundleRank =
+            static_cast<uint32_t>(inventory.CompetitiveRank());
+        const uint32_t bundleWins = inventory.CompetitiveWins();
+        const int32_t bundleRating = inventory.CompetitiveRating();
+        const uint32_t bundleMatches = inventory.CompetitiveMatches();
+        const uint32_t bundleAwardedXp = awardedXp;
+        const uint32_t bundleLevelsGained = levelsGained;
         const uint32_t count = static_cast<uint32_t>(bridgeMessages.size());
-        const auto *countBytes = reinterpret_cast<const uint8_t *>(&count);
-        bundle.insert(bundle.end(), countBytes, countBytes + sizeof(count));
+
+        appendScalar(bundleMatchId);
+        appendScalar(bundleLevel);
+        appendScalar(bundleXp);
+        appendScalar(bundleProfileWeek);
+        appendScalar(bundleWeeklyBaseXp);
+        appendScalar(bundleWeeklyRewardClaimed);
+        appendScalar(bundleCasePlaytime);
+        appendScalar(bundleCaseDrops);
+        appendScalar(bundleNextCaseDrop);
+        appendScalar(bundleRank);
+        appendScalar(bundleWins);
+        appendScalar(bundleRating);
+        appendScalar(bundleMatches);
+        appendScalar(bundleAwardedXp);
+        appendScalar(bundleLevelsGained);
+        appendScalar(count);
+
         for (const BridgeMessage &message : bridgeMessages)
         {
             const uint32_t size = static_cast<uint32_t>(message.bytes.size());
-            const auto *typeBytes = reinterpret_cast<const uint8_t *>(&message.type);
-            const auto *sizeBytes = reinterpret_cast<const uint8_t *>(&size);
-            bundle.insert(bundle.end(), typeBytes, typeBytes + sizeof(message.type));
-            bundle.insert(bundle.end(), sizeBytes, sizeBytes + sizeof(size));
+            appendScalar(message.type);
+            appendScalar(size);
             bundle.insert(bundle.end(), message.bytes.begin(), message.bytes.end());
         }
 
         const bool spooled = WriteRewardSpool(
             steamId, "dropbundle", bundle.data(), bundle.size());
         Platform::Print(
-            "REVIVAL_NATIVE_DROP_REVEAL_V1 queued %u client messages for account=%u match=%llu spooled=%d\n",
-            static_cast<unsigned>(bridgeMessages.size()), accountId,
-            static_cast<unsigned long long>(matchId), spooled ? 1 : 0);
+            "REVIVAL_PROGRESS_BUNDLE_V2 account=%u match=%llu messages=%u level=%u xp=%u rank=%u wins=%u spooled=%d\n",
+            accountId, static_cast<unsigned long long>(matchId),
+            static_cast<unsigned>(bridgeMessages.size()),
+            bundleLevel, bundleXp, bundleRank, bundleWins, spooled ? 1 : 0);
         processedAny = true;
     }
 
