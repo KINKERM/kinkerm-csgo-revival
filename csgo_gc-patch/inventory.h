@@ -171,9 +171,25 @@ public:
     uint32_t ProfileXp() const { return m_profileXp; }
     RankId CompetitiveRank() const { return m_competitiveRank; }
     uint32_t CompetitiveWins() const { return m_competitiveWins; }
+    uint32_t ProfileWeek() const { return m_profileWeek; }
+    uint32_t WeeklyBaseXp() const { return m_weeklyBaseXp; }
+    bool WeeklyLevelRewardClaimed() const { return m_weeklyLevelRewardClaimed; }
+    uint32_t CasePlaytimeSeconds() const { return m_casePlaytimeSeconds; }
+    uint32_t CaseDropsThisWeek() const { return m_caseDropsThisWeek; }
+    uint32_t NextCaseDropSeconds() const { return m_nextCaseDropSeconds; }
+    int32_t CompetitiveRating() const { return m_competitiveRating; }
+    uint32_t CompetitiveMatches() const { return m_competitiveMatches; }
     bool AddProfileXp(uint32_t amount, uint32_t *levelsGained = nullptr);
     uint32_t ApplyWeeklyProfileXp(uint32_t baseXp, uint32_t *levelsGained = nullptr);
     bool ApplyCompetitiveMatchResult(bool won, bool tied);
+    bool ImportRevivalProfile(
+        uint32_t level, uint32_t xp,
+        uint32_t profileWeek, uint32_t weeklyBaseXp,
+        bool weeklyLevelRewardClaimed,
+        uint32_t casePlaytimeSeconds, uint32_t caseDropsThisWeek,
+        uint32_t nextCaseDropSeconds,
+        RankId competitiveRank, uint32_t competitiveWins,
+        int32_t competitiveRating, uint32_t competitiveMatches);
     void BuildProfilePersonaUpdate(CMsgSOMultipleObjects &update);
 
 private:
