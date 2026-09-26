@@ -14,9 +14,20 @@ Need-Path $RevivalRepo "Revival repo"
 Need-Path $CsgoGcSource "csgo_gc source"
 Need-Path (Join-Path $CsgoGcSource "build") "csgo_gc build directory"
 Need-Path $CsgoDir "CS:GO Legacy root"
+$itemsGame = Join-Path $CsgoDir "csgo\scripts\items\items_game.txt"
+Need-Path $itemsGame "CS:GO items_game.txt"
 
 Write-Host ""
 Write-Host "=== Matchmaking direct-UDP hotfix ===" -ForegroundColor Cyan
+
+Write-Host "[0/3] Enabling CS2-style 5-Covert Trade Up Contract..." -ForegroundColor Yellow
+& py -3 (Join-Path $RevivalRepo "tools\patch_tradeup_items_game.py") $itemsGame
+if ($LASTEXITCODE -ne 0) { throw "5-Covert trade-up items_game patch failed." }
+$itemsText = Get-Content $itemsGame -Raw
+if (-not $itemsText.Contains("REVIVAL_COVERT_TRADEUP_V1")) {
+    throw "Installed items_game.txt is missing REVIVAL_COVERT_TRADEUP_V1"
+}
+Write-Host "    Trade Up Contract now exposes 5-Covert recipes." -ForegroundColor Green
 
 # Keep steam_hook.cpp matched to this local csgo_gc tree, then apply the
 # current revival overlay and the small compatibility patch.
@@ -70,7 +81,8 @@ $markers = @(
     "REVIVAL_NATIVE_DROP_CRASH_GUARD_V1",
     "REVIVAL_NATIVE_DROP_TIMING_V3",
     "REVIVAL_NATIVE_DROP_BUNDLE_V1",
-    "REVIVAL_SERVER_DROP_IMPORT_V1"
+    "REVIVAL_SERVER_DROP_IMPORT_V1",
+    "REVIVAL_COVERT_TRADEUP_V1"
 )
 foreach ($marker in $markers) {
     if (-not $blob.Contains($marker)) {
