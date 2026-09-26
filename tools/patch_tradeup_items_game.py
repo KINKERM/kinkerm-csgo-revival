@@ -7,10 +7,11 @@ result, so the client schema must NOT be backported with modern CS2-only
 item_set/loot-list metadata.
 
 This patch:
-- removes old revival recipes 900/901, even if they were accidentally nested;
+- removes old revival recipes 5/15/900/901 from previous attempts;
 - removes the previous V3 item_set / unusual-loot-list / prefab additions;
-- installs recipe 5 (Unique) and recipe 15 (StatTrak) using the same legacy
-  shape as stock recipes 4 and 14, but with di_A=5 and output rarity unusual.
+- installs dedicated revival recipe 50 (Unique) and 51 (StatTrak) using the
+  same legacy shape as stock recipes 4 and 14, but with di_A=5 and output
+  rarity unusual. Dedicated IDs avoid colliding with partially patched files.
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from typing import Iterator
 MARKER = "REVIVAL_COVERT_TRADEUP_SCHEMA_V4_LEGACY"
 OLD_MARKER_V3 = "REVIVAL_COVERT_TRADEUP_SCHEMA_V3"
 OLD_MARKER_V1 = "REVIVAL_COVERT_TRADEUP_V1"
+NORMAL_RECIPE_ID = 50
+STATTRAK_RECIPE_ID = 51
 
 
 def _find_matching_brace(text: str, open_pos: int) -> int:
@@ -297,9 +300,31 @@ def _remove_old_recipe_blocks(text: str) -> tuple[str, int]:
     recipes_open, recipes_close = _find_named_block(text, "recipes")
     removals: list[tuple[int, int]] = []
 
-    # Remove all revival 5-Covert recipe generations. 900/901 were sometimes
-    # accidentally nested inside recipe 4/14, so search the whole recipes range.
-    for recipe_id in ("5", "15", "900", "901"):
+    # Direct top-level recipe definitions are unambiguous. Remove only revival
+    # generations; do not treat nested input slot names like "5" as recipes.
+    for entry in _iter_block_entries(text, recipes_open, recipes_close):
+        if entry.kind != "block" or entry.key not in {"5", "15", "50", "51", "900", "901"}:
+            continue
+
+        raw = text[entry.start:entry.end]
+        is_revival = (
+            MARKER in raw
+            or OLD_MARKER_V3 in raw
+            or OLD_MARKER_V1 in raw
+            or (
+                '"di_A"' in raw
+                and re.search(r'"di_A"[ \t]+"5"', raw)
+                and '"*rarity"' in raw
+                and '"ancient"' in raw
+            )
+        )
+        if is_revival:
+            line_start = text.rfind("\n", recipes_open + 1, entry.start) + 1
+            removals.append((line_start, entry.end))
+
+    # Very early builds could accidentally nest recipe 900/901 inside another
+    # recipe. Clean only those historical IDs by shape/marker.
+    for recipe_id in ("900", "901"):
         for open_pos, close_pos in _find_named_blocks(
             text, recipe_id, recipes_open + 1, recipes_close
         ):
@@ -308,23 +333,19 @@ def _remove_old_recipe_blocks(text: str) -> tuple[str, int]:
                 continue
             line_start = text.rfind("\n", recipes_open + 1, name_pos) + 1
             raw = text[line_start:close_pos + 1]
-
-            is_revival = (
+            if (
                 MARKER in raw
                 or OLD_MARKER_V3 in raw
                 or OLD_MARKER_V1 in raw
                 or (
                     '"di_A"' in raw
                     and re.search(r'"di_A"[ \t]+"5"', raw)
-                    and '"*rarity"' in raw
                     and '"ancient"' in raw
                 )
-            )
-            if is_revival:
+            ):
                 removals.append((line_start, close_pos + 1))
 
     return _remove_block_ranges(text, removals)
-
 
 def _remove_v3_prefab_lines(text: str) -> tuple[str, int]:
     pat = re.compile(
@@ -400,10 +421,12 @@ def _ensure_recipes(text: str) -> tuple[str, int]:
     existing = _direct_blocks(text, recipes_open, recipes_close)
 
     additions: list[str] = []
-    if "5" not in existing:
-        additions.append(_recipe_block(5, False))
-    if "15" not in existing:
-        additions.append(_recipe_block(15, True))
+    normal_id = str(NORMAL_RECIPE_ID)
+    stattrak_id = str(STATTRAK_RECIPE_ID)
+    if normal_id not in existing:
+        additions.append(_recipe_block(NORMAL_RECIPE_ID, False))
+    if stattrak_id not in existing:
+        additions.append(_recipe_block(STATTRAK_RECIPE_ID, True))
 
     if not additions:
         return text, 0
@@ -435,7 +458,10 @@ def _validate(text: str) -> None:
     recipes_open, recipes_close = _find_named_block(text, "recipes")
     recipes = _direct_blocks(text, recipes_open, recipes_close)
 
-    for recipe_id, stattrak in (("5", False), ("15", True)):
+    for recipe_id, stattrak in (
+        (str(NORMAL_RECIPE_ID), False),
+        (str(STATTRAK_RECIPE_ID), True),
+    ):
         entry = recipes.get(recipe_id)
         if entry is None:
             raise ValueError(f"missing Legacy 5-Covert recipe {recipe_id}")
