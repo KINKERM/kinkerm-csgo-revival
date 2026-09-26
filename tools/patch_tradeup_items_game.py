@@ -85,6 +85,29 @@ def _find_named_block(text: str, name: str, start: int = 0, end: int | None = No
     return open_pos, close_pos
 
 
+def _find_named_blocks(text: str, name: str, start: int = 0, end: int | None = None) -> list[tuple[int, int]]:
+    """Return every sibling/top-level section with this KeyValues name.
+
+    Legacy items_game.txt legitimately contains many repeated client_loot_lists
+    and item_sets sections. The old patcher only read the first one.
+    """
+    if end is None:
+        end = len(text)
+    pat = re.compile(r'(?m)^[ \t]*"' + re.escape(name) + r'"[ \t]*(?:\r?\n[ \t]*)?\{')
+    blocks: list[tuple[int, int]] = []
+    pos = start
+    while True:
+        match = pat.search(text, pos, end)
+        if not match:
+            break
+        open_pos = text.find("{", match.start(), match.end())
+        close_pos = _find_matching_brace(text, open_pos)
+        if close_pos >= end:
+            raise ValueError(f'KeyValues block "{name}" escapes parent block')
+        blocks.append((open_pos, close_pos))
+        pos = close_pos + 1
+    return blocks
+
 def _skip_space_comments(text: str, pos: int, end: int) -> int:
     while pos < end:
         if text[pos].isspace():
@@ -407,88 +430,109 @@ def _pool_has_knife(pool_name: str, unusual_blocks: dict[str, str]) -> bool:
 
 
 def _client_loot_blocks(text: str) -> dict[str, str]:
-    open_pos, close_pos = _find_named_block(text, "client_loot_lists")
-    return {
-        e.key: text[e.start:e.end]
-        for e in _iter_block_entries(text, open_pos, close_pos)
-        if e.kind == "block"
-    }
+    out: dict[str, str] = {}
+    sections = _find_named_blocks(text, "client_loot_lists")
+    if not sections:
+        raise ValueError('KeyValues block "client_loot_lists" not found')
 
+    for open_pos, close_pos in sections:
+        for entry in _iter_block_entries(text, open_pos, close_pos):
+            if entry.kind == "block":
+                out.setdefault(entry.key, text[entry.start:entry.end])
+    return out
 
 def _inject_unusual_loot_lists(text: str, unusual_blocks: dict[str, str]) -> tuple[str, int]:
-    loot_open, loot_close = _find_named_block(text, "client_loot_lists")
-    existing = _direct_blocks(text, loot_open, loot_close)
-    missing = [(name, raw) for name, raw in unusual_blocks.items() if name not in existing]
+    sections = _find_named_blocks(text, "client_loot_lists")
+    if not sections:
+        raise ValueError('KeyValues block "client_loot_lists" not found')
+
+    # Treat all repeated legacy sections as one logical dictionary.
+    existing_all = _client_loot_blocks(text)
+    missing = [(name, raw) for name, raw in unusual_blocks.items() if name not in existing_all]
     if not missing:
         return text, 0
+
+    # Put the definitions next to the case lists that already reference them,
+    # rather than in the first map-collection-only client_loot_lists section.
+    best_open, best_close = sections[0]
+    best_score = -1
+    for open_pos, close_pos in sections:
+        raw = text[open_pos + 1:close_pos]
+        score = sum(1 for name in unusual_blocks if name in raw)
+        if score > best_score:
+            best_score = score
+            best_open, best_close = open_pos, close_pos
 
     chunks = [f"\n\t\t// {MARKER}: copied from csgo_gc/unusual_loot_lists.txt"]
     for _, raw in missing:
         chunks.append("\n".join("\t\t" + line.lstrip("\t") for line in raw.splitlines()))
     addition = "\n".join(chunks) + "\n"
-    return text[:loot_close] + addition + text[loot_close:], len(missing)
-
+    return text[:best_close] + addition + text[best_close:], len(missing)
 
 def _patch_item_set_unusuals(
     text: str,
     skin_to_pool: dict[str, str],
     unusual_blocks: dict[str, str],
 ) -> tuple[str, int, list[str]]:
-    item_sets_open, item_sets_close = _find_named_block(text, "item_sets")
-    entries = list(_iter_block_entries(text, item_sets_open, item_sets_close))
+    sections = _find_named_blocks(text, "item_sets")
+    if not sections:
+        raise ValueError('KeyValues block "item_sets" not found')
+
     edits: list[tuple[int, str]] = []
     ambiguous: list[str] = []
 
-    for set_entry in entries:
-        if set_entry.kind != "block":
-            continue
+    for item_sets_open, item_sets_close in sections:
+        entries = list(_iter_block_entries(text, item_sets_open, item_sets_close))
 
-        raw = text[set_entry.start:set_entry.end]
-        if re.search(r'(?m)^[ \t]*"unusuals"[ \t]*(?:\r?\n[ \t]*)?\{', raw):
-            continue
+        for set_entry in entries:
+            if set_entry.kind != "block":
+                continue
 
-        try:
-            items_open, items_close = _find_named_block(raw, "items")
-        except ValueError:
-            continue
+            raw = text[set_entry.start:set_entry.end]
+            if re.search(r'(?m)^[ \t]*"unusuals"[ \t]*(?:\r?\n[ \t]*)?\{', raw):
+                continue
 
-        pools = Counter()
-        for item in _iter_block_entries(raw, items_open, items_close):
-            if item.kind == "scalar":
-                pool = skin_to_pool.get(item.key)
-                if pool:
-                    pools[pool] += 1
+            try:
+                items_open, items_close = _find_named_block(raw, "items")
+            except ValueError:
+                continue
 
-        if not pools:
-            continue
-        if len(pools) != 1:
-            ambiguous.append(
-                f'{set_entry.key}: ' + ", ".join(
-                    f"{name} ({count})" for name, count in pools.most_common()
+            pools = Counter()
+            for item in _iter_block_entries(raw, items_open, items_close):
+                if item.kind == "scalar":
+                    pool = skin_to_pool.get(item.key)
+                    if pool:
+                        pools[pool] += 1
+
+            if not pools:
+                continue
+            if len(pools) != 1:
+                ambiguous.append(
+                    f'{set_entry.key}: ' + ", ".join(
+                        f"{name} ({count})" for name, count in pools.most_common()
+                    )
                 )
+                continue
+
+            pool = next(iter(pools))
+            strange = ""
+            if _pool_has_knife(pool, unusual_blocks):
+                strange = f'\n\t\t\t\t"strange"\t\t"{pool}"'
+
+            block = (
+                f'\n\t\t\t// {MARKER}: case collection -> rare-special pool'
+                f'\n\t\t\t"unusuals"'
+                f'\n\t\t\t{{'
+                f'\n\t\t\t\t"unique"\t\t"{pool}"'
+                f'{strange}'
+                f'\n\t\t\t}}'
             )
-            continue
-
-        pool = next(iter(pools))
-        strange = ""
-        if _pool_has_knife(pool, unusual_blocks):
-            strange = f'\n\t\t\t\t"strange"\t\t"{pool}"'
-
-        block = (
-            f'\n\t\t\t// {MARKER}: case collection -> rare-special pool'
-            f'\n\t\t\t"unusuals"'
-            f'\n\t\t\t{{'
-            f'\n\t\t\t\t"unique"\t\t"{pool}"'
-            f'{strange}'
-            f'\n\t\t\t}}'
-        )
-        edits.append((set_entry.close_pos, block))
+            edits.append((set_entry.close_pos, block))
 
     for pos, block in reversed(edits):
         text = text[:pos] + block + text[pos:]
 
     return text, len(edits), ambiguous
-
 
 def _ensure_recipes(text: str) -> tuple[str, int]:
     recipes_open, recipes_close = _find_named_block(text, "recipes")
@@ -530,14 +574,19 @@ def _validate(text: str) -> None:
     ):
         raise ValueError('obsolete ancient next_rarity "unusual" is still present')
 
-    item_sets_open, item_sets_close = _find_named_block(text, "item_sets")
-    if '"unusuals"' not in text[item_sets_open + 1:item_sets_close]:
+    item_sections = _find_named_blocks(text, "item_sets")
+    if not item_sections or not any(
+        '"unusuals"' in text[open_pos + 1:close_pos]
+        for open_pos, close_pos in item_sections
+    ):
         raise ValueError("no item_set unusuals mappings were installed")
 
-    client_open, client_close = _find_named_block(text, "client_loot_lists")
-    if MARKER not in text[client_open + 1:client_close]:
+    client_sections = _find_named_blocks(text, "client_loot_lists")
+    if not client_sections or not any(
+        MARKER in text[open_pos + 1:close_pos]
+        for open_pos, close_pos in client_sections
+    ):
         raise ValueError("rare-special loot-list definitions were not installed")
-
 
 def patch_text(text: str, unusual_text: str) -> tuple[str, bool, dict[str, object]]:
     changed = False
