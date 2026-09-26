@@ -1351,40 +1351,15 @@ void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, u
         return;
     }
 
-    for (const KeyValue &entry : *seasonKey)
+    auto commitCard = [this](OperationMissionCard &card)
     {
-        if (entry.Name() != "quest_mission_card")
+        if (!card.id || card.questIds.empty())
         {
-            continue;
+            card = {};
+            return;
         }
 
-        OperationMissionCard card;
-        card.id = entry.GetNumber<uint32_t>("id", 0);
-        card.maxStars = entry.GetNumber<uint32_t>("operational_points", 0);
-
-        std::string_view quests = entry.GetString("quests");
-        size_t offset = 0;
-        while (offset < quests.size())
-        {
-            size_t comma = quests.find(',', offset);
-            std::string_view token = (comma == std::string_view::npos)
-                ? quests.substr(offset)
-                : quests.substr(offset, comma - offset);
-            AppendQuestRange(token, card.questIds);
-
-            if (comma == std::string_view::npos)
-            {
-                break;
-            }
-            offset = comma + 1;
-        }
-
-        if (!card.id || !card.maxStars || card.questIds.empty())
-        {
-            continue;
-        }
-
-        size_t cardIndex = m_operationMissionCards.size();
+        const size_t cardIndex = m_operationMissionCards.size();
         m_operationMissionCards.push_back(std::move(card));
 
         for (uint32_t questId : m_operationMissionCards.back().questIds)
@@ -1394,10 +1369,75 @@ void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, u
                 m_operationMissionCardByQuest[questId] = cardIndex;
             }
         }
+
+        card = {};
+    };
+
+    for (const KeyValue &entry : *seasonKey)
+    {
+        if (entry.Name() != "quest_mission_card")
+        {
+            continue;
+        }
+
+        // Valve stores all weekly cards in one quest_mission_card object by
+        // repeating id/name/quests/operational_points keys. Older KeyValue code
+        // collapsed duplicate names, leaving only ONE week. The patched parser
+        // now preserves those duplicates, so rebuild cards in source order.
+        OperationMissionCard card;
+        for (const KeyValue &field : entry)
+        {
+            if (field.Name() == "id")
+            {
+                if (card.id)
+                {
+                    commitCard(card);
+                }
+
+                if (!field.String().empty())
+                {
+                    card.id = FromString<uint32_t>(field.String());
+                }
+            }
+            else if (field.Name() == "quests")
+            {
+                std::string_view quests = field.String();
+                size_t offset = 0;
+                while (offset < quests.size())
+                {
+                    const size_t comma = quests.find(',', offset);
+                    const std::string_view token =
+                        comma == std::string_view::npos
+                            ? quests.substr(offset)
+                            : quests.substr(offset, comma - offset);
+                    AppendQuestRange(token, card.questIds);
+
+                    if (comma == std::string_view::npos)
+                    {
+                        break;
+                    }
+                    offset = comma + 1;
+                }
+            }
+            else if (field.Name() == "operational_points")
+            {
+                if (!field.String().empty())
+                {
+                    card.maxStars =
+                        FromString<uint32_t>(field.String());
+                }
+            }
+        }
+
+        commitCard(card);
     }
 
-    Platform::Print("operation: parsed %zu mission cards and %zu Operation quests for season %u\n",
-        m_operationMissionCards.size(), m_operationMissionCardByQuest.size(), season);
+    Platform::Print(
+        "REVIVAL_OPERATION_CARD_PARSE_V3 parsed %zu mission cards and %zu "
+        "Operation quests for season %u\n",
+        m_operationMissionCards.size(),
+        m_operationMissionCardByQuest.size(),
+        season);
 }
 
 void ItemSchema::ParseAttributes(const KeyValue *attributesKey)
