@@ -17,6 +17,7 @@ NATIVE_DROP_TIMING_MARKER = "REVIVAL_NATIVE_DROP_TIMING_V3"
 PLATFORM_PATTERN_MARKER = "REVIVAL_PLATFORM_FIND_PATTERN_V1"
 PLATFORM_FATAL_LOG_MARKER = "REVIVAL_PLATFORM_FATAL_LOG_V1"
 RICH_PRESENCE_MARKER = "REVIVAL_MATCHMAKING_RICH_PRESENCE_V1"
+CLIENT_USERMESSAGE_MARKER = "REVIVAL_CLIENT_USERMESSAGE_UI_V1"
 
 
 SCHEMA_SPAM_MARKER = "REVIVAL_SCHEMA_SPAM_FILTER_V1"
@@ -195,6 +196,20 @@ uint64_t RevivalGameServerSteamId()
         platform_h.write_text(ph, encoding="utf-8", newline="\n")
 
     ph = platform_h.read_text(encoding="utf-8")
+    if "DispatchClientUserMessage" not in ph:
+        ph_anchor = "void *ResolveModuleInterface(const char *moduleName, const char *version);"
+        if ph_anchor not in ph:
+            print("[patch_steam_hook] ERROR: ResolveModuleInterface declaration missing for client usermessage bridge")
+            return 21
+        ph = ph.replace(
+            ph_anchor,
+            ph_anchor + "\nbool DispatchClientUserMessage(int messageId, int flags, "
+            + "const void *data, uint32_t size);",
+            1,
+        )
+        platform_h.write_text(ph, encoding="utf-8", newline="\n")
+
+    ph = platform_h.read_text(encoding="utf-8")
     if "FindModulePattern" not in ph:
         ph_anchor = "void *ResolveModuleInterface(const char *moduleName, const char *version);"
         if ph_anchor not in ph:
@@ -230,6 +245,36 @@ void *ResolveModuleInterface(const char *moduleName, const char *version)
     if (result)
         Print("REVIVAL_PLATFORM_RESOLVE_INTERFACE_V1 %s/%s\n", moduleName, version);
     return result;
+}
+
+bool DispatchClientUserMessage(
+    int messageId, int flags, const void *data, uint32_t size)
+{
+    static void *clientDll = nullptr;
+    if (!clientDll)
+    {
+        clientDll = ResolveModuleInterface("client.dll", "VClient018");
+        if (!clientDll)
+        {
+            Print("REVIVAL_CLIENT_USERMESSAGE_UI_V1 VClient018 unavailable\n");
+            return false;
+        }
+    }
+
+    using DispatchFn = bool(__thiscall *)(
+        void *, int, int32_t, int, const void *);
+    void **vtable = *reinterpret_cast<void ***>(clientDll);
+    auto dispatch = reinterpret_cast<DispatchFn>(vtable[38]);
+    if (!dispatch)
+        return false;
+
+    const bool ok = dispatch(
+        clientDll, messageId, static_cast<int32_t>(flags),
+        static_cast<int>(size), data);
+    Print(
+        "REVIVAL_CLIENT_USERMESSAGE_UI_V1 dispatched id=%d size=%u ok=%d\n",
+        messageId, size, ok ? 1 : 0);
+    return ok;
 }
 
 '''
@@ -667,11 +712,7 @@ static bool RevivalRecordPlayerItemDrop(
             + "        Platform::Print(\"REVIVAL_NATIVE_DROP_REVEAL_V1 native GC-message UI path active; REVIVAL_NATIVE_DROP_CRASH_GUARD_V1 raw detour disabled\\n\");\n"
             + "        s_revNativeHookCrashGuardLogged = true;\n"
             + "    }\n"
-            + "#endif\n"
-            + "    // Poll the agent's match-end trigger from a callback path that\n"
-            + "    // actually executes every server frame. SharedGC::WorkerThread\n"
-            + "    // has no idle callback, so ServerGC::HandleIdle was dead code.\n"
-            + "    s_serverGC->m_gc.ProcessRevivalMatchEndTrigger();",
+            + "#endif",
             1,
         )
 
@@ -739,8 +780,10 @@ static bool RevivalRecordPlayerItemDrop(
             or NATIVE_DROP_TIMING_MARKER not in verify
             or expected_offline_log not in verify
             or "ResolveModuleInterface" not in ph_verify
+            or "DispatchClientUserMessage" not in ph_verify
             or "FindModulePattern" not in ph_verify
             or PLATFORM_INTERFACE_MARKER not in pc_verify
+            or CLIENT_USERMESSAGE_MARKER not in pc_verify
             or PLATFORM_PATTERN_MARKER not in pc_verify
             or PLATFORM_FATAL_LOG_MARKER not in pc_verify):
         print("[patch_steam_hook] ERROR: marker verification failed after write")
