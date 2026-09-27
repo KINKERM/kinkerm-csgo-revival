@@ -273,6 +273,12 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_EARNED_DROPS_ONLY_V1")) {
         throw "Built csgo_gc.dll still allows ordinary free Store/Coupon grants."
     }
+    if (-not $gcDllText.Contains("REVIVAL_KEYLESS_CASES_V1")) {
+        throw "Built csgo_gc.dll is missing keyless earned-case opening."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_SUMMARY_REPAIR_V1")) {
+        throw "Built csgo_gc.dll is missing Operation completed-mission summary repair."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -494,6 +500,12 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_EARNED_DROPS_ONLY_V1")) {
         throw "Installed csgo_gc.dll still allows ordinary free Store/Coupon grants."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_KEYLESS_CASES_V1")) {
+        throw "Installed csgo_gc.dll is missing keyless earned-case opening."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_OPERATION_SUMMARY_REPAIR_V1")) {
+        throw "Installed csgo_gc.dll is missing Operation completed-mission summary repair."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
