@@ -1235,8 +1235,37 @@ void ServerGC::SendMatchmakingReservation()
     // This HostEvent is drained from SteamGameServer_RunCallbacks on the main
     // thread. Refresh every ~8 seconds (HandleIdle calls this about every 2s)
     // so sv_mmqueue_reservation_timeout cannot expire while the Accept UI is up.
+    // The engine ready-up roster is NOT the same thing as the full
+    // match membership once a match is already running. Connected players have
+    // already completed ACCEPT and must not be placed back into a new ready-up
+    // when a late joiner is added. Build the queued-engine roster from accounts
+    // that Source has not authenticated yet. Fresh allocations naturally have
+    // no auth markers, so their original full ready-up behavior is unchanged.
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve queueReserve;
+    queueReserve.CopyFrom(reserve);
+    queueReserve.clear_account_ids();
+    for (int i = 0; i < reserve.account_ids_size(); ++i)
+    {
+        const uint32_t accountId = reserve.account_ids(i);
+        const std::string authPath =
+            "csgo_gc/server_auth/" + std::to_string(accountId) + ".txt";
+        std::ifstream auth(authPath, std::ios::binary);
+        if (!auth.is_open())
+            queueReserve.add_account_ids(accountId);
+    }
+
+    // Once everybody is connected, keep the existing reservation alive using
+    // the full roster. As soon as a new account appears in server_reservation,
+    // the missing auth marker above produces a one-player (or pending-player)
+    // ready-up roster for that drop-in.
+    if (!queueReserve.account_ids_size())
+    {
+        for (int i = 0; i < reserve.account_ids_size(); ++i)
+            queueReserve.add_account_ids(reserve.account_ids(i));
+    }
+
     const std::string queuePayload =
-        BuildQueuedReservationPayload(GameServerCookieId, matchId, reserve);
+        BuildQueuedReservationPayload(GameServerCookieId, matchId, queueReserve);
     const bool queueChanged = queuePayload != m_lastQueueReservationPayload;
     if (queueChanged || ++m_queueReservationRefreshTicks >= 4)
     {
@@ -1247,8 +1276,8 @@ void ServerGC::SendMatchmakingReservation()
         if (queueChanged)
         {
             Platform::Print(
-                "matchmaking server: queued engine Q reservation match=%llu roster=%d\n",
-                matchId, reserve.account_ids_size());
+                "REVIVAL_LATEJOIN_PENDING_ROSTER_V1 queued engine Q reservation match=%llu pending_roster=%d full_roster=%d\n",
+                matchId, queueReserve.account_ids_size(), reserve.account_ids_size());
         }
     }
 
