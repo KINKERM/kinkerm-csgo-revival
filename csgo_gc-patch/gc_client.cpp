@@ -2757,9 +2757,10 @@ void ClientGC::UnlockCrate(GCMessageRead &messageRead)
             newItem,
             notification))
     {
-        // mikkotodo what does the server want to know
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
+        if (destroyCrate.has_type_id())
+            SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
+        if (destroyKey.has_type_id())
+            SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
 
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
