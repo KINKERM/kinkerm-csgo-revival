@@ -526,7 +526,7 @@ void ClientGC::HandleIdle()
         {
             SendMatchmakingConnectReserve();
             Platform::Print(
-                "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V2 delayed QueueConnect reserve sent\n");
+                "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V3 minimal QueueConnect reserve sent\n");
         }
     }
 
@@ -1690,17 +1690,17 @@ void ClientGC::SendMatchmakingConnectReserve()
         reserve.set_map(m_matchmakingMap);
     reserve.set_server_address(m_matchmakingServerAddress);
 
-    // Deliberately NO nested reservation here. The first 9107's Competitive
-    // reservation created the stock stage-1 ready-up callback. Once the server
-    // has answered stage 2 / awaiting 0, a second address+cookie 9107 switches
-    // the retail client into its QueueConnect path instead of recreating the
-    // Accept callback.
+    // Deliberately NO nested reservation here. Fresh matches reach this only
+    // after the stock ready-up reached stage 2. Live drop-ins never send the
+    // nested/full 9107 at all; they publish an online ongoing-session update,
+    // then use this minimal address+cookie 9107 as the FIRST reservation packet
+    // so Legacy goes straight to QueueConnect instead of opening ACCEPT again.
     SendMessageToGame(
         false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingFinalReserveSent = true;
 
     Platform::Print(
-        "matchmaking: ACCEPT COMPLETE; sent second 9107 for QueueConnect "
+        "matchmaking: sent minimal 9107 for QueueConnect "
         "reservation=%llu server=%s map=%s\n",
         m_lastMatchmakingReservation, m_matchmakingServerAddress.c_str(),
         m_matchmakingMap.c_str());
@@ -2282,23 +2282,26 @@ void ClientGC::PollMatchmakingBridge()
 
         if (liveDropIn)
         {
-            // A late join is not a new ready-up. Publish the stock ongoing-match
-            // state first so Legacy exits SEARCH and treats the reservation as
-            // reconnectable, then send the minimal QueueConnect 9107 on a later
-            // SharedGC tick.
-            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello ongoingHello;
-            BuildMatchmakingHello(ongoingHello);
-            ongoingHello.mutable_ongoingmatch()->CopyFrom(reserve);
-            SendMessageToGame(
-                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
-                ongoingHello);
-
+            // A player joining an ALREADY-RUNNING match must never enter the
+            // normal 5v5 ready/accept path. In particular, do not send a
+            // ClientHello.ongoingmatch containing the full nested reservation:
+            // this Legacy build treats that object as another ready-up and shows
+            // "Confirming match..." (1/5, 2/5, ...).
+            //
+            // First leave SEARCH while explicitly advertising the existing
+            // server as online/available. Then, on a later SharedGC tick, send
+            // only the minimal address+cookie 9107. With the engine Q roster
+            // already refreshed server-side, that packet is a direct
+            // QueueConnect/reconnect, not a new ACCEPT cycle.
             CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate ongoingUpdate;
             ongoingUpdate.set_matchmaking(0);
             ongoingUpdate.add_ongoingmatch_account_id_sessions(AccountId());
+            ongoingUpdate.mutable_global_stats()->set_players_online(
+                static_cast<uint32_t>(accountIds.size()));
             ongoingUpdate.mutable_global_stats()->set_players_searching(0);
             ongoingUpdate.mutable_global_stats()->set_servers_online(1);
             ongoingUpdate.mutable_global_stats()->set_servers_available(1);
+            ongoingUpdate.mutable_global_stats()->set_ongoing_matches(1);
             SendMessageToGame(
                 false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate,
                 ongoingUpdate);
@@ -2308,8 +2311,8 @@ void ClientGC::PollMatchmakingBridge()
             RevivalDisarmAcceptWatcher();
 
             Platform::Print(
-                "REVIVAL_LIVE_DROPIN_ONGOING_V2 match=%llu reservation=%llu "
-                "server=%s map=%s; QueueConnect scheduled\n",
+                "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V3 match=%llu reservation=%llu "
+                "server=%s map=%s; SEARCH stopped, server online, minimal 9107 scheduled\n",
                 static_cast<unsigned long long>(matchId),
                 static_cast<unsigned long long>(reservationId),
                 numericServerAddress.c_str(), mapName.c_str());
