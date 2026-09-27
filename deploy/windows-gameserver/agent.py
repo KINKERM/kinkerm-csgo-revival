@@ -1218,6 +1218,11 @@ class ServerSlot:
 
         print("[agent] Competitive match started")
 
+        print(
+            "[agent] REVIVAL_TEAMKILL_RULES_V1 active "
+            "(warn=200 damage, kick=300 damage, spawn=50/5s)"
+        )
+
         try:
             post_json(
                 self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/started",
