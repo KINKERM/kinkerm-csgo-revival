@@ -446,6 +446,9 @@ if (-not $SkipInstall) {
     if (-not $installedLauncherPyText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
         throw "Installed revival\launcher.py is missing live drop-in state serialization."
     }
+    if (-not $installedLauncherPyText.Contains("REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1")) {
+        throw "Installed revival\launcher.py is missing party auto-adopt matchmaking polling."
+    }
 
     $builtGcHash = (Get-FileHash $gcDll -Algorithm SHA256).Hash
     $installedGcHash = (Get-FileHash $installedGc -Algorithm SHA256).Hash
