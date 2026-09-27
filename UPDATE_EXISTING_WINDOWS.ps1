@@ -315,8 +315,8 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_OR_WIN_REPAIR_V1")) {
         throw "Built csgo_gc.dll is missing Operation OR win-branch repair."
     }
-    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_RECONNECT_V4")) {
-        throw "Built csgo_gc.dll is missing stock ongoing-match reconnect handling."
+    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_ACCEPT_V5")) {
+        throw "Built csgo_gc.dll is missing green ACCEPT live-drop-in handling."
     }
     if (-not $gcDllText.Contains("REVIVAL_MISSION_QUEUE_ONESHOT_V1")) {
         throw "Built csgo_gc.dll is missing one-shot Operation mission map targeting."
