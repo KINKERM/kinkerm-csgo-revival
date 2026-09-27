@@ -246,6 +246,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_LIVE_OPERATION_NO_REASSERT_V1")) {
         throw "Built csgo_gc.dll still lacks the no-reassert live Operation fix."
     }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_COMPLETION_PERSIST_V1")) {
+        throw "Built csgo_gc.dll still has the old reset-on-completion Operation behavior."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
@@ -458,6 +461,9 @@ if (-not $SkipInstall) {
     }
     if (-not $installedGcText.Contains("REVIVAL_LIVE_OPERATION_NO_REASSERT_V1")) {
         throw "Installed csgo_gc.dll still lacks the no-reassert live Operation fix."
+    }
+    if (-not $installedGcText.Contains("REVIVAL_OPERATION_COMPLETION_PERSIST_V1")) {
+        throw "Installed csgo_gc.dll still has the old reset-on-completion Operation behavior."
     }
     if (-not $installedGcText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Installed csgo_gc.dll is missing completed-match result fallback."
