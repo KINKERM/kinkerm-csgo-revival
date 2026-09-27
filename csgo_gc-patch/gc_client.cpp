@@ -28,8 +28,22 @@ namespace
 constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
-constexpr uint32_t RevivalInventoryFoundInCrate = (1u << 30) | 4u;
-constexpr const char *RevivalNativeUnboxChatMarker = "REVIVAL_NATIVE_UNBOX_CHAT_V1";
+constexpr uint32_t RevivalInventoryUnacked = (1u << 30);
+constexpr uint32_t RevivalInventoryReserved = (1u << 31);
+constexpr uint32_t RevivalInventoryFormatMask =
+    RevivalInventoryUnacked | RevivalInventoryReserved;
+// Source enum: DROPPED=1, CRAFTED=2, TRADED=3, PURCHASED=4,
+// FOUND_IN_CRATE=5. GetUnacknowledgedPositionFor() also sets BOTH
+// Unacked and Reserved, so a freshly opened crate is normally 0xC0000005.
+constexpr uint32_t RevivalInventoryFoundInCrateReason = 5u;
+constexpr const char *RevivalNativeUnboxChatMarker = "REVIVAL_NATIVE_UNBOX_CHAT_V2";
+
+bool RevivalInventoryIsFoundInCrate(uint32_t inventory)
+{
+    return (inventory & RevivalInventoryUnacked)
+        && ((inventory & ~RevivalInventoryFormatMask)
+            == RevivalInventoryFoundInCrateReason);
+}
 
 #ifdef _WIN32
 bool RevivalSpoolNativeItemAcknowledgement(
@@ -2688,17 +2702,19 @@ void ClientGC::SetItemPositions(GCMessageRead &messageRead)
                 && m_matchmakingServerId <= 1
                 && acknowledgement.has_iteminfo()
                 && acknowledgement.iteminfo().has_inventory()
-                && acknowledgement.iteminfo().inventory() == RevivalInventoryFoundInCrate)
+                && RevivalInventoryIsFoundInCrate(
+                    acknowledgement.iteminfo().inventory()))
             {
                 const uint64_t itemId = acknowledgement.iteminfo().itemid();
                 const bool spooled = RevivalSpoolNativeItemAcknowledgement(
                     itemId, messageWrite.Data(), messageWrite.Size());
                 Platform::Print(
                     spooled
-                        ? "%s queued crate acknowledgement item=%llu for direct-UDP server relay\n"
-                        : "%s failed to queue crate acknowledgement item=%llu\n",
+                        ? "%s queued crate acknowledgement item=%llu inventory=0x%08x for direct-UDP server relay\n"
+                        : "%s failed to queue crate acknowledgement item=%llu inventory=0x%08x\n",
                     RevivalNativeUnboxChatMarker,
-                    static_cast<unsigned long long>(itemId));
+                    static_cast<unsigned long long>(itemId),
+                    acknowledgement.iteminfo().inventory());
             }
 #endif
         }
