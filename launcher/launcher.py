@@ -116,6 +116,37 @@ def refresh_client_bootstrap(config: dict, cfg_path: str) -> None:
         print(f"[launcher] refreshed persistence credentials (epoch {epoch})")
 
 
+def watch_data_epoch(
+    config: dict,
+    cfg_path: str,
+    stop_event: threading.Event,
+    reset_event: threading.Event,
+) -> None:
+    initial = int(config.get("data_epoch") or 1)
+    url = (
+        config["server_url"].rstrip("/")
+        + "/client/bootstrap/"
+        + config["steam_id"]
+    )
+    while not stop_event.wait(5.0):
+        try:
+            with urllib.request.urlopen(url, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            epoch = int(data.get("data_epoch") or 1)
+            if epoch != initial:
+                config["data_epoch"] = str(epoch)
+                config["sync_token"] = str(data.get("sync_token") or "")
+                _save_config(cfg_path, config)
+                print(
+                    f"[launcher] MAJOR DATA RESET detected "
+                    f"(epoch {initial}->{epoch}); closing this session."
+                )
+                reset_event.set()
+                return
+        except Exception:
+            continue
+
+
 def inventory_path(config: dict) -> str:
     return os.path.join(config["csgo_dir"], "csgo_gc", "inventory.txt")
 
@@ -596,7 +627,7 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
             stop_event.wait(1.0)
 
 
-def launch_and_wait(config: dict) -> None:
+def launch_and_wait(config: dict, cfg_path: str) -> None:
     exe = os.path.join(config["csgo_dir"], config["game_exe"])
     if not os.path.exists(exe):
         print(f"[launcher] game executable not found: {exe}")
@@ -630,6 +661,14 @@ def launch_and_wait(config: dict) -> None:
     )
     bridge.start()
 
+    data_reset = threading.Event()
+    epoch_watch = threading.Thread(
+        target=watch_data_epoch,
+        args=(config, cfg_path, stop_bridge, data_reset),
+        name="revival-data-epoch", daemon=True,
+    )
+    epoch_watch.start()
+
     args = [exe] + config["game_args"].split()
     if "-condebug" not in args:
         args.append("-condebug")
@@ -644,9 +683,23 @@ def launch_and_wait(config: dict) -> None:
         sys.exit(4)
 
     print("[launcher] launched. Matchmaking bridge is active.")
+    while proc.poll() is None:
+        if data_reset.wait(0.5):
+            print("[launcher] closing CS:GO because the backend performed a major data reset.")
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+            break
     proc.wait()
     stop_bridge.set()
     bridge.join(timeout=2)
+    epoch_watch.join(timeout=2)
+
+    if data_reset.is_set():
+        print("[launcher] refreshing clean post-reset inventory.")
+        fetch_inventory(config)
+        return
 
     if not config["sync_token"]:
         print("[launcher] game closed. No sync_token set, so inventory persistence is off.")
@@ -680,7 +733,7 @@ def main() -> None:
         print("[launcher] launch_game is off; inventory synced, not launching.")
         return
 
-    launch_and_wait(config)
+    launch_and_wait(config, cfg_path)
 
 
 if __name__ == "__main__":
