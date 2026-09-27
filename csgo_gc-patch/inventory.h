@@ -112,6 +112,20 @@ public:
         CMsgSOSingleObject &destroy,
         CMsgGCItemCustomizationNotification &notification);
 
+    // Stock CS:GO Storage Unit support. Items remain real inventory SOs; the
+    // casket id is stored in attributes 272/273 and the container count in 270.
+    bool CasketItemAdd(uint64_t casketId,
+        uint64_t itemId,
+        CMsgSOSingleObject &modifyCasket,
+        CMsgSOSingleObject &modifyItem,
+        CMsgGCItemCustomizationNotification &notification);
+
+    bool CasketItemExtract(uint64_t casketId,
+        uint64_t itemId,
+        CMsgSOSingleObject &modifyCasket,
+        CMsgSOSingleObject &modifyItem,
+        CMsgGCItemCustomizationNotification &notification);
+
     // returns the item id and adds the item to the provided CMsgSOMultipleObjects
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
@@ -259,6 +273,10 @@ private:
     // create a new item of a specific type
     CSOEconItem &CreateItem(const CSOEconItem &copyFrom);
     CSOEconItem &CreateItem(uint32_t defIndex, ItemOrigin origin, UnacknowledgedType unacknowledgedType);
+
+    CSOEconItem *FindItem(uint64_t itemId);
+    uint64_t StorageReference(const CSOEconItem &item) const;
+    bool IncrementCasketItemsCount(CSOEconItem &storage, int delta);
 
     void ReadFromFile();
     void ReadItem(const KeyValue &itemKey, CSOEconItem &item) const;
