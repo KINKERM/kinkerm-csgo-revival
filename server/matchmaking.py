@@ -145,9 +145,13 @@ class MatchmakingCoordinator:
             int(x) for x in self._server.get("reserved_account_ids", [])
             if str(x).isdigit()
         }
+        live_drop_in = match.state == "in_match"
         native_ready_for_player = (
             match.reservation_id > 0
-            and player.account_id in acknowledged
+            and (
+                live_drop_in
+                or player.account_id in acknowledged
+            )
         )
         client_state = (
             "searching"
@@ -156,6 +160,7 @@ class MatchmakingCoordinator:
         )
         state: dict[str, Any] = {
             "state": client_state,
+            "drop_in": live_drop_in,
             "match_id": match.match_id,
             "reservation_id": match.reservation_id,
             "map": match.map_name,
