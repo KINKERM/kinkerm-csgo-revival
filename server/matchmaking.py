@@ -637,7 +637,7 @@ class MatchmakingCoordinator:
             stale_active = self._active_match_locked()
             if (
                 stale_active is not None
-                and stale_active.state == "in_match"
+                and stale_active.state in ("reserved", "in_match")
                 and started_match_id == 0
                 and ready_match_id == 0
             ):
@@ -648,7 +648,7 @@ class MatchmakingCoordinator:
                     ]
                     self._states[player.steamid] = {
                         "state": "idle",
-                        "previous_state": "in_match",
+                        "previous_state": stale_active.state,
                         "repaired_missed_end": True,
                     }
                 stale_active.state = "complete"
