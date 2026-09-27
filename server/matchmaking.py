@@ -296,9 +296,28 @@ class MatchmakingCoordinator:
             return
 
         # The oldest queued player owns the map choice. If they selected an
-        # Operation mission, only players with no mission-map preference or the
-        # same requested map are grouped into this server allocation.
+        # Operation mission whose map is not installed on the laptop, keep them
+        # queued with an explicit unavailable state instead of choosing a random
+        # fallback map and then rejecting that same player from the allocation.
         first = self._queue[0]
+        available = {
+            str(x) for x in self._server.get("maps", [])
+            if str(x) in self._map_pool
+        }
+        preferred = str(first.preferred_map or "").strip()
+        if preferred and available and preferred not in available:
+            self._states[first.steamid] = {
+                "state": "searching",
+                "waiting_account_ids": self._waiting_ids_locked(),
+                "players_searching": len(self._queue),
+                "players_required": 1,
+                "server_online": self._server_online_locked(),
+                "server_available": self._server_joinable_locked(),
+                "preferred_map": preferred,
+                "preferred_map_unavailable": True,
+            }
+            return
+
         map_name = self._choose_map_locked([first])
 
         players: list[QueueEntry] = []
