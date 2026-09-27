@@ -152,6 +152,8 @@ def main() -> None:
             b"REVIVAL_OPERATION_END_AUTHORITY_V1",
             b"REVIVAL_LIVE_OPERATION_NO_REASSERT_V1",
             b"REVIVAL_OPERATION_COMPLETION_PERSIST_V1",
+            b"REVIVAL_STORAGE_UNITS_V1",
+            b"REVIVAL_EARNED_DROPS_ONLY_V1",
             b"REVIVAL_SYNTHETIC_MATCH_END_V1",
             b"REVIVAL_NATIVE_DROP_REVEAL_V1",
             b"REVIVAL_NATIVE_ENDMATCH_UI_V1",
@@ -171,6 +173,15 @@ def main() -> None:
                 print(f"[build_pack] ERROR: stale csgo_gc.dll, missing {marker.decode()}")
                 sys.exit(5)
         print("[build_pack] verified current matchmaking DLL markers")
+
+    mainmenu_js = os.path.join(args.panorama, "scripts", "mainmenu.js")
+    if os.path.isfile(mainmenu_js):
+        with open(mainmenu_js, "r", encoding="utf-8", errors="replace") as fh:
+            mainmenu_text = fh.read()
+        if "mainmenu_store.xml" in mainmenu_text:
+            print("[build_pack] ERROR: main-menu Store/Coupons panel is still enabled")
+            sys.exit(6)
+        print("[build_pack] verified earned-drops-only main menu (Store/Coupons removed)")
 
     with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, path in runtime.items():
