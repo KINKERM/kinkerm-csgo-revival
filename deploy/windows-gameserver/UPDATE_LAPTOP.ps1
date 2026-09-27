@@ -186,13 +186,16 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_RELEASE_GAMEPLAY_V38")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_RELEASE_GAMEPLAY_V38"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V39")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V39"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
 }
-Write-Host "    Verified current V38 release gameplay laptop agent (MR8 + teamkill punishment)." -ForegroundColor Green
+if (-not $agentText.Contains("REVIVAL_ADMIN_RESET_V1")) {
+    throw "Downloaded laptop agent is missing admin major-reset handling."
+}
+Write-Host "    Verified current V39 public-release laptop agent (MR8 + teamkill + admin-reset handling)." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
