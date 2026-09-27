@@ -47,7 +47,7 @@ SEVENZR_URL = "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"
 # ==========================================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CSGO_APP = "Counter-Strike Global Offensive"
+CSGO_APP_DIRS = ("csgo legacy", "Counter-Strike Global Offensive")
 
 
 def log(msg: str) -> None:
@@ -118,9 +118,10 @@ def find_csgo_dir() -> str | None:
     if not root:
         return None
     for steamapps in library_paths(root):
-        candidate = os.path.join(steamapps, "common", CSGO_APP)
-        if os.path.isdir(candidate):
-            return candidate
+        for dirname in CSGO_APP_DIRS:
+            candidate = os.path.join(steamapps, "common", dirname)
+            if os.path.isdir(candidate) and os.path.isdir(os.path.join(candidate, "csgo")):
+                return candidate
     return None
 
 
@@ -557,8 +558,7 @@ def main() -> None:
         log(f"found CS:GO: {csgo_dir}")
     else:
         log("could not auto-detect your CS:GO Legacy install.")
-        log("open Steam -> right-click CS2 -> Properties -> Betas -> csgo_legacy,")
-        log("then find the folder containing csgo.exe / csgo_linux64.")
+        log("find the CS:GO Legacy folder containing the csgo subfolder.")
         csgo_dir = prompt("path to your CS:GO install folder")
         if not csgo_dir or not os.path.isdir(csgo_dir):
             log("no valid folder given, aborting.")
