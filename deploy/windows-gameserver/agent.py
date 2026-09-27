@@ -809,6 +809,7 @@ class ServerSlot:
 
             print(f"[agent] starting match {match_id} on {map_name} @ 64 tick")
             print("[agent] REVIVAL_Q_SLOT_PAD_V1 tournament extra-slot mode active (10 human slots, bots fill)")
+            print("[agent] reservation slot args: -tournament revival -tournament_extra_casters_slots 10 -maxplayers_override 10")
             if os.name == "nt":
                 creationflags = (
                     subprocess.CREATE_NEW_CONSOLE
