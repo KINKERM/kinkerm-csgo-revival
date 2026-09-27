@@ -285,6 +285,12 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_PASS_BRIDGE_V1")) {
         throw "Built csgo_gc.dll is missing direct Operation pass bridge support."
     }
+    if (-not $gcDllText.Contains("REVIVAL_QUEUE_RESTART_RACE_V1")) {
+        throw "Built csgo_gc.dll is missing stale matchmaking-state restart protection."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_CLIENT_QUEUE_START_GUARD_V2")) {
+        throw "Built csgo_gc.dll is missing multi-stop queue startup protection."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
