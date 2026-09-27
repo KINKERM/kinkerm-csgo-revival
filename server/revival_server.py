@@ -366,6 +366,15 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
             body = self._read_json_body()
             return self._send_json(200, self.matchmaking.server_heartbeat(body))
 
+        if path == "/matchmaking/item-ack":
+            body = self._read_json_body()
+            steamid = str(body.get("steamid", "")).strip()
+            payload_b64 = str(body.get("payload_b64", "")).strip()
+            if not steamid.isdigit() or not payload_b64 or len(payload_b64) > 100_000:
+                return self._send_json(400, {"error": "invalid item acknowledgement"})
+            result = self.matchmaking.queue_item_ack(steamid, payload_b64)
+            return self._send_json(200 if result.get("ok") else 409, result)
+
         if path == "/matchmaking/server/reward":
             body = self._read_json_body()
             steamid = str(body.get("steamid", "")).strip()
