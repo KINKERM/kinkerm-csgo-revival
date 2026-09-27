@@ -448,6 +448,9 @@ def _http_json(method: str, url: str, payload: dict | None = None) -> dict:
     return json.loads(raw.decode("utf-8")) if raw else {}
 
 
+REVIVAL_LAUNCHER_DROPIN_STATE_V1 = "REVIVAL_LAUNCHER_DROPIN_STATE_V1"
+
+
 def _write_mm_state(config: dict, state: dict) -> None:
     # 9107 carries both a printable server address and a numeric direct UDP IP.
     # playit normally gives us a hostname, so resolve it here rather than inside
@@ -462,7 +465,7 @@ def _write_mm_state(config: dict, state: dict) -> None:
             print(f"[launcher] matchmaking: could not resolve {host}: {exc}")
 
     fields = [
-        "state", "players_searching", "players_required", "server_online",
+        "state", "drop_in", "players_searching", "players_required", "server_online",
         "server_available", "match_id", "reservation_id", "map", "server_address",
         "public_host", "public_port", "direct_udp_ip", "game_type", "server_version",
         "server_id", "error", "last_match_id", "last_map",
@@ -497,6 +500,7 @@ def _write_mm_state(config: dict, state: dict) -> None:
 
 def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
     base = config["server_url"].rstrip("/")
+    print(f"[launcher] {REVIVAL_LAUNCHER_DROPIN_STATE_V1} active")
     request_path = _mm_request_path(config)
     last_request = ""
     searching = False
