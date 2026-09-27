@@ -2,6 +2,8 @@
 var MatchmakingReconnect = ( function()
 {
 	var m_elOngoingMatch = $.GetContextPanel();
+	var m_bRevivalAutoReconnectIssued = false;
+	var REVIVAL_PANORAMA_AUTO_RECONNECT_V1 = true;
 	
 	var _Init = function()
 	{
@@ -30,9 +32,22 @@ var MatchmakingReconnect = ( function()
 		var bHasOnGoingMatch = CompetitiveMatchAPI.HasOngoingMatch();
 		
 		m_elOngoingMatch.SetHasClass( 'hidden', !bHasOnGoingMatch );
-		if ( m_elOngoingMatch )
+
+		// Revival late joins are published as an ongoing match by the GC.
+		// Use the game's own reconnect API immediately. The engine then requests
+		// ClientRequestJoinServerData, which the revival GC answers with the live
+		// server address + reservation rather than starting another ACCEPT flow.
+		if ( !bHasOnGoingMatch )
 		{
+			m_bRevivalAutoReconnectIssued = false;
 			return;
+		}
+
+		if ( !m_bRevivalAutoReconnectIssued )
+		{
+			m_bRevivalAutoReconnectIssued = true;
+			$.Msg( '[REVIVAL] REVIVAL_PANORAMA_AUTO_RECONNECT_V1 reconnecting to ongoing match' );
+			CompetitiveMatchAPI.ActionReconnectToOngoingMatch();
 		}
 	};
 
