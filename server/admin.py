@@ -80,7 +80,7 @@ def main() -> None:
     p_gc.add_argument("steamid")
     p_gc.add_argument("case", help="case id from `catalog`")
     p_gc.add_argument("--count", type=int, default=1)
-    p_gc.add_argument("--no-key", action="store_true", help="do not bundle the matching key")
+    p_gc.add_argument("--with-key", action="store_true", help="legacy testing only: also grant the matching key")
 
     p_gi = sub.add_parser("grant-item", help="give a player an arbitrary item by def_index")
     p_gi.add_argument("steamid")
@@ -144,7 +144,7 @@ def main() -> None:
 
     if args.cmd == "grant-case":
         body = {"steamid": args.steamid, "case": args.case,
-                "count": args.count, "include_key": not args.no_key}
+                "count": args.count, "include_key": bool(args.with_key)}
         result = request(args.server, "POST", "/admin/grant-case", token, body)
         print(json.dumps(result, indent=2))
         return
