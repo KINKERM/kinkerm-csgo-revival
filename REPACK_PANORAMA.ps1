@@ -222,10 +222,10 @@ if (-not $packedText.Contains("REVIVAL_MISSION_SELECT_V1")) {
 if (-not $packedText.Contains("revival operation hud")) {
     throw "Packed code.pbin is missing the in-game Operation mission HUD fallback"
 }
-if (-not $packedText.Contains("REVIVAL_OPERATION_STORE_ONLY_V1")) {
+if (-not $packedText.Contains("itemsByCategory.operation = _OperationStoreSetupObj")) {
     throw "Packed code.pbin is missing the Operation-only bottom shop"
 }
-if (-not $packedText.Contains("REVIVAL_KEYLESS_CASES_V1")) {
+if (-not $packedText.Contains("revivalkeylesscase")) {
     throw "Packed code.pbin is missing keyless earned-case UI"
 }
 Write-Host "PBIN queue + Operation + keyless-case markers OK" -ForegroundColor Green
