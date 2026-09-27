@@ -165,7 +165,7 @@ if (-not (Test-Path $insertionDest)) {
         Write-Host "    Installed cs_insertion2.bsp from Steam Workshop cache." -ForegroundColor Green
     }
     else {
-        Write-Warning "Insertion II is not installed. Subscribe/download Workshop item 2395333051 on this Steam library, install 7-Zip if Steam stored it as legacy.bin, then rerun UPDATE_LAPTOP.ps1."
+        throw "Insertion II is required by Operation missions but cs_insertion2.bsp is missing. Subscribe/download Steam Workshop item 2395333051 (or compatibility item 2760936305), install 7-Zip if Steam stored it as legacy.bin, then rerun UPDATE_LAPTOP.ps1."
     }
 }
 
