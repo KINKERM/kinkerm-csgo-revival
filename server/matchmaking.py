@@ -411,7 +411,26 @@ class MatchmakingCoordinator:
 
             existing = self._states.get(steamid, {})
             if existing.get("state") in ("reserved", "in_match"):
-                return dict(existing)
+                active = self._active_match_locked()
+                attached = (
+                    active is not None
+                    and any(p.steamid == steamid for p in active.players)
+                )
+                if attached:
+                    self._states[steamid] = self._state_for_match_player_locked(
+                        active,
+                        next(p for p in active.players if p.steamid == steamid),
+                    )
+                    return dict(self._states[steamid])
+
+                # Repair stale terminal state left behind by a missed match-end
+                # callback instead of making every later queue attempt reuse it.
+                self._states[steamid] = {
+                    "state": "idle",
+                    "previous_state": existing.get("state", ""),
+                    "repaired_stale_match": True,
+                }
+                existing = self._states[steamid]
 
             # Idempotent repair path: if a previous build left this SteamID in
             # "searching" without a queue entry, or it is already attached to a
@@ -612,6 +631,36 @@ class MatchmakingCoordinator:
                 self.server_match_started(started_match_id)
 
             ready_match_id = int(body.get("ready_match_id") or 0)
+
+            # If /server/ended was lost but the same live agent now reports no
+            # started or ready match, retire the stale backend in_match object.
+            stale_active = self._active_match_locked()
+            if (
+                stale_active is not None
+                and stale_active.state == "in_match"
+                and started_match_id == 0
+                and ready_match_id == 0
+            ):
+                for player in stale_active.players:
+                    self._queue = [
+                        q for q in self._queue
+                        if q.steamid != player.steamid
+                    ]
+                    self._states[player.steamid] = {
+                        "state": "idle",
+                        "previous_state": "in_match",
+                        "repaired_missed_end": True,
+                    }
+                stale_active.state = "complete"
+                if (
+                    self._assignment
+                    and int(self._assignment.get("match_id") or 0)
+                    == stale_active.match_id
+                ):
+                    self._assignment = None
+                self._server["ready_match_id"] = 0
+                self._server["reserved_account_ids"] = []
+
             native_reservation_id = int(body.get("reservation_id") or 0)
             if ready_match_id and native_reservation_id:
                 self._server["ready_match_id"] = ready_match_id
