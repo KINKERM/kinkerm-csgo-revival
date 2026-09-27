@@ -300,6 +300,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_OR_WIN_REPAIR_V1")) {
         throw "Built csgo_gc.dll is missing Operation OR win-branch repair."
     }
+    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_DIRECT_V1")) {
+        throw "Built csgo_gc.dll is missing direct live-match drop-in connect handling."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
