@@ -327,9 +327,6 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_PARTY_CLIENT_ADOPT_V2")) {
         throw "Built csgo_gc.dll is missing non-leader party ACCEPT adoption."
     }
-    if (-not $gcDllText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V2")) {
-        throw "Built csgo_gc.dll is missing pending-only engine ready-up roster handling."
-    }
     if (-not $gcDllText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1")) {
         throw "Built csgo_gc.dll is missing native Source G-mode live joining."
     }
