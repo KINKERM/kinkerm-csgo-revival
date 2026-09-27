@@ -28,6 +28,8 @@ import sys
 import zipfile
 import shutil
 import subprocess
+import tempfile
+import webbrowser
 import urllib.request
 import urllib.error
 
@@ -40,6 +42,8 @@ SERVER_URL = "https://cuckersfun.tail52305f.ts.net"
 # so that csgo_gc/csgo_gc.dll / config.txt / items_game.txt land in the CS:GO install.
 # See launcher/build_pack.py to build & upload it.
 PACK_URL = "https://github.com/KINKERM/kinkerm-csgo-revival/releases/latest/download/csgo-revival-pack.zip"
+INSERTION2_WORKSHOP_IDS = ("2395333051", "2760936305")
+INSERTION2_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=2395333051"
 # ==========================================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -157,6 +161,141 @@ def download(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "csgo-revival-installer"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         return resp.read()
+
+
+def _find_7zip() -> str | None:
+    candidates = [
+        shutil.which("7z"),
+        shutil.which("7zz"),
+        shutil.which("7za"),
+    ]
+    if sys.platform.startswith("win"):
+        candidates += [
+            os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "7-Zip", "7z.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "7-Zip", "7z.exe"),
+        ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _workshop_item_dirs() -> list[str]:
+    root = steam_root()
+    if not root:
+        return []
+    out: list[str] = []
+    for steamapps in library_paths(root):
+        base = os.path.join(steamapps, "workshop", "content", "730")
+        for wid in INSERTION2_WORKSHOP_IDS:
+            item = os.path.join(base, wid)
+            if os.path.isdir(item):
+                out.append(item)
+    return out
+
+
+def _copy_insertion2_payload(src_root: str, csgo_dir: str) -> bool:
+    bsp = ""
+    for base, dirs, files in os.walk(src_root):
+        for name in files:
+            if name.lower() == "cs_insertion2.bsp":
+                bsp = os.path.join(base, name)
+                break
+        if bsp:
+            break
+    if not bsp:
+        return False
+
+    csgo_root = os.path.join(csgo_dir, "csgo")
+    maps_dir = os.path.join(csgo_root, "maps")
+    os.makedirs(maps_dir, exist_ok=True)
+    shutil.copy2(bsp, os.path.join(maps_dir, "cs_insertion2.bsp"))
+
+    # Preserve any optional nav/radar/material payload included with the Workshop
+    # archive. Most assets are packed into the BSP, but copying these makes the
+    # installer robust across Workshop revisions.
+    for folder in ("materials", "models", "resource", "scripts", "sound"):
+        src = os.path.join(src_root, folder)
+        if os.path.isdir(src):
+            shutil.copytree(src, os.path.join(csgo_root, folder), dirs_exist_ok=True)
+    src_maps = os.path.join(src_root, "maps")
+    if os.path.isdir(src_maps):
+        for name in os.listdir(src_maps):
+            low = name.lower()
+            if low.startswith("cs_insertion2.") and low != "cs_insertion2.bsp":
+                shutil.copy2(
+                    os.path.join(src_maps, name),
+                    os.path.join(maps_dir, name),
+                )
+    return True
+
+
+def _extract_workshop_legacy(archive: str, dest: str) -> bool:
+    try:
+        if zipfile.is_zipfile(archive):
+            with zipfile.ZipFile(archive) as zf:
+                zf.extractall(dest)
+            return True
+    except (OSError, zipfile.BadZipFile):
+        pass
+
+    seven = _find_7zip()
+    if not seven:
+        return False
+    proc = subprocess.run(
+        [seven, "x", "-y", f"-o{dest}", archive],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return proc.returncode == 0
+
+
+def install_insertion2(csgo_dir: str) -> None:
+    target = os.path.join(csgo_dir, "csgo", "maps", "cs_insertion2.bsp")
+    if os.path.isfile(target):
+        log("Insertion II already installed.")
+        return
+
+    def try_cache() -> bool:
+        for item_dir in _workshop_item_dirs():
+            if _copy_insertion2_payload(item_dir, csgo_dir):
+                return True
+            archives = [
+                os.path.join(item_dir, n)
+                for n in os.listdir(item_dir)
+                if n.lower().endswith("legacy.bin")
+            ]
+            for archive in archives:
+                with tempfile.TemporaryDirectory(prefix="revival-insertion2-") as tmp:
+                    if _extract_workshop_legacy(archive, tmp) and _copy_insertion2_payload(tmp, csgo_dir):
+                        return True
+        return False
+
+    if try_cache():
+        log("installed Insertion II from your Steam Workshop cache.")
+        return
+
+    log("Insertion II is required for its Operation mission but is not installed.")
+    log("Opening the original CS:GO Workshop item in Steam.")
+    try:
+        webbrowser.open(INSERTION2_WORKSHOP_URL)
+    except Exception:
+        pass
+    log("Subscribe to Insertion2, wait for Steam to finish downloading it, then press Enter.")
+    try:
+        input()
+    except EOFError:
+        pass
+
+    if try_cache():
+        log("installed Insertion II from Steam Workshop.")
+        return
+
+    log("Insertion II still was not found.")
+    log("Expected Workshop IDs: " + ", ".join(INSERTION2_WORKSHOP_IDS))
+    log("If Steam downloaded a legacy.bin archive, install 7-Zip and run install.py again.")
+    log(f"Final required file: {target}")
+    sys.exit(4)
 
 
 def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
