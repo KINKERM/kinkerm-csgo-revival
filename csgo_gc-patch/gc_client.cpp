@@ -2126,6 +2126,7 @@ void ClientGC::PollMatchmakingBridge()
     {
         const uint64_t reservationId = BridgeU64(state, "reservation_id", 0);
         const uint64_t matchId = BridgeU64(state, "match_id", reservationId);
+        const bool liveDropIn = BridgeU64(state, "drop_in", 0) != 0;
 
         auto addressIt = state.find("server_address");
         auto mapIt = state.find("map");
@@ -2272,13 +2273,31 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingServerAddress = numericServerAddress;
         m_matchmakingMap = mapName;
         m_matchmakingFinalReserveSent = false;
-        RevivalArmAcceptWatcher(
-            directUdpIp, static_cast<uint16_t>(port),
-            static_cast<uint32_t>(accountIds.size()));
+        if (liveDropIn)
+        {
+            // The server is already playing this exact reservation. Do not run
+            // a fresh ready/accept cycle; immediately send the address+cookie
+            // reserve that moves retail Legacy into QueueConnect.
+            SendMatchmakingConnectReserve();
+            Platform::Print(
+                "REVIVAL_LIVE_DROPIN_DIRECT_V1 match=%llu reservation=%llu "
+                "server=%s map=%s\n",
+                static_cast<unsigned long long>(matchId),
+                static_cast<unsigned long long>(reservationId),
+                numericServerAddress.c_str(), mapName.c_str());
+        }
+        else
+        {
+            RevivalArmAcceptWatcher(
+                directUdpIp, static_cast<uint16_t>(port),
+                static_cast<uint32_t>(accountIds.size()));
+        }
+
         Platform::Print(
-            "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu route=%s map=%s server=%s game_type=%u version=%u\n",
+            "matchmaking: MATCH FOUND reservation=%llu gameserver=%llu route=%s map=%s server=%s game_type=%u version=%u drop_in=%u\n",
             reservationId, serverId, reportedServerId ? "steamid+direct" : "serverid-1+direct-udp",
-            mapName.c_str(), numericServerAddress.c_str(), gameType, serverVersion);
+            mapName.c_str(), numericServerAddress.c_str(), gameType, serverVersion,
+            liveDropIn ? 1u : 0u);
         return;
     }
 
