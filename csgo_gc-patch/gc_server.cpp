@@ -36,7 +36,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_OPERATION_END_AUTHORITY_V1 active; REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 active; REVIVAL_Q_TO_G_COOKIE_SWAP_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_OPERATION_END_AUTHORITY_V1 active; REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -548,32 +548,6 @@ bool WriteRewardSpool(
     return true;
 }
 
-uint64_t RevivalJoinInProgressCookie(uint64_t matchId)
-{
-    // Source only rebuilds m_numGameSlots when the reservation COOKIE changes.
-    // Reusing the Q cookie while changing only Q->G leaves the old queued-match
-    // human-slot cap in place and ConnectClient rejects late joiners as
-    // #Valve_Reject_Server_Full. Use a distinct stable cookie for the live G
-    // reservation so SetReservationCookie executes its G branch.
-    uint64_t cookie =
-        GameServerCookieId
-        ^ (matchId * 0x9E3779B97F4A7C15ull)
-        ^ 0x474A4F494E5F4C49ull; // "GJOIN_LI"
-    if (!cookie || cookie == GameServerCookieId)
-        cookie = GameServerCookieId ^ 0x8000000000000000ull;
-    return cookie;
-}
-
-std::string BuildReservationReleasePayload(
-    uint64_t cookie, uint64_t matchId)
-{
-    char payload[96];
-    snprintf(payload, sizeof(payload), "Q%llx,%llx,0:",
-        static_cast<unsigned long long>(cookie),
-        static_cast<unsigned long long>(matchId ? matchId : cookie));
-    return payload;
-}
-
 std::string BuildQueuedReservationPayload(
     uint64_t cookie, uint64_t matchId,
     const CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve &reserve,
@@ -587,23 +561,38 @@ std::string BuildQueuedReservationPayload(
 
     std::string payload = header;
 
-    // Q = initial queued Competitive reservation. Source parses [AccountIDHex]
-    // entries and tracks stage 1/2 ready-up for every player.
-    // G = joinable in-progress reservation. Source intentionally keeps no
-    // m_arrReservationPlayers roster and its A2S_RESERVE_CHECK path immediately
-    // answers awaiting=0 for a valid matching cookie. That is the stock late-
-    // join behavior and avoids the stage=1 awaiting=127 total=0 failure.
     if (!joinInProgress)
     {
         char token[24];
         for (int i = 0; i < reserve.account_ids_size(); ++i)
         {
+            // [] are the real queued players. They are the ONLY accounts Source
+            // waits on in the green ACCEPT flow.
             snprintf(token, sizeof(token), "[%x]", reserve.account_ids(i));
+            payload += token;
+        }
+
+        // Source's queued reservation code sets m_numGameSlots to:
+        //   ready-up players + tournament caster slots.
+        // {} entries are counted as extra slots but are NOT part of the ready-up
+        // roster. Pad to 10 so bot-filled games still have room for humans that
+        // join later, without making the initial ACCEPT wait for fake players.
+        const int targetHumanSlots = 10;
+        const int extraSlots = std::max(
+            0, targetHumanSlots - reserve.account_ids_size());
+        for (int i = 0; i < extraSlots; ++i)
+        {
+            // Deliberately impossible/high synthetic AccountIDs. They only need
+            // to be nonzero because Source merely counts valid {} tokens here.
+            const uint32_t syntheticCaster =
+                0xFFF00000u + static_cast<uint32_t>(i + 1);
+            snprintf(token, sizeof(token), "{%x}", syntheticCaster);
             payload += token;
         }
     }
     return payload;
 }
+
 } // namespace
 
 void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
@@ -1299,37 +1288,12 @@ void ServerGC::SendMatchmakingReservation()
         ReservationNumber(kv, "live_joinable", 0) != 0;
     if (joinInProgress || queueReserve.account_ids_size())
     {
-        const uint64_t engineCookie = joinInProgress
-            ? RevivalJoinInProgressCookie(matchId)
-            : GameServerCookieId;
         const std::string queuePayload =
             BuildQueuedReservationPayload(
-                engineCookie, matchId, queueReserve, joinInProgress);
+                GameServerCookieId, matchId, queueReserve, joinInProgress);
         const bool queueChanged = queuePayload != m_lastQueueReservationPayload;
         if (queueChanged || ++m_queueReservationRefreshTicks >= 4)
         {
-            // Critical Source behavior: changing only the reservation prefix
-            // Q->G with the SAME cookie does not run SetReservationCookie's
-            // body, so m_numGameSlots remains the original queued-party size.
-            // Release the old Q reservation first, then install G with a NEW
-            // cookie. This forces Source to clear the queued human-slot cap.
-            if (joinInProgress
-                && (m_lastQueueReservationPayload.empty()
-                    || m_lastQueueReservationPayload[0] == 'Q'))
-            {
-                const std::string releasePayload =
-                    BuildReservationReleasePayload(GameServerCookieId, matchId);
-                PostToHost(
-                    HostEvent::ReserveServerForQueuedGame, matchId,
-                    releasePayload.data(),
-                    static_cast<uint32_t>(releasePayload.size()));
-                Platform::Print(
-                    "REVIVAL_Q_TO_G_COOKIE_SWAP_V1 released Q cookie=%llu match=%llu before G cookie=%llu\n",
-                    static_cast<unsigned long long>(GameServerCookieId),
-                    static_cast<unsigned long long>(matchId),
-                    static_cast<unsigned long long>(engineCookie));
-            }
-
             PostToHost(HostEvent::ReserveServerForQueuedGame, matchId,
                 queuePayload.data(), static_cast<uint32_t>(queuePayload.size()));
             m_lastQueueReservationPayload = queuePayload;
@@ -1337,11 +1301,11 @@ void ServerGC::SendMatchmakingReservation()
             if (queueChanged)
             {
                 Platform::Print(
-                    "REVIVAL_JOIN_IN_PROGRESS_G_V1 engine reservation mode=%c cookie=%llu match=%llu pending_roster=%d full_roster=%d\n",
+                    "REVIVAL_Q_SLOT_PAD_V1 engine reservation mode=%c match=%llu "
+                    "ready_players=%d padded_human_slots=10\n",
                     joinInProgress ? 'G' : 'Q',
-                    static_cast<unsigned long long>(engineCookie),
                     static_cast<unsigned long long>(matchId),
-                    queueReserve.account_ids_size(), reserve.account_ids_size());
+                    queueReserve.account_ids_size());
             }
         }
     }
