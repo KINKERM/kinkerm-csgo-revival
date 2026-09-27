@@ -23,9 +23,15 @@ Run:  python3 revival_server.py --host 0.0.0.0 --port 8787
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
+import html
 import json
 import os
 import secrets
+import time
+from http.cookies import SimpleCookie
+from urllib.parse import parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import inventory as inventory_mod
@@ -36,6 +42,14 @@ from store import PlayerStore
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
 CONFIG_PATH = os.path.join(DATA_DIR, "server_config.json")
+
+
+def save_config(config: dict) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(config, fh, indent=2)
+    os.replace(tmp, CONFIG_PATH)
 
 
 def load_config() -> dict:
@@ -50,6 +64,8 @@ def load_config() -> dict:
     defaults = {
         "admin_token": lambda: secrets.token_hex(24),
         "sync_token": lambda: secrets.token_hex(24),
+        "admin_panel_password": lambda: secrets.token_urlsafe(36),
+        "data_epoch": lambda: 1,
         "players_file": lambda: os.path.join(DATA_DIR, "players.json"),
         "catalog_file": lambda: os.path.join(DATA_DIR, "catalog.json"),
     }
@@ -66,8 +82,7 @@ def load_config() -> dict:
         changed = True
 
     if changed:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
-            json.dump(config, fh, indent=2)
+        save_config(config)
         print(f"[revival] wrote config -> {CONFIG_PATH}")
     return config
 
@@ -81,6 +96,8 @@ class Handler(BaseHTTPRequestHandler):
     admin_token: str
     sync_token: str
     matchmaking: MatchmakingCoordinator
+    config_ref: dict
+    admin_sessions: dict[str, float] = {}
     gold_tradeup_crate_def: int = 0
     gold_tradeup_key_def: int = 0
 
@@ -96,6 +113,18 @@ class Handler(BaseHTTPRequestHandler):
     def _send_text(self, code: int, text: str) -> None:
         self._send(code, text.encode("utf-8"), "text/plain; charset=utf-8")
 
+    def _send_html(self, code: int, text: str, extra_headers: dict[str, str] | None = None) -> None:
+        body = text.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
     def _send_json(self, code: int, obj) -> None:
         self._send(code, json.dumps(obj).encode("utf-8"), "application/json")
 
@@ -104,11 +133,77 @@ class Handler(BaseHTTPRequestHandler):
             self.headers.get("X-Admin-Token", ""), self.admin_token
         )
 
-    def _sync_authed(self) -> bool:
-        # accept the sync token OR the admin token (admin is a superset)
+    def _client_sync_token(self, steamid: str) -> str:
+        epoch = int(self.config_ref.get("data_epoch", 1) or 1)
+        payload = f"{steamid}:{epoch}".encode("utf-8")
+        return hmac.new(
+            self.sync_token.encode("utf-8"), payload, hashlib.sha256
+        ).hexdigest()
+
+    def _sync_authed(self, steamid: str) -> bool:
         provided = self.headers.get("X-Sync-Token", "")
-        return (secrets.compare_digest(provided, self.sync_token)
-                or secrets.compare_digest(provided, self.admin_token))
+        expected = self._client_sync_token(steamid)
+        return (
+            secrets.compare_digest(provided, expected)
+            or secrets.compare_digest(provided, self.sync_token)
+            or secrets.compare_digest(provided, self.admin_token)
+        )
+
+    def _panel_authed(self) -> bool:
+        cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        morsel = cookie.get("revival_admin")
+        if not morsel:
+            return False
+        token = morsel.value
+        expiry = self.admin_sessions.get(token, 0.0)
+        if expiry <= time.time():
+            self.admin_sessions.pop(token, None)
+            return False
+        return True
+
+    def _read_form_body(self) -> dict[str, str]:
+        raw = self._read_raw_body()
+        parsed = parse_qs(raw, keep_blank_values=True)
+        return {k: (v[-1] if v else "") for k, v in parsed.items()}
+
+    def _admin_login_page(self, error: str = "") -> str:
+        err = f"<p class='error'>{html.escape(error)}</p>" if error else ""
+        return f"""<!doctype html><html><head><meta charset='utf-8'>
+<title>CS:GO Revival Admin</title>
+<style>body{{font-family:Segoe UI,Arial;background:#111827;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}}
+.box{{width:min(520px,90vw);background:#1f2937;padding:28px;border-radius:14px;box-shadow:0 16px 50px #0008}}
+input,button{{width:100%;box-sizing:border-box;padding:12px;margin-top:12px;border-radius:8px;border:0}}
+button{{background:#2563eb;color:white;font-weight:700;cursor:pointer}}.error{{color:#fca5a5}}</style></head>
+<body><form class='box' method='post' action='/admin/login'><h1>CS:GO Revival Admin</h1>
+<p>Enter the private admin-panel password from server_config.json.</p>{err}
+<input type='password' name='password' autocomplete='current-password' autofocus required>
+<button type='submit'>Open Admin Panel</button></form></body></html>"""
+
+    def _admin_page(self, notice: str = "") -> str:
+        state = self.matchmaking.snapshot()
+        players = len(self.store.list_players())
+        epoch = int(self.config_ref.get("data_epoch", 1) or 1)
+        banner = f"<p class='ok'>{html.escape(notice)}</p>" if notice else ""
+        server = "ONLINE" if state.get("server_online") else "OFFLINE"
+        return f"""<!doctype html><html><head><meta charset='utf-8'>
+<title>CS:GO Revival Admin</title>
+<style>body{{font-family:Segoe UI,Arial;background:#0b1220;color:#e5e7eb;margin:0;padding:32px}}
+.wrap{{max-width:900px;margin:auto}}.card{{background:#172033;padding:22px;border-radius:14px;margin:16px 0}}
+.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}}.stat{{background:#0f172a;padding:16px;border-radius:10px}}
+.danger{{border:1px solid #7f1d1d;background:#2b1116}}button{{padding:12px 18px;border:0;border-radius:8px;font-weight:700;cursor:pointer}}
+.wipe{{background:#dc2626;color:#fff}}.ok{{color:#86efac}}</style></head><body><div class='wrap'>
+<h1>CS:GO Revival Admin</h1>{banner}<div class='card stats'>
+<div class='stat'><b>Players</b><br>{players}</div>
+<div class='stat'><b>Data epoch</b><br>{epoch}</div>
+<div class='stat'><b>Game server</b><br>{server}</div></div>
+<div class='card danger'><h2>Major Update Reset</h2>
+<p>Creates a timestamped backup, clears every player's inventory, Operation pass/progress/stars,
+profile level/XP/rank/wins and transient matchmaking/reward state, then invalidates every pre-reset upload.</p>
+<form method='post' action='/admin/reset-major'
+onsubmit="return confirm('Reset ALL revival player data? A backup will be kept on the host.');">
+<input type='hidden' name='confirm' value='RESET ALL REVIVAL DATA'>
+<button class='wipe' type='submit'>Reset All Player Data</button></form></div>
+</div></body></html>"""
 
     def _read_raw_body(self) -> str:
         length = int(self.headers.get("Content-Length", "0") or "0")
