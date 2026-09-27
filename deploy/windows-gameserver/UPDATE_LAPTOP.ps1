@@ -348,7 +348,7 @@ foreach ($marker in @(
     "REVIVAL_SERVER_DROP_IMPORT_V1",
     "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1",
     "REVIVAL_JOIN_IN_PROGRESS_G_V1",
-    "REVIVAL_Q_TO_G_COOKIE_SWAP_V1"
+    "REVIVAL_Q_SLOT_PAD_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
@@ -357,8 +357,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V48")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V48"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V49")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V49"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -381,10 +381,10 @@ if (-not $agentText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation ref
 if (-not $agentText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1 match")) {
     throw "Downloaded laptop agent is missing Q-to-G live-match reservation switching."
 }
-if (-not $agentText.Contains("engine_cookie=")) {
-    throw "Downloaded laptop agent is missing accepted G-cookie publication."
+if (-not $agentText.Contains("REVIVAL_Q_SLOT_PAD_V1 tournament extra-slot mode active")) {
+    throw "Downloaded laptop agent is missing ten-human-slot queued reservation support."
 }
-Write-Host "    Verified current V48 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
+Write-Host "    Verified current V49 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
