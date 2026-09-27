@@ -1,5 +1,6 @@
 # runtime data (per-deployment; do not commit)
 server/data/players.json
+server/data/players.json.*.bak
 server/data/catalog.json
 server/data/server_config.json
 
