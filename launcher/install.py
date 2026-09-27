@@ -347,14 +347,20 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
         with zf.open(member) as src, open(dest, "wb") as out:
             shutil.copyfileobj(src, out)
 
-    # PBIN slots are fixed-size. Compact only the matchmaking files modified by
-    # this branch so their packed payloads stay below the original slot sizes.
+    # Legacy PBIN has fixed per-script capacities. Mirror the host repacker's
+    # compaction so public installs fit the same slots as the tested host build.
     xml_path = os.path.join(stage_dir, "layout", "mainmenu_play.xml")
     js_path = os.path.join(stage_dir, "scripts", "mainmenu_play.js")
     css_path = os.path.join(stage_dir, "styles", "mainmenu_play.css")
-    operation_js_path = os.path.join(
-        stage_dir, "scripts", "operation", "operation_mainmenu.js"
-    )
+    compact_paths = [
+        os.path.join(stage_dir, "scripts", "operation", "operation_mainmenu.js"),
+        os.path.join(stage_dir, "scripts", "operation", "operation_mission_card.js"),
+        os.path.join(stage_dir, "scripts", "mainmenu.js"),
+        os.path.join(stage_dir, "scripts", "mainmenu_store.js"),
+        os.path.join(stage_dir, "scripts", "popups", "popup_capability_decodable.js"),
+        os.path.join(stage_dir, "scripts", "popups", "popup_inspect_async-bar.js"),
+        os.path.join(stage_dir, "scripts", "hud", "hudmissionpanel.js"),
+    ]
 
     with open(xml_path, "r", encoding="utf-8-sig") as fh:
         xml = fh.read()
@@ -362,11 +368,24 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     with open(xml_path, "w", encoding="utf-8", newline="") as fh:
         fh.write(xml)
 
-    for path in (js_path, css_path, operation_js_path):
+    # Keep the stock queue JS/CSS conservative; aggressively compact only our
+    # release UI patches by stripping indentation, blank lines and whole-line comments.
+    for path in (js_path, css_path):
         with open(path, "r", encoding="utf-8-sig") as fh:
             raw = fh.read()
         compact = "\n".join(
             line.rstrip() for line in raw.splitlines() if line.strip()
+        )
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(compact)
+
+    for path in compact_paths:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            raw = fh.read()
+        compact = "\n".join(
+            line.strip()
+            for line in raw.splitlines()
+            if line.strip() and not line.strip().startswith("//")
         )
         with open(path, "w", encoding="utf-8", newline="") as fh:
             fh.write(compact)
@@ -390,8 +409,14 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
             or b"_GetRevivalValidationMapGroup" not in packed_bytes):
         log("rebuilt code.pbin is missing real stock-mapgroup Revival markers")
         sys.exit(3)
+    if b"itemsByCategory.operation = _OperationStoreSetupObj" not in packed_bytes:
+        log("rebuilt code.pbin is missing the Operation-only shop")
+        sys.exit(3)
+    if b"revivalkeylesscase" not in packed_bytes:
+        log("rebuilt code.pbin is missing keyless case support")
+        sys.exit(3)
 
-    log("Panorama code.pbin rebuilt and panorama.dll patch verified")
+    log("Panorama code.pbin rebuilt and release markers verified")
 
 
 def install_pack(csgo_dir: str) -> None:
