@@ -378,6 +378,9 @@ if (-not $agentText.Contains("REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 queued")) {
 if (-not $agentText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation refreshed")) {
     throw "Downloaded laptop agent is missing exact engine ready-up roster reporting."
 }
+if (-not $agentText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1 match")) {
+    throw "Downloaded laptop agent is missing Q-to-G live-match reservation switching."
+}
 Write-Host "    Verified current V46 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
