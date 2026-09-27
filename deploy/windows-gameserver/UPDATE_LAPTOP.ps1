@@ -109,6 +109,66 @@ finally {
     Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# Ensure the Operation Riptide Insertion II mission is actually hostable.
+$insertionDest = Join-Path $CsgoDir "csgo\maps\cs_insertion2.bsp"
+if (-not (Test-Path $insertionDest)) {
+    $steamapps = Split-Path (Split-Path $CsgoDir -Parent) -Parent
+    $workshopBase = Join-Path $steamapps "workshop\content\730"
+    $workshopIds = @("2395333051", "2760936305")
+    $installedInsertion = $false
+
+    foreach ($wid in $workshopIds) {
+        $itemDir = Join-Path $workshopBase $wid
+        if (-not (Test-Path $itemDir)) { continue }
+
+        $directBsp = Get-ChildItem $itemDir -Recurse -Filter "cs_insertion2.bsp" -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($directBsp) {
+            New-Item (Split-Path $insertionDest -Parent) -ItemType Directory -Force | Out-Null
+            Copy-Item $directBsp.FullName $insertionDest -Force
+            $installedInsertion = $true
+            break
+        }
+
+        $legacy = Get-ChildItem $itemDir -Recurse -Filter "*legacy.bin" -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($legacy) {
+            $sevenCandidates = @()
+            $sevenCmd = Get-Command 7z.exe -ErrorAction SilentlyContinue
+            if ($sevenCmd) { $sevenCandidates += $sevenCmd.Source }
+            $sevenCandidates += (Join-Path $env:ProgramFiles "7-Zip\7z.exe")
+            if (${env:ProgramFiles(x86)}) { $sevenCandidates += (Join-Path ${env:ProgramFiles(x86)} "7-Zip\7z.exe") }
+            $seven = $sevenCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+            if ($seven) {
+                $mapTemp = Join-Path $env:TEMP ("revival-insertion2-" + [guid]::NewGuid().ToString("N"))
+                New-Item $mapTemp -ItemType Directory -Force | Out-Null
+                try {
+                    & $seven x -y "-o$mapTemp" $legacy.FullName | Out-Null
+                    $bsp = Get-ChildItem $mapTemp -Recurse -Filter "cs_insertion2.bsp" -File -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+                    if ($bsp) {
+                        New-Item (Split-Path $insertionDest -Parent) -ItemType Directory -Force | Out-Null
+                        Copy-Item $bsp.FullName $insertionDest -Force
+                        $installedInsertion = $true
+                        break
+                    }
+                }
+                finally {
+                    Remove-Item $mapTemp -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+
+    if ($installedInsertion) {
+        Write-Host "    Installed cs_insertion2.bsp from Steam Workshop cache." -ForegroundColor Green
+    }
+    else {
+        Write-Warning "Insertion II is not installed. Subscribe/download Workshop item 2395333051 on this Steam library, install 7-Zip if Steam stored it as legacy.bin, then rerun UPDATE_LAPTOP.ps1."
+    }
+}
+
 Write-Host "[3/4] Updating laptop agent files..." -ForegroundColor Yellow
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/agent.py" -OutFile (Join-Path $AgentDir "agent.py") -UseBasicParsing
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/start-agent.bat" -OutFile (Join-Path $AgentDir "start-agent.bat") -UseBasicParsing
