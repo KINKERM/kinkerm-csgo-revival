@@ -599,6 +599,19 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
     bool processedAny = false;
     for (uint32_t accountId : accountIds)
     {
+        const std::string authPath =
+            "csgo_gc/server_auth/" + std::to_string(accountId) + ".txt";
+        std::ifstream authProbe(authPath, std::ios::binary);
+        if (!authProbe.is_open())
+        {
+            Platform::Print(
+                "REVIVAL_REWARDS_CONNECTED_ONLY_V1 skipped account=%u "
+                "(reserved/queued but never authenticated into this match)\n",
+                accountId);
+            continue;
+        }
+        authProbe.close();
+
         CSteamID playerId{ accountId, k_EUniversePublic, k_EAccountTypeIndividual };
         const uint64_t steamId = playerId.ConvertToUint64();
         const std::string inventoryPath =
