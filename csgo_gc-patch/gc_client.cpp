@@ -1608,12 +1608,41 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     m_liveDropInConnectDelayTicks = 0;
     RevivalDisarmAcceptWatcher();
 
+    std::vector<uint32_t> partyAccountIds;
+    for (int i = 0; i < message.account_ids_size(); ++i)
+    {
+        const uint32_t accountId = message.account_ids(i);
+        if (accountId
+            && std::find(partyAccountIds.begin(), partyAccountIds.end(), accountId)
+                == partyAccountIds.end())
+        {
+            partyAccountIds.push_back(accountId);
+        }
+    }
+    if (std::find(partyAccountIds.begin(), partyAccountIds.end(), AccountId())
+        == partyAccountIds.end())
+    {
+        partyAccountIds.push_back(AccountId());
+    }
+
     std::ostringstream request;
     request << "action=start\n"
             << "steamid=" << m_steamId << "\n"
             << "account_id=" << AccountId() << "\n"
             << "game_type=" << m_matchmakingGameType << "\n"
-            << "client_version=" << m_matchmakingClientVersion << "\n";
+            << "client_version=" << m_matchmakingClientVersion << "\n"
+            << "party_account_ids=";
+    for (size_t i = 0; i < partyAccountIds.size(); ++i)
+    {
+        if (i)
+            request << ",";
+        request << partyAccountIds[i];
+    }
+    request << "\n";
+
+    Platform::Print(
+        "REVIVAL_PARTY_QUEUE_ROSTER_V1 local=%u party_size=%u\n",
+        AccountId(), static_cast<unsigned>(partyAccountIds.size()));
 
     // Consume mission targeting once. A persisted selected quest is *not*
     // enough to bias normal Competitive matchmaking; only the Panorama mission
@@ -1638,8 +1667,10 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
 
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
     update.set_matchmaking(1);
-    update.add_waiting_account_id_sessions(AccountId());
-    update.mutable_global_stats()->set_players_searching(1);
+    for (uint32_t accountId : partyAccountIds)
+        update.add_waiting_account_id_sessions(accountId);
+    update.mutable_global_stats()->set_players_searching(
+        static_cast<uint32_t>(partyAccountIds.size()));
     update.mutable_global_stats()->set_servers_available(0);
     update.mutable_global_stats()->set_search_time_avg(5);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
