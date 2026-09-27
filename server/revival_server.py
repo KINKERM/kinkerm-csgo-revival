@@ -253,6 +253,20 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
                 "items": self.catalog.items,
             })
 
+        if path.startswith("/client/bootstrap/"):
+            steamid = path[len("/client/bootstrap/"):]
+            if not steamid.isdigit():
+                return self._send_json(400, {"error": "invalid steamid"})
+            return self._send_json(200, {
+                "sync_token": self._client_sync_token(steamid),
+                "data_epoch": int(self.config_ref.get("data_epoch", 1) or 1),
+            })
+
+        if path == "/admin":
+            if not self._panel_authed():
+                return self._send_html(200, self._admin_login_page())
+            return self._send_html(200, self._admin_page())
+
         if path.startswith("/matchmaking/state/"):
             steamid = path[len("/matchmaking/state/"):]
             if not steamid.isdigit():
@@ -296,6 +310,41 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
 
     def do_POST(self):
         path = self.path.split("?", 1)[0].rstrip("/")
+
+        if path == "/admin/login":
+            form = self._read_form_body()
+            supplied = form.get("password", "")
+            expected = str(self.config_ref.get("admin_panel_password") or "")
+            if not expected or not secrets.compare_digest(supplied, expected):
+                return self._send_html(
+                    401, self._admin_login_page("Wrong password.")
+                )
+            session = secrets.token_urlsafe(32)
+            self.admin_sessions[session] = time.time() + 12 * 60 * 60
+            return self._send_html(
+                200,
+                self._admin_page("Logged in."),
+                {"Set-Cookie": f"revival_admin={session}; Path=/; HttpOnly; SameSite=Strict"},
+            )
+
+        if path == "/admin/reset-major":
+            if not self._panel_authed():
+                return self._send_html(401, self._admin_login_page("Session expired."))
+            form = self._read_form_body()
+            if form.get("confirm") != "RESET ALL REVIVAL DATA":
+                return self._send_html(400, self._admin_page("Reset confirmation missing."))
+            result = self.store.major_update_reset()
+            generation = self.matchmaking.reset_runtime()
+            self.config_ref["data_epoch"] = int(
+                self.config_ref.get("data_epoch", 1) or 1
+            ) + 1
+            save_config(self.config_ref)
+            notice = (
+                f"Reset complete: {result['players']} player(s), "
+                f"epoch {self.config_ref['data_epoch']}, runtime generation {generation}. "
+                f"Backup: {result['backup']}"
+            )
+            return self._send_html(200, self._admin_page(notice))
 
         if path == "/matchmaking/start":
             body = self._read_json_body()
@@ -349,8 +398,22 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
             steamid = path[len("/inventory/"):]
             if not steamid.isdigit():
                 return self._send_text(400, "invalid steamid")
-            if not self._sync_authed():
+            if not self._sync_authed(steamid):
                 return self._send_text(401, "unauthorized")
+            current_epoch = int(self.config_ref.get("data_epoch", 1) or 1)
+            raw_epoch = self.headers.get("X-Data-Epoch", "")
+            try:
+                upload_epoch = int(raw_epoch) if raw_epoch else 0
+            except ValueError:
+                upload_epoch = 0
+            # Epoch 1 keeps compatibility with older private launchers. After a
+            # major reset, every stale pre-reset launcher is rejected so its
+            # local inventory cannot recreate wiped account state.
+            if current_epoch > 1 and upload_epoch != current_epoch:
+                return self._send_json(409, {
+                    "error": "stale client data epoch; restart the revival launcher",
+                    "data_epoch": current_epoch,
+                })
             text = self._read_raw_body()
             parsed = inventory_mod.parse_inventory_txt(text)
             count = self.store.replace_inventory(
@@ -415,7 +478,7 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
 
 
 def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str, sync_token: str,
-                 matchmaking: MatchmakingCoordinator,
+                 matchmaking: MatchmakingCoordinator, config_ref: dict,
                  gold_tradeup_crate_def: int = 0, gold_tradeup_key_def: int = 0):
     return type("BoundHandler", (Handler,), {
         "store": store,
@@ -423,6 +486,7 @@ def make_handler(store: PlayerStore, catalog: Catalog, admin_token: str, sync_to
         "admin_token": admin_token,
         "sync_token": sync_token,
         "matchmaking": matchmaking,
+        "config_ref": config_ref,
         "gold_tradeup_crate_def": gold_tradeup_crate_def,
         "gold_tradeup_key_def": gold_tradeup_key_def,
     })
@@ -454,13 +518,16 @@ def main() -> None:
 
     matchmaking = MatchmakingCoordinator()
     handler = make_handler(store, catalog, config["admin_token"], config["sync_token"],
-                           matchmaking, gold_crate_def, gold_key_def)
+                           matchmaking, config, gold_crate_def, gold_key_def)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
 
     print(f"[revival] serving on http://{args.host}:{args.port}")
     print(f"[revival] catalog: {len(catalog.cases)} cases, {len(catalog.items)} items")
     print(f"[revival] admin token: {config['admin_token']}")
-    print(f"[revival] sync token:  {config['sync_token']}  (put this in launcher.cfg for persistence)")
+    print(f"[revival] admin panel password: {config['admin_panel_password']}")
+    print(f"[revival] admin panel: /admin")
+    print(f"[revival] data epoch: {config['data_epoch']}")
+    print("[revival] client sync credentials are issued per SteamID by /client/bootstrap")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
