@@ -119,13 +119,8 @@ class PlayerStore:
 
     # ---- mutations ---------------------------------------------------------
     def grant_case(self, steamid: str, case_id: str, count: int = 1,
-                   include_key: bool = True) -> dict[str, Any]:
-        """Add `count` copies of a case (and, by default, matching keys).
-
-        Bundling the matching key means the case opens with the normal CS:GO
-        flow. Because csgo_gc never validates keys, the key is purely there to
-        satisfy the client UI.
-        """
+                   include_key: bool = False) -> dict[str, Any]:
+        """Add `count` copies of a case. Revival cases open without keys."""
         case = self._catalog.get_case(case_id)
         if case is None:
             raise KeyError(f"unknown case '{case_id}'")
