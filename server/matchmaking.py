@@ -443,6 +443,27 @@ class MatchmakingCoordinator:
                 party_ids.append(account_id)
             party_ids = party_ids[:MAX_HUMANS]
 
+            # A mission queue must never silently substitute another map: that
+            # would finish a Competitive match without advancing the mission the
+            # player explicitly selected in the Operation UI.
+            installed = {
+                str(x) for x in self._server.get("maps", [])
+                if str(x) in self._map_pool
+            }
+            if (
+                preferred_map
+                and self._server_online_locked()
+                and installed
+                and preferred_map not in installed
+            ):
+                return {
+                    "state": "error",
+                    "error": "selected Operation mission map is not installed",
+                    "map": preferred_map,
+                    "server_online": True,
+                    "server_available": False,
+                }
+
             # MatchmakingStart carries the whole lobby roster. Seed every member
             # under the same lock BEFORE _try_form_locked(), otherwise the first
             # caller can allocate a one-player reservation and the second lobby
@@ -472,27 +493,6 @@ class MatchmakingCoordinator:
                     "server_online": self._server_online_locked(),
                     "server_available": self._server_joinable_locked(),
                     "party_account_ids": party_ids,
-                }
-
-            # A mission queue must never silently substitute another map: that
-            # would finish a Competitive match without advancing the mission the
-            # player explicitly selected in the Operation UI.
-            installed = {
-                str(x) for x in self._server.get("maps", [])
-                if str(x) in self._map_pool
-            }
-            if (
-                preferred_map
-                and self._server_online_locked()
-                and installed
-                and preferred_map not in installed
-            ):
-                return {
-                    "state": "error",
-                    "error": "selected Operation mission map is not installed",
-                    "map": preferred_map,
-                    "server_online": True,
-                    "server_available": False,
                 }
 
             existing = self._states.get(steamid, {})
