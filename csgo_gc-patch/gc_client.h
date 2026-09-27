@@ -110,7 +110,8 @@ private:
     std::string m_matchmakingServerAddress;
     std::string m_matchmakingMap;
     bool m_matchmakingFinalReserveSent{};
-    // Live drop-ins use the stock ongoing-match state first, then QueueConnect
-    // on a later SharedGC tick so Legacy can leave SEARCH cleanly.
+    // Live drop-ins leave SEARCH with an online ongoing-session update, then
+    // send a minimal 9107 on a later SharedGC tick. Never send a full nested
+    // reservation for a running match or Legacy reopens the ACCEPT panel.
     uint32_t m_liveDropInConnectDelayTicks{};
 };
