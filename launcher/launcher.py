@@ -480,7 +480,7 @@ def _write_mm_state(config: dict, state: dict) -> None:
             if isinstance(value, bool):
                 value = 1 if value else 0
             lines.append(f"{key}={value}")
-    for key in ("waiting_account_ids", "account_ids"):
+    for key in ("waiting_account_ids", "account_ids", "queue_account_ids"):
         value = state.get(key)
         if isinstance(value, list):
             lines.append(f"{key}=" + ",".join(str(int(x)) for x in value))
