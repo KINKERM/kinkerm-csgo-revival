@@ -318,14 +318,14 @@ class MatchmakingCoordinator:
 
         map_name = self._choose_map_locked([first])
 
+        # One physical server means one shared queue. The oldest queued
+        # player's selected mission may choose the map for a NEW allocation,
+        # but other players must never be split into separate queues just
+        # because their selected Operation mission targets another map.
         players: list[QueueEntry] = []
         remaining: list[QueueEntry] = []
         for player in self._queue:
-            compatible = (
-                not player.preferred_map
-                or player.preferred_map == map_name
-            )
-            if compatible and len(players) < MAX_HUMANS:
+            if len(players) < MAX_HUMANS:
                 players.append(player)
             else:
                 remaining.append(player)
