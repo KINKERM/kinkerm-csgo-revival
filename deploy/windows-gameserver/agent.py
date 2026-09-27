@@ -50,7 +50,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V42"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V43"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -782,17 +782,30 @@ class ServerSlot:
                 )
             else:
                 creationflags = 0
-            self.proc = subprocess.Popen(
-                cmd,
-                cwd=self.cfg["csgo_dir"],
-                # Source's CTextConsoleWin32 requires genuine console handles.
-                # CREATE_NEW_CONSOLE + no stdio redirection avoids the
-                # GetNumberOfConsoleInputEvents crash.
-                stdin=None,
-                stdout=None,
-                stderr=None,
-                creationflags=creationflags,
-            )
+            try:
+                self.proc = subprocess.Popen(
+                    cmd,
+                    cwd=self.cfg["csgo_dir"],
+                    # Source's CTextConsoleWin32 requires genuine console handles.
+                    # CREATE_NEW_CONSOLE + no stdio redirection avoids the
+                    # GetNumberOfConsoleInputEvents crash.
+                    stdin=None,
+                    stdout=None,
+                    stderr=None,
+                    creationflags=creationflags,
+                )
+            except OSError as exc:
+                if getattr(exc, "winerror", None) == 225:
+                    print(
+                        "[agent] REVIVAL_WINDOWS_DEFENDER_BLOCK_V1 Windows blocked "
+                        f"the SRCDS launch as malware/PUA: {srcds}"
+                    )
+                    print(
+                        "[agent] Open Windows Security > Virus & threat protection > "
+                        "Protection history, review the detection, and allow/restore "
+                        "only this known revival server file if you trust your build."
+                    )
+                raise
             set_above_normal(self.proc)
             self.match_id = match_id
             self.ready_match_id = 0
