@@ -2556,12 +2556,10 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
         for (uint32_t i = 0; i < item.quantity(); i++)
         {
             const int starCost = GetConfig().OperationShopCost(item.item_def_id());
+            const bool isOperationPass =
+                item.item_def_id() == GetConfig().OperationPassDef();
 
-            // Release build policy: ordinary Store/Coupon items are disabled.
-            // Cases, capsules, etc. must come from gameplay drops/rewards.
-            // The Operation shop remains valid because it has an explicit
-            // non-zero star cost configured by the revival.
-            if (starCost <= 0)
+            if (starCost <= 0 && !isOperationPass)
             {
                 Platform::Print(
                     "REVIVAL_EARNED_DROPS_ONLY_V1 blocked ordinary store def %u qty=%u\n",
@@ -2569,9 +2567,7 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
                 continue;
             }
 
-            // Validate affordability before allocating a reward, but do not mutate
-            // the wallet yet.
-            if (!m_inventory.CanSpendStars(starCost))
+            if (starCost > 0 && !m_inventory.CanSpendStars(starCost))
             {
                 Platform::Print("operation shop: refused def %u - not enough stars (need %d)\n",
                     item.item_def_id(), starCost);
@@ -2602,6 +2598,14 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
                     continue;
                 }
                 coinChanged = true;
+            }
+
+            if (isOperationPass)
+            {
+                Platform::Print(
+                    "REVIVAL_OPERATION_PASS_PURCHASE_V1 granted pass def %u item %llu\n",
+                    item.item_def_id(),
+                    static_cast<unsigned long long>(itemId));
             }
 
             m_transactionItemIds.push_back(itemId);
