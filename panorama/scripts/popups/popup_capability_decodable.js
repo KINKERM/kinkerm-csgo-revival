@@ -97,7 +97,17 @@ var CapabilityDecodable = ( function()
 				return;
 			}
 			j = $.GetContextPanel().GetAttributeString( "storeitemid", "" );
-			if ( ( associatedItemCount === 0 || !associatedItemCount ) && !j )
+
+			// REVIVAL_KEYLESS_CASES_V1: cases are earned from gameplay, so keys
+			// are not a second store gate. Any real loot container opens directly.
+			// Do not populate the purchase bar with its associated key definition.
+			if ( !j && ItemInfo.GetLootListCount( c ) > 0 )
+			{
+				i = true;
+				h = '';
+				$.GetContextPanel().SetAttributeString( 'revivalkeylesscase', 'true' );
+			}
+			else if ( ( associatedItemCount === 0 || !associatedItemCount ) && !j )
 			{
 				i = true;
 			}
