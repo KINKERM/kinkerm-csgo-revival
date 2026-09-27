@@ -330,8 +330,8 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1")) {
         throw "Built csgo_gc.dll is missing native Source G-mode live joining."
     }
-    if (-not $gcDllText.Contains("REVIVAL_Q_TO_G_COOKIE_SWAP_V1")) {
-        throw "Built csgo_gc.dll is missing the real Q-to-G reservation cookie transition."
+    if (-not $gcDllText.Contains("REVIVAL_Q_SLOT_PAD_V1")) {
+        throw "Built csgo_gc.dll is missing ten-human-slot queued reservation padding."
     }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
