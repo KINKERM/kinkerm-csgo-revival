@@ -21,6 +21,24 @@ Need-Path (Join-Path $RevivalRepo ".git") "Revival git checkout"
 Need-Path $CsgoGcSource "csgo_gc source"
 Need-Path (Join-Path $CsgoGcSource "csgo_gc") "csgo_gc source subfolder"
 
+# Storage Units use upstream econ_gcmessages CMsgCasketItem + 1092/1093/1094.
+# Fail early with a useful error if someone points the updater at an ancient
+# csgo_gc checkout instead of letting compilation explode later.
+$econProto = Join-Path $CsgoGcSource "protobufs\econ_gcmessages.proto"
+Need-Path $econProto "csgo_gc econ_gcmessages.proto"
+$econProtoText = Get-Content $econProto -Raw
+foreach ($needle in @(
+    "message CMsgCasketItem",
+    "k_EMsgGCCasketItemAdd",
+    "k_EMsgGCCasketItemExtract",
+    "k_EMsgGCCasketItemLoadContents"
+)) {
+    if (-not $econProtoText.Contains($needle)) {
+        throw "csgo_gc source is too old for Storage Units; missing $needle in econ_gcmessages.proto. Update the csgo_gc source checkout first."
+    }
+}
+Write-Host "    Verified upstream Storage Unit protocol support in csgo_gc source." -ForegroundColor DarkGray
+
 $currentHead = (& git -C $RevivalRepo rev-parse HEAD).Trim()
 if (-not $currentHead) { throw "Could not read current revival commit." }
 
