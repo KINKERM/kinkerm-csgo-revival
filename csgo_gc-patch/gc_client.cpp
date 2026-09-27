@@ -1520,6 +1520,12 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     // guard so mm_request.txt can never be created from the previous card.
     PollOperationMissionSelectionBridge();
 
+    // Never let a previous queue/match's terminal mm_state.txt kill this new
+    // search before the launcher has processed action=start.
+    std::remove(MatchmakingStatePath);
+    Platform::Print(
+        "REVIVAL_QUEUE_RESTART_RACE_V1 cleared stale matchmaking state before start\n");
+
     m_matchmakingGameType = message.has_game_type() ? message.game_type() : 8;
     m_matchmakingClientVersion = message.has_client_version() ? message.client_version() : 0;
     m_matchmakingActive = true;
@@ -1577,18 +1583,18 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
 
     const int abandon = message.has_abandon() ? message.abandon() : 0;
 
-    // Legacy Panorama can emit one transient non-abandon stop immediately
-    // after StartMatchmaking while it rebuilds the mmqueue session. Treating
-    // that as a real cancel makes the queue disappear instantly.
+    // Legacy Panorama can emit multiple non-abandon Stop packets while it
+    // rebuilds mmqueue immediately after StartMatchmaking. Suppress all of them
+    // for the first ~2 seconds; after that a normal user cancel works again.
     if (m_matchmakingActive
         && !m_lastMatchmakingReservation
         && abandon != 1
-        && m_matchmakingIgnoreNextNonAbandonStop)
+        && m_matchmakingIdleTicks < 8)
     {
-        m_matchmakingIgnoreNextNonAbandonStop = false;
         Platform::Print(
-            "REVIVAL_CLIENT_QUEUE_START_GUARD_V1 ignored transient startup stop abandon=%d\n",
-            abandon);
+            "REVIVAL_CLIENT_QUEUE_START_GUARD_V2 ignored startup stop "
+            "abandon=%d tick=%u\n",
+            abandon, m_matchmakingIdleTicks);
         return;
     }
 
