@@ -438,15 +438,17 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     xml_path = os.path.join(stage_dir, "layout", "mainmenu_play.xml")
     js_path = os.path.join(stage_dir, "scripts", "mainmenu_play.js")
     css_path = os.path.join(stage_dir, "styles", "mainmenu_play.css")
-    compact_paths = [
-        os.path.join(stage_dir, "scripts", "operation", "operation_mainmenu.js"),
-        os.path.join(stage_dir, "scripts", "operation", "operation_mission_card.js"),
-        os.path.join(stage_dir, "scripts", "mainmenu.js"),
-        os.path.join(stage_dir, "scripts", "mainmenu_store.js"),
-        os.path.join(stage_dir, "scripts", "popups", "popup_capability_decodable.js"),
-        os.path.join(stage_dir, "scripts", "popups", "popup_inspect_async-bar.js"),
-        os.path.join(stage_dir, "scripts", "hud", "hudmissionpanel.js"),
-    ]
+    operation_js = os.path.join(stage_dir, "scripts", "operation", "operation_mainmenu.js")
+    mission_card_js = os.path.join(stage_dir, "scripts", "operation", "operation_mission_card.js")
+    operation_missions_js = os.path.join(stage_dir, "scripts", "operation", "operation_missions.js")
+    operation_util_js = os.path.join(stage_dir, "scripts", "operation", "operation_util.js")
+    mission_context_js = os.path.join(stage_dir, "scripts", "context_menus", "context_menu_select_mission_card.js")
+    activate_mission_js = os.path.join(stage_dir, "scripts", "popups", "popup_activate_mission.js")
+    hud_mission_js = os.path.join(stage_dir, "scripts", "hud", "hudmissionpanel.js")
+    mainmenu_root_js = os.path.join(stage_dir, "scripts", "mainmenu.js")
+    mainmenu_store_js = os.path.join(stage_dir, "scripts", "mainmenu_store.js")
+    decodable_js = os.path.join(stage_dir, "scripts", "popups", "popup_capability_decodable.js")
+    inspect_async_js = os.path.join(stage_dir, "scripts", "popups", "popup_inspect_async-bar.js")
 
     with open(xml_path, "r", encoding="utf-8-sig") as fh:
         xml = fh.read()
@@ -454,9 +456,20 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     with open(xml_path, "w", encoding="utf-8", newline="") as fh:
         fh.write(xml)
 
-    # Keep the stock queue JS/CSS conservative; aggressively compact only our
-    # release UI patches by stripping indentation, blank lines and whole-line comments.
-    for path in (js_path, css_path):
+    # Match REPACK_PANORAMA.ps1 exactly: first do the conservative trim pass on
+    # every Operation/mission file touched by the revival.
+    conservative_paths = (
+        js_path,
+        css_path,
+        operation_js,
+        mission_card_js,
+        operation_missions_js,
+        operation_util_js,
+        mission_context_js,
+        activate_mission_js,
+        hud_mission_js,
+    )
+    for path in conservative_paths:
         with open(path, "r", encoding="utf-8-sig") as fh:
             raw = fh.read()
         compact = "\n".join(
@@ -465,7 +478,19 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
         with open(path, "w", encoding="utf-8", newline="") as fh:
             fh.write(compact)
 
-    for path in compact_paths:
+    # Tight PBIN slots need the same aggressive pass as the host compiler:
+    # strip indentation, blank lines, and whole-line // comments only.
+    aggressive_paths = (
+        activate_mission_js,
+        hud_mission_js,
+        operation_js,
+        mission_card_js,
+        mainmenu_root_js,
+        mainmenu_store_js,
+        decodable_js,
+        inspect_async_js,
+    )
+    for path in aggressive_paths:
         with open(path, "r", encoding="utf-8-sig") as fh:
             raw = fh.read()
         compact = "\n".join(
@@ -475,6 +500,12 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
         )
         with open(path, "w", encoding="utf-8", newline="") as fh:
             fh.write(compact)
+
+    log(
+        "PBIN compaction matched host repacker; popup_activate_mission.js="
+        + str(os.path.getsize(activate_mission_js))
+        + " B"
+    )
 
     packed = subprocess.run([sys.executable, pbin_tool, "pack"], cwd=panorama_dir)
     if packed.returncode:
