@@ -306,12 +306,7 @@ def _copy_insertion2_payload(src_root: str, csgo_dir: str) -> bool:
     if not os.path.isfile(required_bsp):
         return False
 
-    nav = os.path.join(maps_dir, "cs_insertion2.nav")
-    if os.path.isfile(nav):
-        log("Insertion II payload installed: " + ", ".join(sorted(copied)))
-    else:
-        log("WARNING: Insertion II payload has no cs_insertion2.nav; joining bot-filled servers may fail.")
-
+    log("Insertion II payload installed: " + ", ".join(sorted(copied)))
     return True
 
 
@@ -338,12 +333,9 @@ def _extract_workshop_legacy(archive: str, dest: str) -> bool:
 def install_insertion2(csgo_dir: str) -> None:
     maps_dir = os.path.join(csgo_dir, "csgo", "maps")
     target = os.path.join(maps_dir, "cs_insertion2.bsp")
-    nav_target = os.path.join(maps_dir, "cs_insertion2.nav")
-    if os.path.isfile(target) and os.path.isfile(nav_target):
-        log("Insertion II already installed (BSP + NAV).")
+    if os.path.isfile(target):
+        log("Insertion II already installed.")
         return
-    if os.path.isfile(target) and not os.path.isfile(nav_target):
-        log("Insertion II BSP exists but NAV is missing; repairing complete payload.")
 
     def try_cache() -> bool:
         for item_dir in _workshop_item_dirs():
