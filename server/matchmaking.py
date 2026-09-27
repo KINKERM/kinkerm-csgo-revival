@@ -147,7 +147,10 @@ class MatchmakingCoordinator:
         }
         native_ready_for_player = (
             match.reservation_id > 0
-            and player.account_id in acknowledged
+            and (
+                player.account_id in acknowledged
+                or match.state == "in_match"
+            )
         )
         client_state = (
             "searching"
