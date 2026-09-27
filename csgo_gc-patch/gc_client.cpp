@@ -2541,6 +2541,7 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
 
     assert(!m_transactionId);
     m_transactionId = transactionId;
+    m_transactionItemIds.clear();
     m_transactionItemIds.reserve(message.line_items_size()); // rough approx
 
     // inventory update response
@@ -2652,6 +2653,7 @@ void ClientGC::StorePurchaseFinalize(GCMessageRead &messageRead)
 
     // done with this one
     m_transactionId = 0;
+    m_transactionItemIds.clear();
 }
 
 void ClientGC::DeleteItem(GCMessageRead &messageRead)
