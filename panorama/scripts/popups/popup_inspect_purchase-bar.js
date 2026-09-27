@@ -10,6 +10,7 @@ var InpsectPurchaseBar = ( function()
 	var m_allowXrayPurchase = false;
 	var m_bOverridePurchaseMultiple = false;
 	var m_blurOperationPanel = false;
+	var m_isRevivalOperationPass = false;
 
 	var _Init = function( elPanel, itemId, funcGetSettingCallback )
 	{
@@ -163,7 +164,7 @@ var InpsectPurchaseBar = ( function()
 	var _OnActivate = function()
 	{
 		var elDropdown = m_elPanel.FindChildInLayoutFile( 'PurchaseCountDropdown' );
-		var qty = Number( elDropdown.GetSelected().id );
+		var qty = m_isRevivalOperationPass ? 1 : Number( elDropdown.GetSelected().id );
 
 		var itemDefitionNameString = ItemInfo.GetItemDefinitionName( m_itemid );
 		var purchaseList = [];
