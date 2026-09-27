@@ -146,12 +146,25 @@ class MatchmakingCoordinator:
             if str(x).isdigit()
         }
         live_drop_in = match.state == "in_match"
+        # For a live match, the queued-engine Q roster is refreshed from the
+        # assignment file independently of the agent's 9106 bookkeeping. Do not
+        # hold the desktop in SEARCH waiting for a second native 9106 that some
+        # public Legacy servers never emit after membership changes.
         native_ready_for_player = (
             match.reservation_id > 0
             and (
                 live_drop_in
                 or player.account_id in acknowledged
             )
+        )
+        # A transient control-plane heartbeat miss must not make a known,
+        # already-running Playit game server appear offline to a late joiner.
+        # The transport/reservation are still authoritative until the agent
+        # reports match end/restart and retires this Match object.
+        known_live_transport = (
+            live_drop_in
+            and match.reservation_id > 0
+            and bool(match.server_address)
         )
         client_state = (
             "searching"
@@ -167,7 +180,9 @@ class MatchmakingCoordinator:
             "account_ids": self._match_account_ids(match),
             "server_version": int(self._server.get("server_version") or 0),
             "server_id": int(self._server.get("server_id") or 0),
-            "server_online": self._server_online_locked(),
+            "server_online": (
+                self._server_online_locked() or known_live_transport
+            ),
             "server_available": len(match.players) < MAX_HUMANS,
             # Preserve the exact queue bitfield sent by this client. Legacy
             # Competitive is commonly 0x02000008, not plain 8.
