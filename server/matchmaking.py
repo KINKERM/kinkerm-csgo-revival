@@ -87,6 +87,7 @@ class MatchmakingCoordinator:
             "ready_match_id": 0,
             "reserved_account_ids": [],
             "queued_account_ids": [],
+            "engine_reservation_mode": "",
             "maps": [],
             "ct_score": 0,
             "t_score": 0,
@@ -166,10 +167,13 @@ class MatchmakingCoordinator:
         # mirror account_ids before ReserveServerForQueuedGame has reached the
         # main engine thread; treating in_match by itself as ready caused the
         # broken stage=1 awaiting=127 total=0 "Confirming match" screen.
+        engine_mode = str(
+            self._server.get("engine_reservation_mode") or ""
+        ).upper()
         native_ready_for_player = (
             match.reservation_id > 0
             and (
-                player.account_id in queued
+                engine_mode == "G"
                 if live_drop_in
                 else (
                     player.account_id in acknowledged
@@ -199,6 +203,7 @@ class MatchmakingCoordinator:
             "map": match.map_name,
             "account_ids": self._match_account_ids(match),
             "queue_account_ids": sorted(queued),
+            "engine_reservation_mode": engine_mode,
             "party_account_ids": [
                 p.account_id for p in match.players
             ],
@@ -701,6 +706,7 @@ class MatchmakingCoordinator:
                 self._server["ready_match_id"] = 0
                 self._server["reserved_account_ids"] = []
                 self._server["queued_account_ids"] = []
+                self._server["engine_reservation_mode"] = ""
                 self._server["server_id"] = 0
 
             self._server["agent_id"] = incoming_agent_id
@@ -730,6 +736,10 @@ class MatchmakingCoordinator:
                     int(x) for x in queued_accounts
                     if str(x).isdigit() and int(x) > 0
                 ]
+
+            self._server["engine_reservation_mode"] = str(
+                body.get("engine_reservation_mode") or ""
+            ).upper()
 
             self._server["ct_score"] = max(0, int(body.get("ct_score") or 0))
             self._server["t_score"] = max(0, int(body.get("t_score") or 0))
@@ -783,6 +793,7 @@ class MatchmakingCoordinator:
                 self._server["ready_match_id"] = 0
                 self._server["reserved_account_ids"] = []
                 self._server["queued_account_ids"] = []
+                self._server["engine_reservation_mode"] = ""
 
             native_reservation_id = int(body.get("reservation_id") or 0)
             if ready_match_id and native_reservation_id:
@@ -948,6 +959,7 @@ class MatchmakingCoordinator:
             self._server["ready_match_id"] = 0
             self._server["reserved_account_ids"] = []
             self._server["queued_account_ids"] = []
+            self._server["engine_reservation_mode"] = ""
             self._server["ct_score"] = 0
             self._server["t_score"] = 0
             self._server["player_teams"] = {}
