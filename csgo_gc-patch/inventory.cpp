@@ -3442,23 +3442,18 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         std::min<uint64_t>(total, goal));
     const bool completedNow = oldProgress < goal && newProgress >= goal;
 
-    uint64_t crossedSegments = 0;
-    for (uint32_t threshold : quest->thresholds)
+    // Revival pacing: every completed Operation mission pays a flat
+    // 10 stars. Partial mission progress never pays stars.
+    constexpr uint32_t RevivalMissionCompletionStars = 10;
+    const uint32_t starsEarnedNow =
+        completedNow ? RevivalMissionCompletionStars : 0u;
+
+    if (completedNow)
     {
-        if (oldProgress < threshold && newProgress >= threshold)
-            ++crossedSegments;
+        Platform::Print(
+            "REVIVAL_OPERATION_10_STAR_MISSIONS_V1 quest=%u reward=%u\n",
+            questId, starsEarnedNow);
     }
-
-    uint64_t stars64 =
-        crossedSegments * static_cast<uint64_t>(quest->operationalPoints);
-
-    // Stock Operation behavior: the quest's own operational_points/thresholds
-    // define its star reward. Do not add a synthetic +1 completion star.
-    if (completedNow && stars64 == 0 && quest->operationalPoints > 0)
-        stars64 = quest->operationalPoints;
-
-    const uint32_t starsEarnedNow = stars64 > UINT32_MAX
-        ? UINT32_MAX : static_cast<uint32_t>(stars64);
 
     state.progress = newProgress;
 
