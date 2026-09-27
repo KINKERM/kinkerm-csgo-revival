@@ -5,7 +5,8 @@ The pack extracts directly over a CS:GO Legacy install so every friend ends up
 with an IDENTICAL setup (required for Steam P2P lobbies):
 
   <root>/csgo_gc/csgo_gc.dll               <- patched GC loaded by the x86 launcher
-  <root>/csgo_revival.exe, srcds.exe        <- patched revival launchers
+  <root>/csgo_revival.exe                   <- patched client launcher
+  Dedicated-server launchers are intentionally NOT shipped in the public pack.
   <root>/csgo_gc/config.txt                 <- this repo's tuned gc-config/config.txt
   <root>/csgo/scripts/items/items_game.txt  <- this repo's custom items_game.txt
 
@@ -36,9 +37,11 @@ REPO = os.path.dirname(HERE)
 # executables replace csgo.exe / srcds.exe / csgo_linux64 etc.
 GC_LIBS = ("csgo_gc.dll", "libcsgo_gc.so", "libcsgo_gc_client.so",
            "libcsgo_gc.dylib", "csgo_gc.dylib")
-LAUNCHERS = ("csgo.exe", "srcds.exe", "csgo_linux64", "srcds_linux",
-             "csgo_osx64", "csgo_win64.exe", "srcds_win64.exe",
-             "csgo_linux", "srcds_linux64")
+CLIENT_LAUNCHERS = ("csgo.exe", "csgo_linux64", "csgo_osx64",
+                    "csgo_win64.exe", "csgo_linux")
+SERVER_LAUNCHERS = ("srcds.exe", "srcds_linux", "srcds_win64.exe",
+                    "srcds_linux64")
+LAUNCHERS = CLIENT_LAUNCHERS + SERVER_LAUNCHERS
 RUNTIME_NAMES = set(GC_LIBS) | set(LAUNCHERS)
 
 # dirs we never descend into
@@ -96,7 +99,7 @@ def main() -> None:
 
     runtime = harvest(args.csgo_gc_dir)
     gc_lib = [n for n in runtime if n in GC_LIBS]
-    launchers = [n for n in runtime if n in LAUNCHERS]
+    client_launchers = [n for n in runtime if n in CLIENT_LAUNCHERS]
 
     if runtime:
         print("[build_pack] harvested runtime files:")
@@ -111,10 +114,9 @@ def main() -> None:
         print("[build_pack] the source/build tree, or at an extracted release.")
         if not args.force:
             sys.exit(3)
-    elif not launchers:
-        print("[build_pack] WARNING: found the GC library but no launcher exe "
-              "(csgo.exe/srcds.exe). Friends need the launcher to boot the GC.")
-        print("[build_pack] Make sure the launcher target built too.")
+    elif not client_launchers:
+        print("[build_pack] WARNING: found the GC library but no client launcher.")
+        print("[build_pack] Make sure the csgo launcher target built too.")
         if not args.force:
             print("[build_pack] aborting; re-run with --force to pack anyway.")
             sys.exit(3)
@@ -204,7 +206,13 @@ def main() -> None:
         print("[build_pack] verified keyless earned-case UI")
 
     with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as zf:
+        packed_runtime = 0
         for name, path in runtime.items():
+            # Public/client packs never ship the dedicated-server wrapper.
+            # Laptop updates preserve their already-installed server launcher,
+            # avoiding needless unsigned EXE churn and AV false positives.
+            if name in SERVER_LAUNCHERS:
+                continue
             # The Win32 launcher loads the GC from <root>\\csgo_gc\\csgo_gc.dll.
             # It does NOT load a root-level csgo_gc.dll.
             if name.lower() == "csgo_gc.dll":
@@ -215,7 +223,8 @@ def main() -> None:
             else:
                 pack_name = name
             zf.write(path, pack_name)
-        print(f"[build_pack] added {len(runtime)} runtime file(s) in launcher layout")
+            packed_runtime += 1
+        print(f"[build_pack] added {packed_runtime} client runtime file(s); server launcher omitted")
         zf.write(args.config, "csgo_gc/config.txt")
         print("[build_pack] added csgo_gc/config.txt")
         zf.write(args.items_game, "csgo/scripts/items/items_game.txt")
