@@ -124,10 +124,13 @@ if (-not (Test-Path $insertionDest)) {
         $directBsp = Get-ChildItem $itemDir -Recurse -Filter "cs_insertion2.bsp" -File -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($directBsp) {
-            New-Item (Split-Path $insertionDest -Parent) -ItemType Directory -Force | Out-Null
-            Copy-Item $directBsp.FullName $insertionDest -Force
-            $installedInsertion = $true
-            break
+            $mapsDest = Split-Path $insertionDest -Parent
+            New-Item $mapsDest -ItemType Directory -Force | Out-Null
+            Get-ChildItem $directBsp.Directory.FullName -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name.ToLower().StartsWith("cs_insertion2.") } |
+                ForEach-Object { Copy-Item $_.FullName (Join-Path $mapsDest $_.Name) -Force }
+            $installedInsertion = Test-Path $insertionDest
+            if ($installedInsertion) { break }
         }
 
         $legacy = Get-ChildItem $itemDir -Recurse -Filter "*legacy.bin" -File -ErrorAction SilentlyContinue |
@@ -233,10 +236,13 @@ if (-not (Test-Path $insertionDest)) {
                         $bsp = Get-ChildItem $mapTemp -Recurse -Filter "cs_insertion2.bsp" -File -ErrorAction SilentlyContinue |
                             Select-Object -First 1
                         if ($bsp) {
-                            New-Item (Split-Path $insertionDest -Parent) -ItemType Directory -Force | Out-Null
-                            Copy-Item $bsp.FullName $insertionDest -Force
-                            $installedInsertion = $true
-                            break
+                            $mapsDest = Split-Path $insertionDest -Parent
+                            New-Item $mapsDest -ItemType Directory -Force | Out-Null
+                            Get-ChildItem $bsp.Directory.FullName -File -ErrorAction SilentlyContinue |
+                                Where-Object { $_.Name.ToLower().StartsWith("cs_insertion2.") } |
+                                ForEach-Object { Copy-Item $_.FullName (Join-Path $mapsDest $_.Name) -Force }
+                            $installedInsertion = Test-Path $insertionDest
+                            if ($installedInsertion) { break }
                         }
                     }
                 }
@@ -248,7 +254,11 @@ if (-not (Test-Path $insertionDest)) {
     }
 
     if ($installedInsertion) {
-        Write-Host "    Installed cs_insertion2.bsp (no CS2 client required)." -ForegroundColor Green
+        $navDest = Join-Path (Split-Path $insertionDest -Parent) "cs_insertion2.nav"
+        if (-not (Test-Path $navDest)) {
+            throw "Insertion II BSP installed but cs_insertion2.nav is missing. Refusing to host a map that would hang clients at 0% NAV download."
+        }
+        Write-Host "    Installed complete Insertion II payload (BSP + NAV; no CS2 client required)." -ForegroundColor Green
     }
     else {
         throw "SteamCMD could not install Insertion II automatically. Check SteamCMD output above for the Workshop download error."
