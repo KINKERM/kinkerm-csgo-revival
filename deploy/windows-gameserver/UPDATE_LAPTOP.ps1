@@ -64,6 +64,22 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     }
 
 $srcdsPath = Join-Path $CsgoDir "srcds.exe"
+$srcdsBackup = Join-Path $AgentDir "srcds.revival.backup.exe"
+
+# Keep one known-working dedicated-server launcher across ordinary GC updates.
+# The public pack intentionally no longer contains srcds.exe.
+if ((Test-Path $srcdsPath) -and -not (Test-Path $srcdsBackup)) {
+    Copy-Item $srcdsPath $srcdsBackup -Force
+    Write-Host "    Backed up existing revival server launcher." -ForegroundColor DarkGray
+}
+if (-not (Test-Path $srcdsPath) -and (Test-Path $srcdsBackup)) {
+    Copy-Item $srcdsBackup $srcdsPath -Force
+    Write-Host "    Restored preserved revival server launcher." -ForegroundColor Green
+}
+if (-not (Test-Path $srcdsPath)) {
+    throw "Revival srcds.exe is missing. Windows Security may have quarantined it. Restore the previously trusted server launcher first; current packs deliberately do not ship a replacement."
+}
+
 Get-CimInstance Win32_Process -Filter "Name='srcds.exe'" -ErrorAction SilentlyContinue |
     Where-Object {
         $_.ExecutablePath -and
@@ -73,7 +89,7 @@ Get-CimInstance Win32_Process -Filter "Name='srcds.exe'" -ErrorAction SilentlyCo
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
 
-Write-Host "[2/4] Installing current server runtime from pack..." -ForegroundColor Yellow
+Write-Host "[2/4] Installing current GC/data runtime from pack..." -ForegroundColor Yellow
 $temp = Join-Path $env:TEMP ("csgo-revival-laptop-" + [guid]::NewGuid().ToString("N"))
 New-Item $temp -ItemType Directory -Force | Out-Null
 
@@ -81,7 +97,6 @@ try {
     Expand-Archive -Path $Pack -DestinationPath $temp -Force
 
     $required = @(
-        "srcds.exe",
         "csgo_gc\\csgo_gc.dll",
         "csgo_gc\\config.txt",
         "csgo\\scripts\\items\\items_game.txt"
@@ -90,7 +105,8 @@ try {
         Need-Path (Join-Path $temp $rel) "Pack file $rel"
     }
 
-    Copy-Item (Join-Path $temp "srcds.exe") (Join-Path $CsgoDir "srcds.exe") -Force
+    # Preserve the existing dedicated-server launcher. Only the GC DLL and
+    # data/config are updated by normal revival packs.
     $gcRuntimeDir = Join-Path $CsgoDir "csgo_gc"
     New-Item $gcRuntimeDir -ItemType Directory -Force | Out-Null
     Copy-Item (Join-Path $temp "csgo_gc\\csgo_gc.dll") (Join-Path $gcRuntimeDir "csgo_gc.dll") -Force
@@ -355,6 +371,7 @@ if (-not $agentText.Contains("drop-in player(s) staged for live match")) {
 }
 Write-Host "    Verified current V43 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
+Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
 Write-Host ""
