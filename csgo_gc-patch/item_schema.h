@@ -283,6 +283,7 @@ public:
 
     enum Item
     {
+        ItemCasket = 1201,
         ItemSpray = 1348,
         ItemSprayPaint = 1349,
         ItemPatch = 4609
@@ -332,6 +333,12 @@ public:
 
         AttributeSpraysRemaining = 232,
         AttributeSprayTintId = 233,
+
+        // Storage Unit / casket attributes used by the stock inventory UI.
+        AttributeCasketItemsCount = 270,
+        AttributeCasketModificationDate = 271,
+        AttributeCasketIdLow = 272,
+        AttributeCasketIdHigh = 273,
     };
 
 private:
