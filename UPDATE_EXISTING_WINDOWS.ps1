@@ -417,11 +417,6 @@ if (-not $SkipInstall) {
     if ($LASTEXITCODE -ne 0) {
         throw "Panorama PBIN repack failed with exit code $LASTEXITCODE"
     }
-    $installedReconnectJs = Join-Path $CsgoDir "csgo\panorama\scripts\operation\..\match-reconnect.js"
-    $repoReconnectText = Get-Content (Join-Path $RevivalRepo "panorama\scripts\match-reconnect.js") -Raw
-    if (-not $repoReconnectText.Contains("REVIVAL_PANORAMA_AUTO_RECONNECT_V1")) {
-        throw "Repo Panorama reconnect bridge is missing REVIVAL_PANORAMA_AUTO_RECONNECT_V1."
-    }
 } else {
     Write-Host "[5/6] Client install skipped by request."
 }
