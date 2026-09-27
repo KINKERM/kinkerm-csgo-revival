@@ -139,7 +139,8 @@ def render_inventory_txt(player: dict[str, Any]) -> str:
 
 _INT_FIELDS = ("inventory", "level", "quality", "flags", "origin", "in_use", "rarity")
 _OPERATION_INT_FIELDS = (
-    "season", "earned_stars", "missions_completed", "mission_id", "season_pass_time"
+    "season", "earned_stars", "missions_completed", "mission_id",
+    "selected_quest_id", "season_pass_time"
 )
 _PROFILE_INT_FIELDS = (
     "level", "xp", "competitive_rank", "competitive_wins",
