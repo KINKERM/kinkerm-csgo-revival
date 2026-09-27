@@ -109,6 +109,10 @@ private:
     uint32_t m_matchmakingDirectUdpPort{};
     std::string m_matchmakingServerAddress;
     std::string m_matchmakingMap;
+    // A mission-card click may target the very next matchmaking start only.
+    // The inventory's persisted selected quest is progress/HUD state and must
+    // not silently bias ordinary Competitive queues on later sessions.
+    std::string m_pendingOperationQueueMap;
     bool m_matchmakingFinalReserveSent{};
     // Kept resettable for compatibility with older state transitions.
     // V4 live drop-ins use the stock ongoing-match reconnect path instead of
