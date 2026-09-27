@@ -450,6 +450,7 @@ def _http_json(method: str, url: str, payload: dict | None = None) -> dict:
 
 REVIVAL_LAUNCHER_DROPIN_STATE_V1 = "REVIVAL_LAUNCHER_DROPIN_STATE_V1"
 REVIVAL_LAUNCHER_UNBOX_CHAT_V1 = "REVIVAL_LAUNCHER_UNBOX_CHAT_V1"
+REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1 = "REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1"
 
 
 def _write_mm_state(config: dict, state: dict) -> None:
@@ -639,12 +640,30 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                     searching = False
                     print("[launcher] matchmaking: left queue")
 
-            if searching and time.monotonic() - last_poll >= 0.75:
+            # Party members do not necessarily originate the stock 9101 locally:
+            # the lobby leader can be the only client that starts matchmaking.
+            # Poll the coordinator even while locally idle so a member pre-seeded
+            # by the leader immediately receives SEARCH -> green ACCEPT -> connect.
+            poll_interval = 0.75 if searching else 1.0
+            if time.monotonic() - last_poll >= poll_interval:
                 last_poll = time.monotonic()
                 state = _http_json(
                     "GET", base + "/matchmaking/state/" + config["steam_id"]
                 )
-                _write_mm_state(config, state)
+                remote_phase = str(state.get("state") or "idle")
+                should_publish = searching or remote_phase in (
+                    "searching", "allocating", "reserved", "in_match"
+                )
+                if should_publish:
+                    if not searching and remote_phase != "idle":
+                        print(
+                            f"[launcher] {REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1} "
+                            f"adopted coordinator state {remote_phase}"
+                        )
+                    _write_mm_state(config, state)
+
+                if remote_phase in ("searching", "allocating", "reserved", "in_match"):
+                    searching = True
 
                 # Live Operation SO updates are written by csgo_gc shortly after
                 # mm_state.txt changes. Schedule a sync-back slightly later so
@@ -655,10 +674,11 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                     last_live_rounds_seen = live_rounds
                     progress_upload_due = time.monotonic() + 1.5
 
-                if state.get("state") in ("reserved", "in_match"):
+                if remote_phase in ("reserved", "in_match"):
                     # Keep polling slowly so reconnect/end state stays fresh.
                     pass
-                elif state.get("state") == "idle":
+                elif searching and remote_phase == "idle":
+                    _write_mm_state(config, state)
                     searching = False
                     idle_match = int(state.get("last_match_id") or 0)
                     if idle_match and idle_match != last_idle_match_seen:
