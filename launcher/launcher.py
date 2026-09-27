@@ -38,7 +38,7 @@ def load_config(path: str) -> dict:
     config = {
         "server_url": "", "steam_id": "", "csgo_dir": "",
         "game_exe": "", "game_args": "", "launch_game": "1",
-        "sync_token": "",
+        "sync_token": "", "data_epoch": "0",
     }
     if not os.path.exists(path):
         print(f"[launcher] config file not found: {path}")
@@ -71,6 +71,49 @@ def load_config(path: str) -> dict:
 
 def inventory_url(config: dict) -> str:
     return config["server_url"].rstrip("/") + "/inventory/" + config["steam_id"]
+
+
+def _save_config(path: str, config: dict) -> None:
+    keys = (
+        "server_url", "steam_id", "csgo_dir", "game_exe",
+        "game_args", "launch_game", "sync_token", "data_epoch",
+    )
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("# auto-updated by CS:GO Revival launcher\n")
+        for key in keys:
+            value = str(config.get(key, "") or "")
+            if value:
+                fh.write(f"{key}={value}\n")
+    os.replace(tmp, path)
+
+
+def refresh_client_bootstrap(config: dict, cfg_path: str) -> None:
+    url = (
+        config["server_url"].rstrip("/")
+        + "/client/bootstrap/"
+        + config["steam_id"]
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, ValueError, OSError) as exc:
+        print(f"[launcher] bootstrap refresh failed: {exc}")
+        if not config.get("sync_token"):
+            print("[launcher] persistence credentials are unavailable.")
+        return
+
+    token = str(data.get("sync_token") or "")
+    epoch = str(int(data.get("data_epoch") or 1))
+    changed = (
+        token != str(config.get("sync_token") or "")
+        or epoch != str(config.get("data_epoch") or "0")
+    )
+    config["sync_token"] = token
+    config["data_epoch"] = epoch
+    if changed:
+        _save_config(cfg_path, config)
+        print(f"[launcher] refreshed persistence credentials (epoch {epoch})")
 
 
 def inventory_path(config: dict) -> str:
@@ -144,8 +187,11 @@ def upload_inventory(config: dict) -> None:
 
     req = urllib.request.Request(
         inventory_url(config), data=body, method="POST",
-        headers={"X-Sync-Token": config["sync_token"],
-                 "Content-Type": "text/plain; charset=utf-8"},
+        headers={
+            "X-Sync-Token": config["sync_token"],
+            "X-Data-Epoch": str(config.get("data_epoch") or "0"),
+            "Content-Type": "text/plain; charset=utf-8",
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -621,6 +667,7 @@ def main() -> None:
     cfg_path = cfg_args[0] if cfg_args else os.path.join(here, "launcher.cfg")
 
     config = load_config(cfg_path)
+    refresh_client_bootstrap(config, cfg_path)
 
     if upload_only:
         # just push the local inventory back (e.g. after launching via Steam)
