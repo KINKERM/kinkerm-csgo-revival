@@ -49,9 +49,11 @@ class DropInMatchmakingTests(unittest.TestCase):
 
         second = steamid(2)
         second_state = self.mm.start(second)
-        # Do not publish 9107 until srcds has acknowledged the new account in
-        # its native reservation.
-        self.assertEqual(second_state["state"], "searching")
+        # A running match is immediately exposed as a live drop-in. The server
+        # GC refreshes the queued-engine Q roster from the updated assignment;
+        # desktop matchmaking must not wait forever for another native 9106.
+        self.assertEqual(second_state["state"], "in_match")
+        self.assertTrue(second_state["drop_in"])
         self.assertEqual(second_state["match_id"], match_id)
 
         acknowledged = [
@@ -72,12 +74,14 @@ class DropInMatchmakingTests(unittest.TestCase):
         self.assertEqual(second_state["state"], "in_match")
         self.assertEqual(second_state["reservation_id"], 987654321)
 
-        # Fill all ten human slots by queueing later. Each new human stays in
-        # searching until the native reservation acknowledges that account.
+        # Fill all ten human slots by queueing later. Running-match players are
+        # published immediately as live drop-ins while the server roster refresh
+        # catches up independently.
         for i in range(3, MAX_HUMANS + 1):
             sid = steamid(i)
             state = self.mm.start(sid)
-            self.assertEqual(state["state"], "searching")
+            self.assertEqual(state["state"], "in_match")
+            self.assertTrue(state["drop_in"])
             acknowledged.append(account_id_from_steamid64(sid))
             self.mm.server_heartbeat({
                 "agent_id": "test-laptop",
@@ -177,7 +181,7 @@ class DropInMatchmakingTests(unittest.TestCase):
         self.assertIn("not installed", state["error"])
         self.assertIsNone(mm.snapshot()["assignment"])
 
-    def test_operation_player_waits_for_incompatible_live_map(self) -> None:
+    def test_operation_player_joins_existing_live_map(self) -> None:
         mm = MatchmakingCoordinator(map_pool=["de_dust2", "de_nuke"])
         mm.server_heartbeat({
             "agent_id": "test-laptop",
@@ -206,14 +210,17 @@ class DropInMatchmakingTests(unittest.TestCase):
 
         second = steamid(82)
         second_state = mm.start(second, preferred_map="de_nuke")
-        self.assertEqual(second_state["state"], "searching")
-        self.assertNotEqual(second_state.get("match_id"), first_match)
+        self.assertEqual(second_state["state"], "in_match")
+        self.assertTrue(second_state["drop_in"])
+        self.assertEqual(second_state.get("match_id"), first_match)
+        self.assertEqual(second_state.get("map"), "de_dust2")
 
-        mm.server_match_ended(first_match, {"reason": "game_over"})
-        next_assignment = mm.snapshot()["assignment"]
-        self.assertIsNotNone(next_assignment)
-        self.assertEqual(next_assignment["map"], "de_nuke")
-        self.assertIn(account_id_from_steamid64(second), next_assignment["account_ids"])
+        # The queued mission map only chooses a NEW allocation. A live shared
+        # Competitive server stays authoritative until that match ends.
+        current_assignment = mm.snapshot()["assignment"]
+        self.assertIsNotNone(current_assignment)
+        self.assertEqual(current_assignment["map"], "de_dust2")
+        self.assertIn(account_id_from_steamid64(second), current_assignment["account_ids"])
 
     def test_cancel_reserved_solo_match_allows_clean_new_allocation(self) -> None:
         first = steamid(43)
