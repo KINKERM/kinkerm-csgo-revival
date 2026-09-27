@@ -309,8 +309,11 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_OR_WIN_REPAIR_V1")) {
         throw "Built csgo_gc.dll is missing Operation OR win-branch repair."
     }
-    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_QUEUECONNECT_V3")) {
-        throw "Built csgo_gc.dll is missing minimal live-match QueueConnect handling."
+    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_RECONNECT_V4")) {
+        throw "Built csgo_gc.dll is missing stock ongoing-match reconnect handling."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_MISSION_QUEUE_ONESHOT_V1")) {
+        throw "Built csgo_gc.dll is missing one-shot Operation mission map targeting."
     }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
@@ -401,6 +404,11 @@ if (-not $SkipInstall) {
     & powershell -ExecutionPolicy Bypass -File $repackScript -RevivalRepo $RevivalRepo -CsgoDir $CsgoDir
     if ($LASTEXITCODE -ne 0) {
         throw "Panorama PBIN repack failed with exit code $LASTEXITCODE"
+    }
+    $installedReconnectJs = Join-Path $CsgoDir "csgo\panorama\scripts\operation\..\match-reconnect.js"
+    $repoReconnectText = Get-Content (Join-Path $RevivalRepo "panorama\scripts\match-reconnect.js") -Raw
+    if (-not $repoReconnectText.Contains("REVIVAL_PANORAMA_AUTO_RECONNECT_V1")) {
+        throw "Repo Panorama reconnect bridge is missing REVIVAL_PANORAMA_AUTO_RECONNECT_V1."
     }
 } else {
     Write-Host "[5/6] Client install skipped by request."
