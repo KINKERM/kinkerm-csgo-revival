@@ -175,13 +175,23 @@ def main() -> None:
         print("[build_pack] verified current matchmaking DLL markers")
 
     mainmenu_js = os.path.join(args.panorama, "scripts", "mainmenu.js")
-    if os.path.isfile(mainmenu_js):
+    store_js = os.path.join(args.panorama, "scripts", "mainmenu_store.js")
+    if os.path.isfile(mainmenu_js) and os.path.isfile(store_js):
         with open(mainmenu_js, "r", encoding="utf-8", errors="replace") as fh:
             mainmenu_text = fh.read()
-        if "mainmenu_store.xml" in mainmenu_text:
-            print("[build_pack] ERROR: main-menu Store/Coupons panel is still enabled")
+        with open(store_js, "r", encoding="utf-8", errors="replace") as fh:
+            store_text = fh.read()
+
+        # The bottom panel must remain because it carries the Operation shop
+        # banner. Its JS must be our operation-only variant so coupons/free
+        # case/capsule tabs are never populated.
+        if "mainmenu_store.xml" not in mainmenu_text:
+            print("[build_pack] ERROR: Operation shop bottom panel is missing")
             sys.exit(6)
-        print("[build_pack] verified earned-drops-only main menu (Store/Coupons removed)")
+        if "REVIVAL_OPERATION_STORE_ONLY_V1" not in store_text:
+            print("[build_pack] ERROR: main-menu store is not in Operation-only mode")
+            sys.exit(6)
+        print("[build_pack] verified Operation-only bottom shop panel")
 
     with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, path in runtime.items():
