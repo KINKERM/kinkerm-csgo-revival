@@ -32,7 +32,7 @@ $steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) { throw "steam_hook patch failed." }
 
-Write-Host "[1/4] Building only csgo_gc.dll..." -ForegroundColor Yellow
+Write-Host "[1/5] Building only csgo_gc.dll..." -ForegroundColor Yellow
 & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo_gc
 if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed." }
 
@@ -48,7 +48,8 @@ $markers = @(
     "REVIVAL_CLIENT_READY_FLOW_V1",
     "REVIVAL_CLIENT_ACCEPT_WATCH_V1",
     "REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2",
-    "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V3",
+    "REVIVAL_LIVE_DROPIN_RECONNECT_V4",
+    "REVIVAL_MISSION_QUEUE_ONESHOT_V1",
     "REVIVAL_SERVER_ACCEPT_ROSTER_V1",
     "REVIVAL_ENGINE_QUEUE_RESERVE_V1",
     "REVIVAL_SERVER_LOCAL_SOCACHE_V1",
@@ -80,7 +81,7 @@ foreach ($marker in $markers) {
 }
 Write-Host "    Fresh DLL contains direct-UDP matchmaking support." -ForegroundColor Green
 
-Write-Host "[2/4] Installing DLL on main PC..." -ForegroundColor Yellow
+Write-Host "[2/5] Installing DLL on main PC..." -ForegroundColor Yellow
 $runtimeDir = Join-Path $CsgoDir "csgo_gc"
 New-Item $runtimeDir -ItemType Directory -Force | Out-Null
 Copy-Item $gcDll (Join-Path $runtimeDir "csgo_gc.dll") -Force
@@ -91,7 +92,7 @@ if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash $gcDll -A
     throw "Installed DLL hash does not match fresh build."
 }
 
-Write-Host "[3/4] Installing current matchmaking launcher bridge..." -ForegroundColor Yellow
+Write-Host "[3/5] Installing current matchmaking launcher bridge..." -ForegroundColor Yellow
 $launcherSource = Join-Path $RevivalRepo "launcher\launcher.py"
 Need-Path $launcherSource "Launcher runtime"
 $launcherText = Get-Content $launcherSource -Raw
@@ -108,7 +109,22 @@ if (-not $installedLauncherText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
 }
 Write-Host "    Installed launcher preserves drop_in=1 into mm_state.txt." -ForegroundColor Green
 
-Write-Host "[4/4] Rebuilding laptop pack..." -ForegroundColor Yellow
+Write-Host "[4/5] Installing Panorama stock-reconnect bridge..." -ForegroundColor Yellow
+$reconnectJs = Join-Path $RevivalRepo "panorama\scripts\match-reconnect.js"
+Need-Path $reconnectJs "Panorama reconnect script"
+$reconnectText = Get-Content $reconnectJs -Raw
+if (-not $reconnectText.Contains("REVIVAL_PANORAMA_AUTO_RECONNECT_V1")) {
+    throw "Panorama reconnect script is stale; missing auto-reconnect marker."
+}
+$repackScript = Join-Path $RevivalRepo "REPACK_PANORAMA.ps1"
+Need-Path $repackScript "Panorama PBIN repack script"
+& powershell -NoProfile -ExecutionPolicy Bypass -File $repackScript -RevivalRepo $RevivalRepo -CsgoDir $CsgoDir
+if ($LASTEXITCODE -ne 0) {
+    throw "Panorama PBIN repack failed with exit code $LASTEXITCODE"
+}
+Write-Host "    Installed stock ongoing-match reconnect UI bridge." -ForegroundColor Green
+
+Write-Host "[5/5] Rebuilding laptop pack..." -ForegroundColor Yellow
 $pack = Join-Path $RevivalRepo "launcher\csgo-revival-pack.zip"
 & py -3 (Join-Path $RevivalRepo "launcher\build_pack.py") --csgo-gc-dir $CsgoGcSource --out $pack
 if ($LASTEXITCODE -ne 0) { throw "pack build failed." }
