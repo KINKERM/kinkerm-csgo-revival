@@ -40,6 +40,8 @@ MAP_POOL = (
     "de_inferno",
     "de_ancient",
     "de_nuke",
+    "de_overpass",
+    "de_vertigo",
     "cs_insertion2",
 )
 
