@@ -25,7 +25,6 @@ var InventoryInspect = ( function()
 		}
 
 		_UpdatePanelData( itemId );
-		_SetupRevivalOperationPassButton();
 		_PlayShowPanelSound( itemId );
 		_SetupLootlistNavPanels( itemId );
 		_LoadEquipNotification();
@@ -50,56 +49,7 @@ var InventoryInspect = ( function()
 		}
 	};
 
-	var _SetupRevivalOperationPassButton = function()
-	{
-		if ( $.GetContextPanel().GetAttributeString( 'revivalpass', 'false' ) !== 'true' )
-			return;
-
-		var desc = $.GetContextPanel().FindChildInLayoutFile( 'InspectItemDesc' );
-		if ( !desc )
-			return;
-
-		var parent = desc.GetParent();
-		var btn = $.GetContextPanel().FindChildTraverse( 'RevivalOperationPassBuyBtn' );
-		if ( !btn )
-		{
-			btn = $.CreatePanel( 'Button', parent, 'RevivalOperationPassBuyBtn' );
-			btn.AddClass( 'PopupButton' );
-			btn.AddClass( 'Positive' );
-			btn.style.horizontalAlign = 'center';
-			btn.style.marginBottom = '16px';
-
-			var label = $.CreatePanel( 'Label', btn, 'RevivalOperationPassBuyLabel' );
-			label.text = 'GET PASS';
-		}
-
-		btn.visible = true;
-		btn.enabled = true;
-		btn.SetPanelEvent( 'onactivate', _BuyRevivalOperationPass );
-	};
-
-	var _BuyRevivalOperationPass = function()
-	{
-		var btn = $.GetContextPanel().FindChildTraverse( 'RevivalOperationPassBuyBtn' );
-		if ( btn )
-		{
-			btn.enabled = false;
-			var label = btn.FindChildTraverse( 'RevivalOperationPassBuyLabel' );
-			if ( label )
-				label.text = 'ADDING PASS...';
-		}
-
-		GameInterfaceAPI.ConsoleCommand(
-			'con_logfile "revival_operation_pass_buy.log"; echo REVIVAL_OPERATION_PASS_BUY_V1; con_logfile ""' );
-
-		$.Schedule( 0.75, function()
-		{
-			$.DispatchEvent( 'UnblurOperationPanel' );
-			_ClosePopup();
-		} );
-	};
-
-	var var _UpdatePanelData = function( itemId )
+	var _UpdatePanelData = function( itemId )
 	{
 		var elItemModelImagePanel = $.GetContextPanel().FindChildInLayoutFile( 'PopUpInspectModelOrImage' );
 		InspectModelImage.Init( elItemModelImagePanel, itemId, _GetSettingCallback );
@@ -128,10 +78,7 @@ var InventoryInspect = ( function()
 		CapabiityHeader.Init( elCapabilityPanel, itemId, _GetSettingCallback );
 
 		var elPurchasePanel = $.GetContextPanel().FindChildInLayoutFile( 'PopUpInspectPurchaseBar' );
-		if ( _GetSettingCallback( 'revivalpass', 'false' ) === 'true' )
-			elPurchasePanel.AddClass( 'hidden' );
-		else
-			InpsectPurchaseBar.Init( elPurchasePanel, itemId, _GetSettingCallback );
+		InpsectPurchaseBar.Init( elPurchasePanel, itemId, _GetSettingCallback );
 
 		_SetDescription( itemId );
 	}
@@ -443,8 +390,7 @@ var InventoryInspect = ( function()
 		Init: _Init,
 		ShowNotification: _ShowNotification,
 		ClosePopup: _ClosePopup,
-		ItemAcquired: _ItemAcquired,
-		BuyRevivalOperationPass: _BuyRevivalOperationPass
+		ItemAcquired: _ItemAcquired
 	};
 } )();
 
