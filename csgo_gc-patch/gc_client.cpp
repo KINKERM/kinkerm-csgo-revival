@@ -1498,6 +1498,15 @@ void ClientGC::PollOperationMissionSelectionBridge()
             SendMessageToGame(
                 true, k_ESOMsg_UpdateMultiple, update);
 
+            // Only the explicit mission click targets matchmaking. Keep the
+            // selected quest persisted for HUD/progress, but arm its map for
+            // exactly the next MatchmakingStart instead of every future queue.
+            m_pendingOperationQueueMap = m_inventory.PreferredOperationMissionMap();
+
+            Platform::Print(
+                "REVIVAL_MISSION_QUEUE_ONESHOT_V1 armed map=%s season=%u card=%u quest=%u\n",
+                m_pendingOperationQueueMap.empty() ? "<shared-pool>" : m_pendingOperationQueueMap.c_str(),
+                season, card, quest);
             Platform::Print(
                 "REVIVAL_OPERATION_SELECTION_BRIDGE_V2 applied season=%u card=%u quest=%u\n",
                 season, card, quest);
@@ -1557,14 +1566,22 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
             << "game_type=" << m_matchmakingGameType << "\n"
             << "client_version=" << m_matchmakingClientVersion << "\n";
 
-    const std::string operationMissionMap =
-        m_inventory.PreferredOperationMissionMap();
+    // Consume mission targeting once. A persisted selected quest is *not*
+    // enough to bias normal Competitive matchmaking; only the Panorama mission
+    // click bridge above arms this field.
+    const std::string operationMissionMap = m_pendingOperationQueueMap;
+    m_pendingOperationQueueMap.clear();
     if (!operationMissionMap.empty())
     {
         request << "map=" << operationMissionMap << "\n";
         Platform::Print(
-            "REVIVAL_REPEATABLE_MISSIONS_V1 targeting mission map %s\n",
+            "REVIVAL_MISSION_QUEUE_ONESHOT_V1 consuming mission map %s for this queue\n",
             operationMissionMap.c_str());
+    }
+    else
+    {
+        Platform::Print(
+            "REVIVAL_MISSION_QUEUE_ONESHOT_V1 normal Competitive queue uses shared map pool\n");
     }
 
     if (!WriteMatchmakingBridgeFile(MatchmakingRequestPath, request.str()))
