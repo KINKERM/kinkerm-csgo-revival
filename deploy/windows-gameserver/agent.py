@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V44"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V45"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -453,7 +453,8 @@ def engine_reservation_ready_path(csgo_dir: str) -> str:
     return os.path.join(csgo_dir, "csgo_gc", "engine_reservation_ready.txt")
 
 
-def engine_reservation_is_ready(csgo_dir: str, match_id: int) -> bool:
+def read_engine_reservation_ready(csgo_dir: str) -> dict[str, object]:
+    out: dict[str, object] = {"match_id": 0, "account_ids": []}
     try:
         with open(
             engine_reservation_ready_path(csgo_dir),
@@ -461,16 +462,34 @@ def engine_reservation_is_ready(csgo_dir: str, match_id: int) -> bool:
             encoding="utf-8",
             errors="replace",
         ) as fh:
+            payload = ""
             for raw in fh:
                 line = raw.strip()
                 if line.startswith("match_id="):
                     try:
-                        return int(line.split("=", 1)[1]) == int(match_id)
+                        out["match_id"] = int(line.split("=", 1)[1])
                     except ValueError:
-                        return False
+                        pass
+                elif line.startswith("payload="):
+                    payload = line.split("=", 1)[1]
+            if payload:
+                ids: list[int] = []
+                for token in re.findall(r"\[([0-9A-Fa-f]+)\]", payload):
+                    try:
+                        value = int(token, 16)
+                    except ValueError:
+                        continue
+                    if value > 0:
+                        ids.append(value)
+                out["account_ids"] = ids
     except OSError:
         pass
-    return False
+    return out
+
+
+def engine_reservation_is_ready(csgo_dir: str, match_id: int) -> bool:
+    ready = read_engine_reservation_ready(csgo_dir)
+    return int(ready.get("match_id") or 0) == int(match_id)
 
 
 def read_csgo_server_version(csgo_dir: str) -> int:
@@ -646,6 +665,7 @@ class ServerSlot:
         self.reservation_id = 0
         self.server_id = 0
         self.reserved_account_ids: set[int] = set()
+        self.queued_account_ids: set[int] = set()
         self.ct_score = 0
         self.t_score = 0
         self.expected_account_ids: set[int] = set()
@@ -813,6 +833,7 @@ class ServerSlot:
             self.reservation_id = 0
             self.server_id = 0
             self.reserved_account_ids.clear()
+            self.queued_account_ids.clear()
             self.ct_score = 0
             self.t_score = 0
             self.expected_account_ids = {
@@ -857,9 +878,8 @@ class ServerSlot:
                 source_started_at = self.source_match_started_at
 
             response = read_native_reservation_response(self.cfg["csgo_dir"])
-            engine_ready = engine_reservation_is_ready(
-                self.cfg["csgo_dir"], match_id
-            )
+            engine_state = read_engine_reservation_ready(self.cfg["csgo_dir"])
+            engine_ready = int(engine_state.get("match_id") or 0) == match_id
             if (
                 engine_ready
                 and int(response.get("match_id") or 0) == match_id
@@ -874,6 +894,10 @@ class ServerSlot:
                     self.reserved_account_ids = {
                         int(x) for x in str(response.get("account_ids") or "").split(",")
                         if x.strip().isdigit() and int(x) > 0
+                    }
+                    self.queued_account_ids = {
+                        int(x) for x in engine_state.get("account_ids", [])
+                        if int(x) > 0
                     }
                     self.ready_match_id = match_id
                     self.ready_at = time.monotonic()
@@ -902,6 +926,10 @@ class ServerSlot:
                     self.reservation_id = REVIVAL_GAME_SERVER_COOKIE_ID
                     self.server_id = 0
                     self.reserved_account_ids = set(self.expected_account_ids)
+                    self.queued_account_ids = {
+                        int(x) for x in engine_state.get("account_ids", [])
+                        if int(x) > 0
+                    }
                     self.ready_match_id = match_id
                     self.ready_at = time.monotonic()
                     self.using_cookie_fallback = True
@@ -1260,8 +1288,13 @@ class ServerSlot:
             if not match_id or not self.alive():
                 return
 
-        if not engine_reservation_is_ready(self.cfg["csgo_dir"], match_id):
+        engine_state = read_engine_reservation_ready(self.cfg["csgo_dir"])
+        if int(engine_state.get("match_id") or 0) != match_id:
             return
+        queued_accounts = {
+            int(x) for x in engine_state.get("account_ids", [])
+            if int(x) > 0
+        }
 
         response = read_native_reservation_response(self.cfg["csgo_dir"])
         if int(response.get("match_id") or 0) != match_id:
@@ -1280,16 +1313,20 @@ class ServerSlot:
             if self.match_id != match_id:
                 return
             membership_changed = acknowledged != self.reserved_account_ids
+            queue_changed = queued_accounts != self.queued_account_ids
             self.reserved_account_ids = acknowledged
+            self.queued_account_ids = queued_accounts
             self.reservation_id = new_reservation
             self.server_id = new_server_id
             self.ready_match_id = match_id
             self.using_cookie_fallback = False
-            if new_reservation != old_reservation or membership_changed:
+            if new_reservation != old_reservation or membership_changed or queue_changed:
                 print(
-                    f"[agent] native reservation refreshed for match {match_id}: "
-                    f"reservation={new_reservation}, server_id={new_server_id or 'direct-udp'}, "
-                    f"accounts={','.join(str(x) for x in sorted(acknowledged))}"
+                    f"[agent] REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation refreshed "
+                    f"for match {match_id}: reservation={new_reservation}, "
+                    f"server_id={new_server_id or 'direct-udp'}, "
+                    f"accounts={','.join(str(x) for x in sorted(acknowledged))}, "
+                    f"queued={','.join(str(x) for x in sorted(queued_accounts))}"
                 )
 
     def refresh_authenticated_players(self) -> None:
@@ -1563,6 +1600,7 @@ class ServerSlot:
         self.reservation_id = 0
         self.server_id = 0
         self.reserved_account_ids.clear()
+        self.queued_account_ids.clear()
         self.match_id = 0
         self.ready_at = 0.0
         self.source_match_started_at = 0.0
@@ -1688,6 +1726,7 @@ def main() -> None:
                 "reservation_id": slot.reservation_id,
                 "server_id": slot.server_id,
                 "reserved_account_ids": sorted(slot.reserved_account_ids),
+                "queued_account_ids": sorted(slot.queued_account_ids),
                 "started_match_id": slot.match_id if slot.started else 0,
                 # Live score/team data lets the desktop GC mirror Operation
                 # round-win progress during the match instead of waiting for
