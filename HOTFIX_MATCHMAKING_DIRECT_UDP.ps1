@@ -32,7 +32,7 @@ $steamHook = Join-Path $CsgoGcSource "csgo_gc\steam_hook.cpp"
 & py -3 (Join-Path $RevivalRepo "tools\patch_steam_hook.py") $steamHook
 if ($LASTEXITCODE -ne 0) { throw "steam_hook patch failed." }
 
-Write-Host "[1/3] Building only csgo_gc.dll..." -ForegroundColor Yellow
+Write-Host "[1/4] Building only csgo_gc.dll..." -ForegroundColor Yellow
 & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo_gc
 if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed." }
 
@@ -80,7 +80,7 @@ foreach ($marker in $markers) {
 }
 Write-Host "    Fresh DLL contains direct-UDP matchmaking support." -ForegroundColor Green
 
-Write-Host "[2/3] Installing DLL on main PC..." -ForegroundColor Yellow
+Write-Host "[2/4] Installing DLL on main PC..." -ForegroundColor Yellow
 $runtimeDir = Join-Path $CsgoDir "csgo_gc"
 New-Item $runtimeDir -ItemType Directory -Force | Out-Null
 Copy-Item $gcDll (Join-Path $runtimeDir "csgo_gc.dll") -Force
@@ -91,7 +91,24 @@ if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne (Get-FileHash $gcDll -A
     throw "Installed DLL hash does not match fresh build."
 }
 
-Write-Host "[3/3] Rebuilding laptop pack..." -ForegroundColor Yellow
+Write-Host "[3/4] Installing current matchmaking launcher bridge..." -ForegroundColor Yellow
+$launcherSource = Join-Path $RevivalRepo "launcher\launcher.py"
+Need-Path $launcherSource "Launcher runtime"
+$launcherText = Get-Content $launcherSource -Raw
+if (-not $launcherText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
+    throw "Launcher source is stale; missing live drop-in state bridge marker."
+}
+$launcherRuntimeDir = Join-Path $CsgoDir "revival"
+New-Item $launcherRuntimeDir -ItemType Directory -Force | Out-Null
+$launcherInstalled = Join-Path $launcherRuntimeDir "launcher.py"
+Copy-Item $launcherSource $launcherInstalled -Force
+$installedLauncherText = Get-Content $launcherInstalled -Raw
+if (-not $installedLauncherText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
+    throw "Installed launcher.py is stale; live drop-in state would be lost before reaching csgo_gc."
+}
+Write-Host "    Installed launcher preserves drop_in=1 into mm_state.txt." -ForegroundColor Green
+
+Write-Host "[4/4] Rebuilding laptop pack..." -ForegroundColor Yellow
 $pack = Join-Path $RevivalRepo "launcher\csgo-revival-pack.zip"
 & py -3 (Join-Path $RevivalRepo "launcher\build_pack.py") --csgo-gc-dir $CsgoGcSource --out $pack
 if ($LASTEXITCODE -ne 0) { throw "pack build failed." }
