@@ -183,7 +183,13 @@ var OperationMainMenu = ( function()
 		_m_cp.FindChildInLayoutFile( 'id-op-mainmenu-missions' ).RemoveClass( 'hide' );
 		_m_cp.SetDialogVariableInt( 'total_missions', oStatus.nMissionsCompleted );
 		_UpdateXpDisplay( oStatus );
-		_UpdateSelectedMissionCard( oStatus.nActiveCardIndex );
+
+		var cardIndex = Number( oStatus.nActiveCardIndex );
+		if ( isNaN( cardIndex ) || cardIndex < 0 || !_RevivalCardHasIncompleteMission( cardIndex ) )
+		{
+			cardIndex = _NextIncompleteRevivalMissionCardIndex( cardIndex < 0 ? 0 : cardIndex + 1 );
+		}
+		_UpdateSelectedMissionCard( cardIndex );
 		_SetUpCardUnlockDisplay( oStatus );
 	};
 	var _FirstRevivalMissionCardIndex = function()
@@ -195,6 +201,29 @@ var OperationMainMenu = ( function()
 				return i;
 		}
 		return 0;
+	};
+	var _RevivalCardHasIncompleteMission = function( cardIndex )
+	{
+		var card = OperationMissionCard.GetMissionCardDetails( cardIndex );
+		if ( !card ) return false;
+		for ( var i = 0; i < card.quests.length; ++i )
+		{
+			var details = OperationUtil.GetMissionDetails( card.quests[ i ] );
+			if ( details && details.nMissionPointsRemaining > 0 ) return true;
+		}
+		return false;
+	};
+	var _NextIncompleteRevivalMissionCardIndex = function( startIndex )
+	{
+		var count = MissionsAPI.GetSeasonalOperationMissionCardsCount( _m_nSeasonIndex );
+		if ( count <= 0 ) return 0;
+		startIndex = ( Number( startIndex ) + count ) % count;
+		for ( var offset = 0; offset < count; ++offset )
+		{
+			var idx = ( startIndex + offset ) % count;
+			if ( _RevivalCardHasIncompleteMission( idx ) ) return idx;
+		}
+		return _FirstRevivalMissionCardIndex();
 	};
 	var _UpdateSelectedMissionCard = function( cardIndex )
 	{
