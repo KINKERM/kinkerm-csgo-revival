@@ -42,8 +42,8 @@ SERVER_URL = "https://cuckersfun.tail52305f.ts.net"
 # See launcher/build_pack.py to build & upload it.
 PACK_URL = "https://github.com/KINKERM/kinkerm-csgo-revival/releases/latest/download/csgo-revival-pack.zip"
 INSERTION2_WORKSHOP_IDS = ("2395333051", "2760936305")
-INSERTION2_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=2395333051"
 STEAMCMD_URL = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
+SEVENZR_URL = "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"
 # ==========================================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -177,6 +177,23 @@ def _find_7zip() -> str | None:
     for path in candidates:
         if path and os.path.isfile(path):
             return path
+
+    # Fully unattended fallback: fetch the official standalone 7zr.exe.
+    if sys.platform.startswith("win"):
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        tools_dir = os.path.join(base, "CSGO-Revival", "tools")
+        os.makedirs(tools_dir, exist_ok=True)
+        sevenzr = os.path.join(tools_dir, "7zr.exe")
+        if not os.path.isfile(sevenzr):
+            try:
+                log("downloading official 7-Zip extractor helper...")
+                with open(sevenzr, "wb") as fh:
+                    fh.write(download(SEVENZR_URL))
+            except Exception as exc:
+                log(f"could not download 7-Zip extractor helper: {exc}")
+                return None
+        return sevenzr if os.path.isfile(sevenzr) else None
+
     return None
 
 
@@ -332,7 +349,6 @@ def install_insertion2(csgo_dir: str) -> None:
                     return
 
     log("SteamCMD downloaded the Workshop item but cs_insertion2.bsp could not be extracted.")
-    log("If the item contains legacy.bin, install 7-Zip and run install.py again.")
     log(f"Final required file: {target}")
     sys.exit(4)
 
