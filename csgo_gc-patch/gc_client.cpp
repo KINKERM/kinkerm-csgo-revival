@@ -72,6 +72,22 @@ std::vector<std::string> OperationMissionBridgeCandidates()
     out.erase(std::unique(out.begin(), out.end()), out.end());
     return out;
 }
+std::vector<std::string> OperationPassBridgeCandidates()
+{
+    std::vector<std::string> out = OperationMissionBridgeCandidates();
+    static const std::string from = "revival_mission_select.log";
+    static const std::string to = "revival_operation_pass_buy.log";
+
+    for (std::string &path : out)
+    {
+        const size_t pos = path.rfind(from);
+        if (pos != std::string::npos)
+            path.replace(pos, from.size(), to);
+    }
+
+    return out;
+}
+
 
 constexpr int RevivalUserMsgServerRankRevealAll = 50;
 constexpr int RevivalUserMsgServerRankUpdate = 52;
@@ -495,6 +511,7 @@ ClientGC::~ClientGC()
 void ClientGC::HandleIdle()
 {
     PollRewardBridge();
+    PollOperationPassPurchaseBridge();
     PollOperationMissionSelectionBridge();
 
 #ifdef _WIN32
@@ -1367,6 +1384,49 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     }
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
+}
+
+void ClientGC::PollOperationPassPurchaseBridge()
+{
+    const std::vector<std::string> candidates =
+        OperationPassBridgeCandidates();
+
+    for (const std::string &path : candidates)
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in.is_open())
+            continue;
+
+        bool requested = false;
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.find("REVIVAL_OPERATION_PASS_BUY_V1") != std::string::npos)
+                requested = true;
+        }
+        in.close();
+        std::remove(path.c_str());
+
+        if (!requested)
+            continue;
+
+        CMsgSOSingleObject create;
+        const uint64_t itemId = m_inventory.GrantOperationPass(create);
+        if (!itemId)
+        {
+            Platform::Print(
+                "REVIVAL_OPERATION_PASS_BRIDGE_V1 failed to grant pass\n");
+            return;
+        }
+
+        if (create.has_type_id())
+            SendMessageToGame(true, k_ESOMsg_Create, create);
+
+        Platform::Print(
+            "REVIVAL_OPERATION_PASS_BRIDGE_V1 processed request item=%llu\n",
+            static_cast<unsigned long long>(itemId));
+        return;
+    }
 }
 
 void ClientGC::PollOperationMissionSelectionBridge()
