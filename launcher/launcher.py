@@ -177,17 +177,31 @@ def _print_operation_selection(body: bytes, prefix: str) -> None:
     )
 
 
-def fetch_inventory(config: dict) -> None:
+def fetch_inventory(config: dict) -> bool:
     url = inventory_url(config)
     print(f"[launcher] syncing inventory for {config['steam_id']}")
     print(f"[launcher] server: {url}")
-    try:
-        with urllib.request.urlopen(url, timeout=15) as resp:
-            body = resp.read()
-    except urllib.error.URLError as exc:
-        print(f"[launcher] failed to fetch inventory: {exc}")
-        print("[launcher] aborting so we don't launch with a stale inventory.")
-        sys.exit(2)
+    body = None
+    last_exc = None
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(url, timeout=12) as resp:
+                body = resp.read()
+            break
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            print(f"[launcher] inventory sync attempt {attempt}/3 failed: {exc}")
+            if attempt < 3:
+                time.sleep(1.0)
+
+    if body is None:
+        path = inventory_path(config)
+        if os.path.isfile(path):
+            print("[launcher] backend is slow/unavailable; continuing with existing local inventory.")
+            return False
+        print(f"[launcher] inventory sync unavailable: {last_exc}")
+        print("[launcher] no local inventory exists yet; start the backend and rerun the launcher.")
+        return False
 
     path = inventory_path(config)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -195,6 +209,7 @@ def fetch_inventory(config: dict) -> None:
         fh.write(body)
     print(f"[launcher] wrote {len(body)} bytes -> {path}")
     _print_operation_selection(body, "after sync")
+    return True
 
 
 def upload_inventory(config: dict) -> None:
