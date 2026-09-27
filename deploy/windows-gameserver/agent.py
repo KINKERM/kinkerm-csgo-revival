@@ -48,7 +48,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_SHORT_MATCH_OPERATION_V37"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_RELEASE_GAMEPLAY_V38"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -362,10 +362,22 @@ bot_stop 0
 bot_freeze 0
 bot_dont_shoot 0
 
-mp_autokick 0
+// Matchmaking-style friendly-fire punishment. Source owns the warning/kick
+// accounting so it behaves consistently for every connected human.
+mp_autokick 1
+mp_tkpunish 0
+mp_spawnprotectiontime 5
+mp_td_dmgtowarn 200
+mp_td_dmgtokick 300
+mp_td_spawndmgthreshold 50
 mp_autoteambalance 0
 mp_limitteams 0
 mp_friendlyfire 1
+ff_damage_reduction_bullets 0.33
+ff_damage_reduction_grenade 0.85
+ff_damage_reduction_grenade_self 1
+ff_damage_reduction_other 0.4
+cash_player_killed_teammate -300
 mp_maxrounds 16
 mp_winlimit 0
 mp_halftime 1
@@ -1154,8 +1166,16 @@ class ServerSlot:
                     "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
                     "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
-                    "mp_autokick 0; mp_autoteambalance 0; mp_limitteams 0; "
+                    "mp_autokick 1; mp_tkpunish 0; mp_spawnprotectiontime 5; "
+                    "mp_td_dmgtowarn 200; mp_td_dmgtokick 300; "
+                    "mp_td_spawndmgthreshold 50; "
+                    "mp_autoteambalance 0; mp_limitteams 0; "
                     "mp_friendlyfire 1; "
+                    "ff_damage_reduction_bullets 0.33; "
+                    "ff_damage_reduction_grenade 0.85; "
+                    "ff_damage_reduction_grenade_self 1; "
+                    "ff_damage_reduction_other 0.4; "
+                    "cash_player_killed_teammate -300; "
                     "mp_maxrounds 16; mp_winlimit 0; mp_halftime 1; "
                     "mp_overtime_enable 0; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
@@ -1173,7 +1193,14 @@ class ServerSlot:
                     "bot_quota; bot_quota_mode; bot_join_after_player; "
                     "bot_stop; bot_freeze; mp_maxrounds; mp_winlimit; "
                     "mp_timelimit; mp_match_can_clinch; mp_halftime; "
-                    "mp_overtime_enable; mp_friendlyfire; "
+                    "mp_overtime_enable; mp_friendlyfire; mp_autokick; "
+                    "mp_tkpunish; mp_spawnprotectiontime; "
+                    "mp_td_dmgtowarn; mp_td_dmgtokick; "
+                    "mp_td_spawndmgthreshold; "
+                    "ff_damage_reduction_bullets; "
+                    "ff_damage_reduction_grenade; "
+                    "ff_damage_reduction_grenade_self; "
+                    "ff_damage_reduction_other; cash_player_killed_teammate; "
                     "mp_warmuptime_all_players_connected; mp_warmup_pausetimer"
                 ),
             )
@@ -1385,6 +1412,14 @@ class ServerSlot:
                     "sv_competitive_official_5v5 1; "
                     "mp_timelimit 0; mp_maxrounds 16; mp_winlimit 0; "
                     "mp_halftime 1; mp_overtime_enable 0; "
+                    "mp_autokick 1; mp_tkpunish 0; mp_spawnprotectiontime 5; "
+                    "mp_td_dmgtowarn 200; mp_td_dmgtokick 300; "
+                    "mp_td_spawndmgthreshold 50; mp_friendlyfire 1; "
+                    "ff_damage_reduction_bullets 0.33; "
+                    "ff_damage_reduction_grenade 0.85; "
+                    "ff_damage_reduction_grenade_self 1; "
+                    "ff_damage_reduction_other 0.4; "
+                    "cash_player_killed_teammate -300; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
                     "bot_quota_mode fill; bot_quota 10"
