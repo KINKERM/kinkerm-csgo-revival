@@ -39,6 +39,7 @@ private:
         const std::unordered_map<std::string, std::string> &state);
     void PollRewardBridge();
     void PollOperationMissionSelectionBridge();
+    void PollOperationPassPurchaseBridge();
     void SendMatchmakingConnectReserve();
     void ClientRequestNewMission(GCMessageRead &messageRead);
     void ClientRedeemMissionReward(GCMessageRead &messageRead);
