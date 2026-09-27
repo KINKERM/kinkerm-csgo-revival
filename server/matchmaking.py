@@ -41,6 +41,11 @@ def account_id_from_steamid64(steamid: str) -> int:
         return 0
 
 
+def steamid64_from_account_id(account_id: int) -> str:
+    # Individual public SteamIDs use the fixed SteamID64 base plus AccountID.
+    return str(76561197960265728 + (int(account_id) & 0xFFFFFFFF))
+
+
 @dataclass
 class QueueEntry:
     steamid: str
@@ -194,6 +199,9 @@ class MatchmakingCoordinator:
             "map": match.map_name,
             "account_ids": self._match_account_ids(match),
             "queue_account_ids": sorted(queued),
+            "party_account_ids": [
+                p.account_id for p in match.players
+            ],
             "server_version": int(self._server.get("server_version") or 0),
             "server_id": int(self._server.get("server_id") or 0),
             "server_online": (
@@ -411,6 +419,7 @@ class MatchmakingCoordinator:
         game_type: int = 8,
         client_version: int = 0,
         preferred_map: str = "",
+        party_account_ids: object = None,
     ) -> dict[str, Any]:
         with self._lock:
             account_id = account_id_from_steamid64(steamid)
@@ -420,6 +429,50 @@ class MatchmakingCoordinator:
             preferred_map = str(preferred_map or "").strip()
             if preferred_map not in self._map_pool:
                 preferred_map = ""
+
+            party_ids: list[int] = []
+            if isinstance(party_account_ids, list):
+                for raw in party_account_ids:
+                    try:
+                        value = int(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0 and value not in party_ids:
+                        party_ids.append(value)
+            if account_id not in party_ids:
+                party_ids.append(account_id)
+            party_ids = party_ids[:MAX_HUMANS]
+
+            # MatchmakingStart carries the whole lobby roster. Seed every member
+            # under the same lock BEFORE _try_form_locked(), otherwise the first
+            # caller can allocate a one-player reservation and the second lobby
+            # member never gets included in the initial green ACCEPT.
+            active = self._active_match_locked()
+            active_steamids = (
+                {p.steamid for p in active.players} if active is not None else set()
+            )
+            queued_steamids = {q.steamid for q in self._queue}
+            for member_account_id in party_ids:
+                member_steamid = steamid64_from_account_id(member_account_id)
+                if member_steamid == steamid:
+                    continue
+                if member_steamid in active_steamids:
+                    continue
+                if member_steamid not in queued_steamids:
+                    self._queue.append(QueueEntry(
+                        steamid=member_steamid,
+                        account_id=member_account_id,
+                        game_type=int(game_type or 8),
+                        client_version=int(client_version or 0),
+                        preferred_map=preferred_map,
+                    ))
+                    queued_steamids.add(member_steamid)
+                self._states[member_steamid] = {
+                    "state": "searching",
+                    "server_online": self._server_online_locked(),
+                    "server_available": self._server_joinable_locked(),
+                    "party_account_ids": party_ids,
+                }
 
             # A mission queue must never silently substitute another map: that
             # would finish a Competitive match without advancing the mission the
