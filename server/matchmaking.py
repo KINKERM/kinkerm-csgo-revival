@@ -290,6 +290,7 @@ class MatchmakingCoordinator:
         self._assignment["steamids"] = [p.steamid for p in match.players]
         self._assignment["human_slots"] = len(match.players)
         self._assignment["max_humans"] = MAX_HUMANS
+        self._assignment["live_joinable"] = (match.state == "in_match")
 
     def _attach_waiting_to_active_match_locked(self) -> None:
         match = self._active_match_locked()
@@ -393,6 +394,7 @@ class MatchmakingCoordinator:
             "steamids": [p.steamid for p in players],
             "human_slots": len(players),
             "max_humans": MAX_HUMANS,
+            "live_joinable": False,
             "fill_with_bots": True,
             "tickrate": 64,
             "game_type": players[0].game_type if players else 8,
