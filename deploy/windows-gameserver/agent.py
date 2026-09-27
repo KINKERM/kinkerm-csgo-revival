@@ -1607,6 +1607,7 @@ def main() -> None:
     base = cfg["backend_url"].rstrip("/")
     agent_session_id = secrets.token_hex(8)
     print(f"[agent] session id: {agent_session_id}")
+    last_reset_generation: int | None = None
 
     try:
         while True:
@@ -1644,6 +1645,17 @@ def main() -> None:
             }
             try:
                 reply = post_json(base + "/matchmaking/server/heartbeat", body)
+                reset_generation = int(reply.get("reset_generation") or 0)
+                if last_reset_generation is None:
+                    last_reset_generation = reset_generation
+                elif reset_generation != last_reset_generation:
+                    print(
+                        f"[agent] backend major-reset generation changed "
+                        f"{last_reset_generation}->{reset_generation}; stopping live srcds"
+                    )
+                    last_reset_generation = reset_generation
+                    slot.stop()
+
                 assignment = reply.get("assignment")
                 if isinstance(assignment, dict):
                     slot.assignment_missing_since = 0.0
