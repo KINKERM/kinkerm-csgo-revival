@@ -454,7 +454,7 @@ def engine_reservation_ready_path(csgo_dir: str) -> str:
 
 
 def read_engine_reservation_ready(csgo_dir: str) -> dict[str, object]:
-    out: dict[str, object] = {"match_id": 0, "account_ids": []}
+    out: dict[str, object] = {"match_id": 0, "account_ids": [], "mode": ""}
     try:
         with open(
             engine_reservation_ready_path(csgo_dir),
@@ -473,6 +473,8 @@ def read_engine_reservation_ready(csgo_dir: str) -> dict[str, object]:
                 elif line.startswith("payload="):
                     payload = line.split("=", 1)[1]
             if payload:
+                if payload[0:1] in ("Q", "G"):
+                    out["mode"] = payload[0]
                 ids: list[int] = []
                 for token in re.findall(r"\[([0-9A-Fa-f]+)\]", payload):
                     try:
@@ -1737,6 +1739,9 @@ def main() -> None:
                 "server_id": slot.server_id,
                 "reserved_account_ids": sorted(slot.reserved_account_ids),
                 "queued_account_ids": sorted(slot.queued_account_ids),
+                "engine_reservation_mode": str(
+                    read_engine_reservation_ready(cfg["csgo_dir"]).get("mode") or ""
+                ),
                 "started_match_id": slot.match_id if slot.started else 0,
                 # Live score/team data lets the desktop GC mirror Operation
                 # round-win progress during the match instead of waiting for
