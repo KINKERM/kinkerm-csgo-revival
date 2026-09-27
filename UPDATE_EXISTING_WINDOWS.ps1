@@ -155,7 +155,7 @@ $autoReuseBuild = (-not $SkipBuild) -and (-not $ForceBuild) -and (-not $gcSource
 $didBuild = $false
 
 if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
-    Write-Host "[3/6] Building csgo + srcds + csgo_gc (Win32 Release)..." -ForegroundColor Yellow
+    Write-Host "[3/6] Building changed runtime targets (Win32 Release)..." -ForegroundColor Yellow
     if ($ForceBuild) {
         Write-Host "    ForceBuild requested; rebuilding regardless of build stamp." -ForegroundColor Yellow
     } elseif ($gcSourceChanged) {
@@ -175,8 +175,17 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
         if ($LASTEXITCODE -ne 0) { throw "csgo_gc clean failed" }
     }
 
-    & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target csgo srcds csgo_gc
-    if ($LASTEXITCODE -ne 0) { throw "csgo_gc build failed" }
+    $buildTargets = @("csgo_gc")
+    if ($ForceBuild -or -not (Test-Path $clientExe)) {
+        $buildTargets += "csgo"
+    }
+    if ($ForceBuild -or -not (Test-Path $serverExe)) {
+        $buildTargets += "srcds"
+    }
+
+    Write-Host ("    Build targets: " + ($buildTargets -join ", ")) -ForegroundColor DarkGray
+    & cmake --build (Join-Path $CsgoGcSource "build") --config Release --target $buildTargets
+    if ($LASTEXITCODE -ne 0) { throw "csgo_gc/runtime build failed" }
 
     $gcDllBytes = [IO.File]::ReadAllBytes($gcDll)
     $gcDllText = [Text.Encoding]::ASCII.GetString($gcDllBytes)
