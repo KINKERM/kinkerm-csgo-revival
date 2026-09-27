@@ -347,7 +347,6 @@ foreach ($marker in @(
     "REVIVAL_NATIVE_DROP_BUNDLE_V1",
     "REVIVAL_SERVER_DROP_IMPORT_V1",
     "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1",
-    "REVIVAL_LATEJOIN_PENDING_ROSTER_V2",
     "REVIVAL_JOIN_IN_PROGRESS_G_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
