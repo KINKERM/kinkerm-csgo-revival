@@ -315,11 +315,17 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_OR_WIN_REPAIR_V1")) {
         throw "Built csgo_gc.dll is missing Operation OR win-branch repair."
     }
-    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_ACCEPT_V5")) {
-        throw "Built csgo_gc.dll is missing green ACCEPT live-drop-in handling."
+    if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_ACCEPT_V6")) {
+        throw "Built csgo_gc.dll is missing engine-roster live-drop-in ACCEPT handling."
     }
     if (-not $gcDllText.Contains("REVIVAL_MISSION_QUEUE_ONESHOT_V1")) {
         throw "Built csgo_gc.dll is missing one-shot Operation mission map targeting."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_PARTY_QUEUE_ROSTER_V1")) {
+        throw "Built csgo_gc.dll is missing full-party matchmaking roster handling."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V2")) {
+        throw "Built csgo_gc.dll is missing pending-only engine ready-up roster handling."
     }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
