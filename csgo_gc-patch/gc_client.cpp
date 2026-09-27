@@ -1926,11 +1926,17 @@ void ClientGC::ProcessCompletedMatchBridge(
     const bool won = BridgeU64(state, "result_won", 0) != 0;
     const bool tied = BridgeU64(state, "result_tied", 0) != 0;
 
-    // Mission progression has its own exactly-once guard. The authoritative
-    // server reward bundle can arrive before this coordinator state; tying
-    // missions to m_lastRewardedMatchId made that ordering randomly skip stars.
-    if (matchId != m_lastMissionProgressMatchId
-        && matchId != m_lastOperationMissionMatchId)
+    // Round progress and the OR-graph win branch have independent arrival
+    // paths. A fallback 9136 can apply round progress first with won=0; the
+    // later coordinator state is authoritative for the final match result.
+    // Never let the round-progress dedupe suppress a confirmed "win 1 match".
+    const bool missionProgressAlreadyApplied =
+        matchId == m_lastMissionProgressMatchId
+        || matchId == m_lastOperationMissionMatchId;
+    const bool confirmedWinStillNeeded =
+        won && matchId != m_lastOperationWinMatchId;
+
+    if (!missionProgressAlreadyApplied || confirmedWinStillNeeded)
     {
         auto mapIt = state.find("last_map");
         const std::string completedMap =
@@ -1938,13 +1944,17 @@ void ClientGC::ProcessCompletedMatchBridge(
                 ? mapIt->second
                 : m_matchmakingMap;
 
-        uint32_t remainingMissionRounds = roundsWon;
-        if (matchId == m_operationLiveMatchId)
+        uint32_t remainingMissionRounds = 0;
+        if (!missionProgressAlreadyApplied)
         {
-            remainingMissionRounds =
-                roundsWon > m_operationLiveRoundsApplied
-                    ? roundsWon - m_operationLiveRoundsApplied
-                    : 0;
+            remainingMissionRounds = roundsWon;
+            if (matchId == m_operationLiveMatchId)
+            {
+                remainingMissionRounds =
+                    roundsWon > m_operationLiveRoundsApplied
+                        ? roundsWon - m_operationLiveRoundsApplied
+                        : 0;
+            }
         }
 
         CMsgSOMultipleObjects operationUpdate;
@@ -1960,19 +1970,22 @@ void ClientGC::ProcessCompletedMatchBridge(
                 operationHello);
 
             Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V5 applied end-match Operation update "
-                "map=%s match=%llu total_rounds=%u live_already=%u remaining=%u won=%u\n",
+                "REVIVAL_OPERATION_OR_WIN_REPAIR_V1 map=%s match=%llu "
+                "rounds=%u already_progress=%u won=%u\n",
                 completedMap.c_str(),
                 static_cast<unsigned long long>(matchId),
-                roundsWon,
-                matchId == m_operationLiveMatchId
-                    ? m_operationLiveRoundsApplied : 0,
                 remainingMissionRounds,
+                missionProgressAlreadyApplied ? 1u : 0u,
                 won ? 1u : 0u);
         }
 
-        m_lastMissionProgressMatchId = matchId;
-        m_lastOperationMissionMatchId = matchId;
+        if (!missionProgressAlreadyApplied)
+        {
+            m_lastMissionProgressMatchId = matchId;
+            m_lastOperationMissionMatchId = matchId;
+        }
+        if (won)
+            m_lastOperationWinMatchId = matchId;
     }
 
     // If the server bundle already applied XP/rank/items, only the independent
