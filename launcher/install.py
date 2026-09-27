@@ -446,6 +446,7 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
     mainmenu_store_js = os.path.join(stage_dir, "scripts", "mainmenu_store.js")
     decodable_js = os.path.join(stage_dir, "scripts", "popups", "popup_capability_decodable.js")
     inspect_async_js = os.path.join(stage_dir, "scripts", "popups", "popup_inspect_async-bar.js")
+    inspect_purchase_js = os.path.join(stage_dir, "scripts", "popups", "popup_inspect_purchase-bar.js")
 
     with open(xml_path, "r", encoding="utf-8-sig") as fh:
         xml = fh.read()
@@ -486,6 +487,7 @@ def repack_panorama(csgo_dir: str, zf: zipfile.ZipFile) -> None:
         mainmenu_store_js,
         decodable_js,
         inspect_async_js,
+        inspect_purchase_js,
     )
     for path in aggressive_paths:
         with open(path, "r", encoding="utf-8-sig") as fh:
