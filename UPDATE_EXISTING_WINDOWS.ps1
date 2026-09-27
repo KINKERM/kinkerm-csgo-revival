@@ -240,6 +240,12 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_CLIENT_REWARD_BRIDGE_V1")) {
         throw "Built csgo_gc.dll does not contain the direct match-end client reward bridge."
     }
+    if (-not $gcDllText.Contains("REVIVAL_NATIVE_UNBOX_CHAT_V1")) {
+        throw "Built csgo_gc.dll is missing native unbox acknowledgement relay."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1")) {
+        throw "Built csgo_gc.dll is missing server-side unbox chat delivery."
+    }
     if (-not $gcDllText.Contains("REVIVAL_GUARANTEED_MATCH_DROPS_V1")) {
         throw "Built csgo_gc.dll does not contain guaranteed Competitive match drops."
     }
