@@ -2164,6 +2164,243 @@ bool Inventory::RemoveItemName(uint64_t itemId,
     return true;
 }
 
+
+CSOEconItem *Inventory::FindItem(uint64_t itemId)
+{
+    auto it = m_items.find(itemId);
+    return it == m_items.end() ? nullptr : &it->second;
+}
+
+uint64_t Inventory::StorageReference(const CSOEconItem &item) const
+{
+    uint32_t low = 0;
+    uint32_t high = 0;
+    bool haveLow = false;
+    bool haveHigh = false;
+
+    for (const CSOEconItemAttribute &attr : item.attribute())
+    {
+        if (attr.def_index() == ItemSchema::AttributeCasketIdLow)
+        {
+            low = m_itemSchema.AttributeUint32(&attr);
+            haveLow = true;
+        }
+        else if (attr.def_index() == ItemSchema::AttributeCasketIdHigh)
+        {
+            high = m_itemSchema.AttributeUint32(&attr);
+            haveHigh = true;
+        }
+    }
+
+    if (!haveLow || !haveHigh)
+        return 0;
+
+    return static_cast<uint64_t>(low)
+        | (static_cast<uint64_t>(high) << 32);
+}
+
+static void RevivalEmbedStorageReference(
+    const ItemSchema &itemSchema, CSOEconItem &item, uint64_t storageId)
+{
+    // Never accumulate duplicate casket-id attributes if the client retries.
+    auto *attrs = item.mutable_attribute();
+    for (auto it = attrs->begin(); it != attrs->end();)
+    {
+        if (it->def_index() == ItemSchema::AttributeCasketIdLow
+            || it->def_index() == ItemSchema::AttributeCasketIdHigh)
+        {
+            it = attrs->erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    CSOEconItemAttribute *low = item.add_attribute();
+    low->set_def_index(ItemSchema::AttributeCasketIdLow);
+    itemSchema.SetAttributeUint32(
+        low, static_cast<uint32_t>(storageId & 0xFFFFFFFFull));
+
+    CSOEconItemAttribute *high = item.add_attribute();
+    high->set_def_index(ItemSchema::AttributeCasketIdHigh);
+    itemSchema.SetAttributeUint32(
+        high, static_cast<uint32_t>(storageId >> 32));
+
+    // Stock Storage Units hide contained items from loadout use.
+    item.clear_equipped_state();
+}
+
+static void RevivalStripStorageReference(CSOEconItem &item)
+{
+    auto *attrs = item.mutable_attribute();
+    for (auto it = attrs->begin(); it != attrs->end();)
+    {
+        if (it->def_index() == ItemSchema::AttributeCasketIdLow
+            || it->def_index() == ItemSchema::AttributeCasketIdHigh)
+        {
+            it = attrs->erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+bool Inventory::IncrementCasketItemsCount(CSOEconItem &storage, int delta)
+{
+    CSOEconItemAttribute *countAttr = nullptr;
+    CSOEconItemAttribute *dateAttr = nullptr;
+
+    for (CSOEconItemAttribute &attr : *storage.mutable_attribute())
+    {
+        if (attr.def_index() == ItemSchema::AttributeCasketItemsCount)
+            countAttr = &attr;
+        else if (attr.def_index() == ItemSchema::AttributeCasketModificationDate)
+            dateAttr = &attr;
+    }
+
+    // Older revival inventories can contain a Storage Unit without the stock
+    // count/date attributes. Self-heal it instead of making the feature appear
+    // broken forever.
+    if (!countAttr)
+    {
+        countAttr = storage.add_attribute();
+        countAttr->set_def_index(ItemSchema::AttributeCasketItemsCount);
+
+        uint32_t actual = 0;
+        for (const auto &pair : m_items)
+        {
+            if (pair.first != storage.id()
+                && StorageReference(pair.second) == storage.id())
+            {
+                ++actual;
+            }
+        }
+        m_itemSchema.SetAttributeUint32(countAttr, actual);
+    }
+
+    if (!dateAttr)
+    {
+        dateAttr = storage.add_attribute();
+        dateAttr->set_def_index(ItemSchema::AttributeCasketModificationDate);
+        m_itemSchema.SetAttributeUint32(
+            dateAttr, static_cast<uint32_t>(time(nullptr)));
+    }
+
+    const int32_t current =
+        static_cast<int32_t>(m_itemSchema.AttributeUint32(countAttr));
+    const int32_t updated = current + delta;
+
+    // Retail Storage Units cap at 1000 items.
+    if (updated < 0 || updated > 1000)
+        return false;
+
+    m_itemSchema.SetAttributeUint32(
+        countAttr, static_cast<uint32_t>(updated));
+    m_itemSchema.SetAttributeUint32(
+        dateAttr, static_cast<uint32_t>(time(nullptr)));
+    return true;
+}
+
+bool Inventory::CasketItemAdd(
+    uint64_t casketId,
+    uint64_t itemId,
+    CMsgSOSingleObject &modifyCasket,
+    CMsgSOSingleObject &modifyItem,
+    CMsgGCItemCustomizationNotification &notification)
+{
+    CSOEconItem *storage = FindItem(casketId);
+    CSOEconItem *target = FindItem(itemId);
+    if (!storage || !target || casketId == itemId)
+        return false;
+
+    if (storage->def_index() != ItemSchema::ItemCasket)
+        return false;
+
+    // Do not let a retry double-increment the count, and do not silently move
+    // an item from some other Storage Unit without extracting it first.
+    const uint64_t currentStorage = StorageReference(*target);
+    if (currentStorage == casketId)
+    {
+        ToSingleObject(modifyItem, *target);
+        ToSingleObject(modifyCasket, *storage);
+        notification.set_request(
+            k_EGCItemCustomizationNotification_CasketAdded);
+        notification.add_item_id(casketId);
+        return true;
+    }
+    if (currentStorage != 0)
+        return false;
+
+    // Storage Units cannot recursively contain themselves/another casket.
+    if (target->def_index() == ItemSchema::ItemCasket)
+        return false;
+
+    if (!IncrementCasketItemsCount(*storage, +1))
+    {
+        notification.set_request(
+            k_EGCItemCustomizationNotification_CasketTooFull);
+        notification.add_item_id(casketId);
+        return false;
+    }
+
+    RevivalEmbedStorageReference(m_itemSchema, *target, casketId);
+
+    ToSingleObject(modifyItem, *target);
+    ToSingleObject(modifyCasket, *storage);
+    notification.set_request(
+        k_EGCItemCustomizationNotification_CasketAdded);
+    notification.add_item_id(casketId);
+
+    WriteToFile();
+    Platform::Print(
+        "REVIVAL_STORAGE_UNITS_V1 add casket=%llu item=%llu\n",
+        static_cast<unsigned long long>(casketId),
+        static_cast<unsigned long long>(itemId));
+    return true;
+}
+
+bool Inventory::CasketItemExtract(
+    uint64_t casketId,
+    uint64_t itemId,
+    CMsgSOSingleObject &modifyCasket,
+    CMsgSOSingleObject &modifyItem,
+    CMsgGCItemCustomizationNotification &notification)
+{
+    CSOEconItem *storage = FindItem(casketId);
+    CSOEconItem *target = FindItem(itemId);
+    if (!storage || !target)
+        return false;
+
+    if (storage->def_index() != ItemSchema::ItemCasket)
+        return false;
+
+    // Only extract an item that actually belongs to this casket. This prevents
+    // count corruption from malformed/replayed client requests.
+    if (StorageReference(*target) != casketId)
+        return false;
+
+    if (!IncrementCasketItemsCount(*storage, -1))
+        return false;
+
+    RevivalStripStorageReference(*target);
+
+    ToSingleObject(modifyItem, *target);
+    ToSingleObject(modifyCasket, *storage);
+    notification.set_request(
+        k_EGCItemCustomizationNotification_CasketRemoved);
+    notification.add_item_id(casketId);
+
+    WriteToFile();
+    Platform::Print(
+        "REVIVAL_STORAGE_UNITS_V1 extract casket=%llu item=%llu\n",
+        static_cast<unsigned long long>(casketId),
+        static_cast<unsigned long long>(itemId));
+    return true;
+}
+
 uint64_t Inventory::PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update)
 {
     // Do not use CreateItem(defIndex) here: that helper allocates first and
