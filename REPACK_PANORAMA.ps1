@@ -84,6 +84,7 @@ $stageMainMenuRootJs = Join-Path $stageDir "scripts\mainmenu.js"
 $stageMainMenuStoreJs = Join-Path $stageDir "scripts\mainmenu_store.js"
 $stageDecodableJs = Join-Path $stageDir "scripts\popups\popup_capability_decodable.js"
 $stageInspectAsyncJs = Join-Path $stageDir "scripts\popups\popup_inspect_async-bar.js"
+$stageInspectPurchaseJs = Join-Path $stageDir "scripts\popups\popup_inspect_purchase-bar.js"
 Need-Path $stageXml "Staged mainmenu_play.xml"
 Need-Path $stageJs "Staged mainmenu_play.js"
 Need-Path $stageCss "Staged mainmenu_play.css"
@@ -98,6 +99,7 @@ Need-Path $stageMainMenuRootJs "Staged mainmenu.js"
 Need-Path $stageMainMenuStoreJs "Staged mainmenu_store.js"
 Need-Path $stageDecodableJs "Staged popup_capability_decodable.js"
 Need-Path $stageInspectAsyncJs "Staged popup_inspect_async-bar.js"
+Need-Path $stageInspectPurchaseJs "Staged popup_inspect_purchase-bar.js"
 
 $xmlText = [IO.File]::ReadAllText($stageXml)
 $xmlText = [Text.RegularExpressions.Regex]::Replace($xmlText, ">\s+<", "><")
@@ -169,7 +171,8 @@ foreach ($compactFile in @(
     $stageMainMenuRootJs,
     $stageMainMenuStoreJs,
     $stageDecodableJs,
-    $stageInspectAsyncJs
+    $stageInspectAsyncJs,
+    $stageInspectPurchaseJs
 )) {
     $raw = [IO.File]::ReadAllText($compactFile)
     $lines = [Text.RegularExpressions.Regex]::Split($raw, "\r?\n") |
