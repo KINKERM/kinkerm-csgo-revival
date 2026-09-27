@@ -110,8 +110,8 @@ private:
     std::string m_matchmakingServerAddress;
     std::string m_matchmakingMap;
     bool m_matchmakingFinalReserveSent{};
-    // Live drop-ins leave SEARCH with an online ongoing-session update, then
-    // send a minimal 9107 on a later SharedGC tick. Never send a full nested
-    // reservation for a running match or Legacy reopens the ACCEPT panel.
+    // Kept resettable for compatibility with older state transitions.
+    // V4 live drop-ins use the stock ongoing-match reconnect path instead of
+    // scheduling a first/minimal 9107 (which cannot initiate QueueConnect).
     uint32_t m_liveDropInConnectDelayTicks{};
 };
