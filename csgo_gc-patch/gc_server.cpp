@@ -1254,31 +1254,32 @@ void ServerGC::SendMatchmakingReservation()
             queueReserve.add_account_ids(accountId);
     }
 
-    // Once everybody is connected, keep the existing reservation alive using
-    // the full roster. As soon as a new account appears in server_reservation,
-    // the missing auth marker above produces a one-player (or pending-player)
-    // ready-up roster for that drop-in.
-    if (!queueReserve.account_ids_size())
+    // Only an actual pending ready-up roster should touch Source's Q state.
+    // After every listed account has authenticated, stop refreshing the old
+    // reservation instead of re-arming connected players. A later membership
+    // change creates a new non-empty pending roster and re-arms Q immediately.
+    if (queueReserve.account_ids_size())
     {
-        for (int i = 0; i < reserve.account_ids_size(); ++i)
-            queueReserve.add_account_ids(reserve.account_ids(i));
-    }
-
-    const std::string queuePayload =
-        BuildQueuedReservationPayload(GameServerCookieId, matchId, queueReserve);
-    const bool queueChanged = queuePayload != m_lastQueueReservationPayload;
-    if (queueChanged || ++m_queueReservationRefreshTicks >= 4)
-    {
-        PostToHost(HostEvent::ReserveServerForQueuedGame, matchId,
-            queuePayload.data(), static_cast<uint32_t>(queuePayload.size()));
-        m_lastQueueReservationPayload = queuePayload;
-        m_queueReservationRefreshTicks = 0;
-        if (queueChanged)
+        const std::string queuePayload =
+            BuildQueuedReservationPayload(GameServerCookieId, matchId, queueReserve);
+        const bool queueChanged = queuePayload != m_lastQueueReservationPayload;
+        if (queueChanged || ++m_queueReservationRefreshTicks >= 4)
         {
-            Platform::Print(
-                "REVIVAL_LATEJOIN_PENDING_ROSTER_V1 queued engine Q reservation match=%llu pending_roster=%d full_roster=%d\n",
-                matchId, queueReserve.account_ids_size(), reserve.account_ids_size());
+            PostToHost(HostEvent::ReserveServerForQueuedGame, matchId,
+                queuePayload.data(), static_cast<uint32_t>(queuePayload.size()));
+            m_lastQueueReservationPayload = queuePayload;
+            m_queueReservationRefreshTicks = 0;
+            if (queueChanged)
+            {
+                Platform::Print(
+                    "REVIVAL_LATEJOIN_PENDING_ROSTER_V2 queued engine Q reservation match=%llu pending_roster=%d full_roster=%d\n",
+                    matchId, queueReserve.account_ids_size(), reserve.account_ids_size());
+            }
         }
+    }
+    else
+    {
+        m_queueReservationRefreshTicks = 0;
     }
 
     // The native GC request is still useful for Source's normal bookkeeping,
