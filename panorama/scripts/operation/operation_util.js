@@ -541,7 +541,8 @@ var OperationUtil = ( function () {
 				'&' + 'asyncworkitemwarning=no' +
 				'&' + 'bluroperationpanel=true' +
 				'&' + 'storeitemid=' + passDefIndex +
-				'&' + 'overridepurchasemultiple=0',
+				'&' + 'overridepurchasemultiple=0' +
+				'&' + 'revivalpass=true',
 				'none'
 			);
 			var nSourceLayoutId = 0;
