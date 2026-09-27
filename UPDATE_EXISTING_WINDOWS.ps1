@@ -282,6 +282,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_PASS_PURCHASE_V1")) {
         throw "Built csgo_gc.dll is missing local Operation Riptide pass purchase support."
     }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_PASS_BRIDGE_V1")) {
+        throw "Built csgo_gc.dll is missing direct Operation pass bridge support."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
