@@ -457,6 +457,14 @@ void Inventory::ReadFromFile()
             }
         }
     }
+
+    if (RepairStorageUnits())
+    {
+        WriteToFile();
+        Platform::Print(
+            "REVIVAL_STORAGE_UNITS_V1 repaired legacy Storage Unit metadata\n");
+    }
+
     RefreshProfileWeek();
 }
 
@@ -2246,6 +2254,70 @@ static void RevivalStripStorageReference(CSOEconItem &item)
             ++it;
         }
     }
+}
+
+bool Inventory::RepairStorageUnits()
+{
+    bool changed = false;
+
+    for (auto &storagePair : m_items)
+    {
+        CSOEconItem &storage = storagePair.second;
+        if (storage.def_index() != ItemSchema::ItemCasket)
+            continue;
+
+        uint32_t actualCount = 0;
+        for (auto &itemPair : m_items)
+        {
+            if (itemPair.first == storagePair.first)
+                continue;
+
+            CSOEconItem &item = itemPair.second;
+            if (StorageReference(item) == storage.id())
+            {
+                ++actualCount;
+                if (item.equipped_state_size())
+                {
+                    item.clear_equipped_state();
+                    changed = true;
+                }
+            }
+        }
+
+        CSOEconItemAttribute *countAttr = nullptr;
+        CSOEconItemAttribute *dateAttr = nullptr;
+        for (CSOEconItemAttribute &attr : *storage.mutable_attribute())
+        {
+            if (attr.def_index() == ItemSchema::AttributeCasketItemsCount)
+                countAttr = &attr;
+            else if (attr.def_index() == ItemSchema::AttributeCasketModificationDate)
+                dateAttr = &attr;
+        }
+
+        if (!countAttr)
+        {
+            countAttr = storage.add_attribute();
+            countAttr->set_def_index(ItemSchema::AttributeCasketItemsCount);
+            changed = true;
+        }
+
+        if (m_itemSchema.AttributeUint32(countAttr) != actualCount)
+        {
+            m_itemSchema.SetAttributeUint32(countAttr, actualCount);
+            changed = true;
+        }
+
+        if (!dateAttr)
+        {
+            dateAttr = storage.add_attribute();
+            dateAttr->set_def_index(ItemSchema::AttributeCasketModificationDate);
+            m_itemSchema.SetAttributeUint32(
+                dateAttr, static_cast<uint32_t>(time(nullptr)));
+            changed = true;
+        }
+    }
+
+    return changed;
 }
 
 bool Inventory::IncrementCasketItemsCount(CSOEconItem &storage, int delta)
