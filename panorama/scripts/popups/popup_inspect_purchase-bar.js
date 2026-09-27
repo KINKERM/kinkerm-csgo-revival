@@ -21,6 +21,7 @@ var InpsectPurchaseBar = ( function()
 		                                                     
 		                                          
 		m_itemid = !m_storeItemid ? itemId : m_storeItemid;
+		m_isRevivalOperationPass = funcGetSettingCallback( 'revivalpass', 'false' ) === 'true';
 
 		                              
 		var bFauxItemIdForPurchase = InventoryAPI.IsFauxItemID( m_itemid );
@@ -32,7 +33,7 @@ var InpsectPurchaseBar = ( function()
 		                                                                                                                                                                                                    
 		                                                                                   
 
-		if ( !priceOriginal ||
+		if ( ( !priceOriginal && !m_isRevivalOperationPass ) ||
 			( funcGetSettingCallback( 'inspectonly', 'false' ) === 'true' ) ||
 			!InventoryAPI.IsValidItemID( m_itemid )
 		)
@@ -103,6 +104,14 @@ var InpsectPurchaseBar = ( function()
 			qty = Number( elDropdown.GetSelected().id );
 		}
 
+		if ( m_isRevivalOperationPass )
+		{
+			elDropdown.visible = false;
+			elBtn.text = 'GET PASS';
+			_UpdateSalePrice( '' );
+			return;
+		}
+
 		var salePrice = ItemInfo.GetStoreSalePrice( m_itemid, qty );
 		elBtn.text = m_isXrayMode ? '#popup_totool_purchase_header' :  salePrice;
 
@@ -165,6 +174,17 @@ var InpsectPurchaseBar = ( function()
 	{
 		var elDropdown = m_elPanel.FindChildInLayoutFile( 'PurchaseCountDropdown' );
 		var qty = m_isRevivalOperationPass ? 1 : Number( elDropdown.GetSelected().id );
+
+		if ( m_isRevivalOperationPass )
+		{
+			var btn = m_elPanel.FindChildInLayoutFile( 'PurchaseBtn' );
+			btn.enabled = false;
+			btn.text = 'ADDING PASS...';
+			GameInterfaceAPI.ConsoleCommand(
+				'con_logfile "revival_operation_pass_buy.log"; echo REVIVAL_OPERATION_PASS_BUY_V1; con_logfile ""' );
+			$.Schedule( 0.75, _ClosePopup );
+			return;
+		}
 
 		var itemDefitionNameString = ItemInfo.GetItemDefinitionName( m_itemid );
 		var purchaseList = [];
