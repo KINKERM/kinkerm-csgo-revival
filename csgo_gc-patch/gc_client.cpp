@@ -1442,15 +1442,6 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     }
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
-
-    if (m_lastMatchmakingReservation && !m_matchmakingServerAddress.empty())
-    {
-        Platform::Print(
-            "REVIVAL_LIVE_DROPIN_RECONNECT_V4 stock reconnect join-data response "
-            "reservation=%llu server=%s map=%s\n",
-            static_cast<unsigned long long>(m_lastMatchmakingReservation),
-            m_matchmakingServerAddress.c_str(), m_matchmakingMap.c_str());
-    }
 }
 
 void ClientGC::PollOperationPassPurchaseBridge()
@@ -1763,11 +1754,9 @@ void ClientGC::SendMatchmakingConnectReserve()
         reserve.set_map(m_matchmakingMap);
     reserve.set_server_address(m_matchmakingServerAddress);
 
-    // Deliberately NO nested reservation here. Fresh matches reach this only
-    // after the stock ready-up reached stage 2. Live drop-ins never send the
-    // nested/full 9107 at all; they publish an online ongoing-session update,
-    // then use this minimal address+cookie 9107 as the FIRST reservation packet
-    // so Legacy goes straight to QueueConnect instead of opening ACCEPT again.
+    // Deliberately NO nested reservation here. Both fresh allocations and live
+    // drop-ins reach this only AFTER the stock green ACCEPT flow has reached
+    // stage 2 awaiting=0. This second/minimal 9107 advances QueueConnect.
     SendMessageToGame(
         false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingFinalReserveSent = true;
@@ -2307,8 +2296,17 @@ void ClientGC::PollMatchmakingBridge()
         std::vector<uint32_t> accountIds = BridgeU32List(state, "account_ids");
         if (accountIds.empty())
             accountIds.push_back(AccountId());
-        for (uint32_t accountId : accountIds)
-            details->add_account_ids(accountId);
+
+        // For a running match, only THIS late-joining player belongs in the
+        // client-side ready/ACCEPT roster. The server's native Q reservation
+        // still contains every connected/reserved account. Re-sending the full
+        // roster here makes Legacy wait for players already inside the match
+        // and leaves the joiner stuck at "Confirming match...".
+        if (liveDropIn)
+            details->add_account_ids(AccountId());
+        else
+            for (uint32_t accountId : accountIds)
+                details->add_account_ids(accountId);
         details->set_game_type(gameType);
         details->set_match_id(matchId);
         const uint32_t serverVersion = static_cast<uint32_t>(
@@ -2355,65 +2353,28 @@ void ClientGC::PollMatchmakingBridge()
 
         if (liveDropIn)
         {
-            // A running match uses the stock RECONNECT path, not the fresh
-            // ACCEPT/QueueConnect path. 9107 by itself only advances an ACCEPT
-            // session that already exists; sending a minimal 9107 as the first
-            // packet therefore just stops SEARCH and does not connect.
-            //
-            // Publish the player's account as belonging to an ongoing match,
-            // then publish a *minimal* ongoingmatch descriptor in GC Hello.
-            // Do NOT copy the nested server reservation into ongoingmatch: this
-            // Legacy client interprets that full object as a new ready-up.
-            // Panorama sees HasOngoingMatch(), calls the stock reconnect API,
-            // and the engine asks us for CMsg...ClientRequestJoinServerData.
-            CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate ongoingUpdate;
-            ongoingUpdate.set_matchmaking(0);
-            ongoingUpdate.add_ongoingmatch_account_id_sessions(AccountId());
-            ongoingUpdate.mutable_global_stats()->set_players_online(
-                static_cast<uint32_t>(accountIds.size()));
-            ongoingUpdate.mutable_global_stats()->set_players_searching(0);
-            ongoingUpdate.mutable_global_stats()->set_servers_online(1);
-            ongoingUpdate.mutable_global_stats()->set_servers_available(1);
-            ongoingUpdate.mutable_global_stats()->set_ongoing_matches(1);
+            // Late join must still use CS:GO's normal green ACCEPT flow.
+            // The only difference from a fresh allocation is the nested 9107
+            // roster above: it contains only the joining account, so players
+            // already in the live match are not asked to ready-up again.
             SendMessageToGame(
-                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate,
-                ongoingUpdate);
-
-            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello ongoingHello;
-            BuildMatchmakingHello(ongoingHello);
-            CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve *ongoing =
-                ongoingHello.mutable_ongoingmatch();
-            ongoing->set_serverid(serverId);
-            if (directUdpIp)
-                ongoing->set_direct_udp_ip(directUdpIp);
-            ongoing->set_direct_udp_port(port);
-            ongoing->set_reservationid(reservationId);
-            ongoing->set_map(mapName);
-            ongoing->set_server_address(numericServerAddress);
-            ongoingHello.mutable_global_stats()->set_players_online(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve,
+                reserve);
+            RevivalArmAcceptWatcher(
+                directUdpIp, static_cast<uint16_t>(port),
                 static_cast<uint32_t>(accountIds.size()));
-            ongoingHello.mutable_global_stats()->set_players_searching(0);
-            ongoingHello.mutable_global_stats()->set_servers_online(1);
-            ongoingHello.mutable_global_stats()->set_servers_available(1);
-            ongoingHello.mutable_global_stats()->set_ongoing_matches(1);
-            SendMessageToGame(
-                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
-                ongoingHello);
-
-            m_matchmakingActive = false;
-            m_liveDropInConnectDelayTicks = 0;
-            RevivalDisarmAcceptWatcher();
 
             Platform::Print(
-                "REVIVAL_LIVE_DROPIN_RECONNECT_V4 match=%llu reservation=%llu "
-                "server=%s map=%s; ongoing match published, awaiting stock reconnect join-data request\n",
+                "REVIVAL_LIVE_DROPIN_ACCEPT_V5 match=%llu reservation=%llu "
+                "server=%s map=%s; green ACCEPT armed for joining player only\n",
                 static_cast<unsigned long long>(matchId),
                 static_cast<unsigned long long>(reservationId),
                 numericServerAddress.c_str(), mapName.c_str());
         }
         else
         {
-            // New allocations still use the normal first 9107 + ACCEPT flow.
+            // New allocations use the same stock green ACCEPT flow with the
+            // complete initial ready-up roster.
             SendMessageToGame(
                 false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve,
                 reserve);
