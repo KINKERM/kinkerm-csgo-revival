@@ -449,6 +449,7 @@ def _http_json(method: str, url: str, payload: dict | None = None) -> dict:
 
 
 REVIVAL_LAUNCHER_DROPIN_STATE_V1 = "REVIVAL_LAUNCHER_DROPIN_STATE_V1"
+REVIVAL_LAUNCHER_UNBOX_CHAT_V1 = "REVIVAL_LAUNCHER_UNBOX_CHAT_V1"
 
 
 def _write_mm_state(config: dict, state: dict) -> None:
@@ -498,6 +499,40 @@ def _write_mm_state(config: dict, state: dict) -> None:
     _atomic_write_text(_mm_state_path(config), "\n".join(lines) + "\n")
 
 
+def _flush_item_ack_outbox(config: dict, base: str) -> None:
+    outbox = os.path.join(config["csgo_dir"], "csgo_gc", "item_ack_outbox")
+    try:
+        names = sorted(name for name in os.listdir(outbox)
+                       if name.lower().endswith(".bin"))
+    except OSError:
+        return
+
+    for name in names:
+        path = os.path.join(outbox, name)
+        try:
+            with open(path, "rb") as fh:
+                payload = fh.read()
+            if not payload:
+                os.remove(path)
+                continue
+            result = _http_json(
+                "POST", base + "/matchmaking/item-ack",
+                {
+                    "steamid": config["steam_id"],
+                    "payload_b64": base64.b64encode(payload).decode("ascii"),
+                },
+            )
+            if result.get("ok"):
+                os.remove(path)
+                print(
+                    f"[launcher] {REVIVAL_LAUNCHER_UNBOX_CHAT_V1} "
+                    f"relayed native crate acknowledgement ({len(payload)} bytes)"
+                )
+        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+            print(f"[launcher] item acknowledgement relay retrying after: {exc}")
+            return
+
+
 def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
     base = config["server_url"].rstrip("/")
     print(f"[launcher] {REVIVAL_LAUNCHER_DROPIN_STATE_V1} active")
@@ -512,6 +547,8 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
 
     while not stop_event.wait(0.05):
         try:
+            _flush_item_ack_outbox(config, base)
+
             # Panorama prints the exact selected Riptide mission to console.log.
             # Relay that marker into a plain OS file the injected GC already
             # polls. This avoids relying on Source's virtual con_logfile path.
