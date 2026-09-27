@@ -213,7 +213,17 @@ if (-not (Test-Path $insertionDest)) {
                         $sevenCandidates += (Join-Path $env:ProgramFiles "7-Zip\7z.exe")
                         if (${env:ProgramFiles(x86)}) { $sevenCandidates += (Join-Path ${env:ProgramFiles(x86)} "7-Zip\7z.exe") }
                         $seven = $sevenCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-                        if ($seven) {
+
+                        if (-not $seven) {
+                            $toolsDir = Join-Path $env:LOCALAPPDATA "CSGO-Revival\tools"
+                            New-Item $toolsDir -ItemType Directory -Force | Out-Null
+                            $seven = Join-Path $toolsDir "7zr.exe"
+                            if (-not (Test-Path $seven)) {
+                                Invoke-WebRequest "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe" -OutFile $seven -UseBasicParsing
+                            }
+                        }
+
+                        if ($seven -and (Test-Path $seven)) {
                             & $seven x -y "-o$mapTemp" $legacy.FullName | Out-Null
                             $extracted = ($LASTEXITCODE -eq 0)
                         }
@@ -241,7 +251,7 @@ if (-not (Test-Path $insertionDest)) {
         Write-Host "    Installed cs_insertion2.bsp (no CS2 client required)." -ForegroundColor Green
     }
     else {
-        throw "SteamCMD could not install Insertion II. Try the same SteamCMD item with a normal Steam account, or install 7-Zip if the downloaded Workshop payload is legacy.bin."
+        throw "SteamCMD could not install Insertion II automatically. Check SteamCMD output above for the Workshop download error."
     }
 }
 
