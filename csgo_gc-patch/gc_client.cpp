@@ -2205,6 +2205,17 @@ void ClientGC::PollMatchmakingBridge()
 
     if (phase == "searching" || phase == "allocating")
     {
+        if (!m_matchmakingActive)
+        {
+            // A non-leader party member may never originate the stock 9101
+            // locally. The launcher can still discover the coordinator queue;
+            // adopt it as a real local search so Panorama/GC are in the same
+            // state as the leader before the later 9107 arrives.
+            m_matchmakingIdleTicks = 0;
+            m_matchmakingIgnoreNextNonAbandonStop = true;
+            Platform::Print(
+                "REVIVAL_PARTY_CLIENT_ADOPT_V2 adopted remote SEARCH state\n");
+        }
         m_matchmakingActive = true;
         CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
         update.set_matchmaking(1);
@@ -2291,6 +2302,39 @@ void ClientGC::PollMatchmakingBridge()
 
         if (!reservationId || reservationId == m_lastMatchmakingReservation)
             return;
+
+        // A party member can race straight from local idle to coordinator
+        // reserved/in_match if the leader found a server before this client's
+        // one-second idle poll observed SEARCH. Prime the stock matchmaking
+        // state once before 9107 so the green ACCEPT popup is accepted by the
+        // same state machine as a locally-started queue.
+        if (!m_matchmakingActive)
+        {
+            std::vector<uint32_t> partyIds =
+                BridgeU32List(state, "party_account_ids");
+            if (partyIds.empty())
+                partyIds.push_back(AccountId());
+
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate adoptUpdate;
+            adoptUpdate.set_matchmaking(1);
+            for (uint32_t partyId : partyIds)
+                adoptUpdate.add_waiting_account_id_sessions(partyId);
+            adoptUpdate.mutable_global_stats()->set_players_searching(
+                static_cast<uint32_t>(partyIds.size()));
+            adoptUpdate.mutable_global_stats()->set_servers_online(1);
+            adoptUpdate.mutable_global_stats()->set_servers_available(1);
+            adoptUpdate.mutable_global_stats()->set_search_time_avg(1);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate,
+                adoptUpdate);
+
+            m_matchmakingActive = true;
+            m_matchmakingIdleTicks = 0;
+            m_matchmakingIgnoreNextNonAbandonStop = true;
+            Platform::Print(
+                "REVIVAL_PARTY_CLIENT_ADOPT_V2 primed remote party member before 9107 party_size=%u\n",
+                static_cast<unsigned>(partyIds.size()));
+        }
 
         const uint32_t port = static_cast<uint32_t>(BridgeU64(state, "public_port", 27015));
         const uint32_t gameType = static_cast<uint32_t>(
