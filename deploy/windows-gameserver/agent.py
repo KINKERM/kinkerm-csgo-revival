@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V47"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V48"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -361,10 +361,6 @@ sv_competitive_official_5v5 1
 sv_allowdownload 1
 sv_allowupload 0
 net_maxfilesize 64
-// Keep extra engine connection slots for late joiners while still advertising
-// and enforcing a 10-human Competitive match. Bots fill to 10 and auto-vacate.
-sv_visiblemaxplayers 10
-
 bot_quota 10
 bot_quota_mode fill
 bot_join_after_player 1
@@ -457,7 +453,9 @@ def engine_reservation_ready_path(csgo_dir: str) -> str:
 
 
 def read_engine_reservation_ready(csgo_dir: str) -> dict[str, object]:
-    out: dict[str, object] = {"match_id": 0, "account_ids": [], "mode": ""}
+    out: dict[str, object] = {
+        "match_id": 0, "account_ids": [], "mode": "", "reservation_id": 0
+    }
     try:
         with open(
             engine_reservation_ready_path(csgo_dir),
@@ -478,6 +476,12 @@ def read_engine_reservation_ready(csgo_dir: str) -> dict[str, object]:
             if payload:
                 if payload[0:1] in ("Q", "G"):
                     out["mode"] = payload[0]
+                cookie_match = re.match(r"^[QG]([0-9A-Fa-f]+),", payload)
+                if cookie_match:
+                    try:
+                        out["reservation_id"] = int(cookie_match.group(1), 16)
+                    except ValueError:
+                        pass
                 ids: list[int] = []
                 for token in re.findall(r"\[([0-9A-Fa-f]+)\]", payload):
                     try:
@@ -778,7 +782,7 @@ class ServerSlot:
                 "-secure",
                 "-tickrate", "64",
                 "-port", str(int(self.cfg["local_port"])),
-                "-maxplayers_override", "16",
+                "-maxplayers_override", "10",
                 "+game_type", "0",
                 "+game_mode", "1",
                 "+map", map_name,
@@ -810,7 +814,6 @@ class ServerSlot:
                     pass
 
             print(f"[agent] starting match {match_id} on {map_name} @ 64 tick")
-            print("[agent] REVIVAL_BOT_JOIN_CAPACITY_V1 engine_slots=16 visible_humans=10 bot_fill=10")
             if os.name == "nt":
                 creationflags = (
                     subprocess.CREATE_NEW_CONSOLE
@@ -1228,7 +1231,6 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5 1; "
-                    "sv_visiblemaxplayers 10; "
                     "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
                     "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
@@ -1318,6 +1320,16 @@ class ServerSlot:
             return
         new_reservation = int(response.get("reservation_id") or 0)
         new_server_id = int(response.get("server_id") or 0)
+        engine_mode = str(engine_state.get("mode") or "").upper()
+        engine_reservation = int(engine_state.get("reservation_id") or 0)
+
+        # For live G mode the engine cookie intentionally differs from the GC
+        # welcome/9106 cookie so Source actually rebuilds its slot state.
+        # Publish the cookie Source accepted, because the joining client's
+        # cl_session and A2S_RESERVE_CHECK must match it exactly.
+        if engine_mode == "G" and engine_reservation:
+            new_reservation = engine_reservation
+
         if not new_reservation:
             return
 
@@ -1343,7 +1355,8 @@ class ServerSlot:
                     f"for match {match_id}: reservation={new_reservation}, "
                     f"server_id={new_server_id or 'direct-udp'}, "
                     f"accounts={','.join(str(x) for x in sorted(acknowledged))}, "
-                    f"queued={','.join(str(x) for x in sorted(queued_accounts))}"
+                    f"queued={','.join(str(x) for x in sorted(queued_accounts))}, "
+                    f"engine_mode={engine_mode}, engine_cookie={engine_reservation or 0}"
                 )
 
     def refresh_authenticated_players(self) -> None:
@@ -1503,7 +1516,6 @@ class ServerSlot:
                     "cash_player_killed_teammate -300; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
-                    "sv_visiblemaxplayers 10; "
                     "bot_quota_mode fill; bot_auto_vacate 1; bot_quota 10"
                 ),
             )
