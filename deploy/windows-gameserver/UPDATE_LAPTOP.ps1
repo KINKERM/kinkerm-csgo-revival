@@ -338,8 +338,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V40")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V40"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V41")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V41"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -350,7 +350,10 @@ if (-not $agentText.Contains("REVIVAL_ADMIN_RESET_V1")) {
 if (-not $agentText.Contains("sv_allowdownload 1")) {
     throw "Downloaded laptop agent is missing Insertion II NAV download support."
 }
-Write-Host "    Verified current V40 public-release laptop agent (MR8 + teamkill + admin-reset + map-download handling)." -ForegroundColor Green
+if (-not $agentText.Contains("drop-in player(s) added to live match")) {
+    throw "Downloaded laptop agent is missing live late-join reservation handling."
+}
+Write-Host "    Verified current V41 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + live late-join handling)." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
