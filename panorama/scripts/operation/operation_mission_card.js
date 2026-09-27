@@ -15,6 +15,8 @@ var OperationMissionCard = ( function()
 		'mg_lobby_mapveto',
 		'mg_de_dust2',
 		'mg_de_mirage',
+		'mg_de_cache',
+		'mg_de_cbble',
 		'mg_de_overpass',
 		'mg_de_vertigo',
 		'mg_de_inferno',
