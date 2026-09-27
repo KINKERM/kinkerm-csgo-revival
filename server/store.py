@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from typing import Any, Optional
 
 from catalog import Catalog
@@ -191,6 +192,19 @@ class PlayerStore:
             player["items"] = []
             player["default_equips"] = []
             self._save()
+
+    def major_update_reset(self) -> dict[str, Any]:
+        """Archive the current player database, then start a fresh data set."""
+        with self._lock:
+            os.makedirs(os.path.dirname(os.path.abspath(self._path)), exist_ok=True)
+            backup = self._path + ".pre-reset-" + time.strftime("%Y%m%d-%H%M%S") + ".bak"
+            if os.path.exists(self._path):
+                with open(self._path, "rb") as src, open(backup, "wb") as dst:
+                    dst.write(src.read())
+            count = len(self._players)
+            self._players = {}
+            self._save()
+            return {"players": count, "backup": backup}
 
     def replace_inventory(self, steamid: str, items: list, default_equips: list,
                           operation_riptide: Optional[dict] = None,
