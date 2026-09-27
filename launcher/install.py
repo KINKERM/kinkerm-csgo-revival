@@ -29,7 +29,6 @@ import zipfile
 import shutil
 import subprocess
 import tempfile
-import webbrowser
 import urllib.request
 import urllib.error
 
@@ -44,6 +43,7 @@ SERVER_URL = "https://cuckersfun.tail52305f.ts.net"
 PACK_URL = "https://github.com/KINKERM/kinkerm-csgo-revival/releases/latest/download/csgo-revival-pack.zip"
 INSERTION2_WORKSHOP_IDS = ("2395333051", "2760936305")
 INSERTION2_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=2395333051"
+STEAMCMD_URL = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
 # ==========================================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -180,6 +180,42 @@ def _find_7zip() -> str | None:
     return None
 
 
+def _steamcmd_item_dir(workshop_id: str) -> str | None:
+    if not sys.platform.startswith("win"):
+        return None
+
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    steamcmd_dir = os.path.join(base, "CSGO-Revival", "steamcmd")
+    exe = os.path.join(steamcmd_dir, "steamcmd.exe")
+
+    if not os.path.isfile(exe):
+        log("downloading Valve SteamCMD (no CS2 install required)...")
+        os.makedirs(steamcmd_dir, exist_ok=True)
+        blob = download(STEAMCMD_URL)
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            zf.extractall(steamcmd_dir)
+
+    log(f"downloading Insertion II Workshop item {workshop_id} with SteamCMD...")
+    proc = subprocess.run(
+        [
+            exe,
+            "+login", "anonymous",
+            "+workshop_download_item", "730", workshop_id, "validate",
+            "+quit",
+        ],
+        cwd=steamcmd_dir,
+        timeout=900,
+    )
+    if proc.returncode:
+        log(f"SteamCMD exited with code {proc.returncode}")
+        return None
+
+    item_dir = os.path.join(
+        steamcmd_dir, "steamapps", "workshop", "content", "730", workshop_id
+    )
+    return item_dir if os.path.isdir(item_dir) else None
+
+
 def _workshop_item_dirs() -> list[str]:
     root = steam_root()
     if not root:
@@ -272,28 +308,31 @@ def install_insertion2(csgo_dir: str) -> None:
         return False
 
     if try_cache():
-        log("installed Insertion II from your Steam Workshop cache.")
+        log("installed Insertion II from your existing Steam Workshop cache.")
         return
 
-    log("Insertion II is required for its Operation mission but is not installed.")
-    log("Opening the original CS:GO Workshop item in Steam.")
-    try:
-        webbrowser.open(INSERTION2_WORKSHOP_URL)
-    except Exception:
-        pass
-    log("Subscribe to Insertion2, wait for Steam to finish downloading it, then press Enter.")
-    try:
-        input()
-    except EOFError:
-        pass
+    # Direct path: use Valve SteamCMD so users do NOT need the CS2 client installed.
+    for wid in INSERTION2_WORKSHOP_IDS:
+        item_dir = _steamcmd_item_dir(wid)
+        if not item_dir:
+            continue
+        if _copy_insertion2_payload(item_dir, csgo_dir):
+            log("installed Insertion II directly with SteamCMD.")
+            return
 
-    if try_cache():
-        log("installed Insertion II from Steam Workshop.")
-        return
+        archives = [
+            os.path.join(item_dir, n)
+            for n in os.listdir(item_dir)
+            if n.lower().endswith("legacy.bin")
+        ]
+        for archive in archives:
+            with tempfile.TemporaryDirectory(prefix="revival-insertion2-") as tmp:
+                if _extract_workshop_legacy(archive, tmp) and _copy_insertion2_payload(tmp, csgo_dir):
+                    log("installed Insertion II directly with SteamCMD.")
+                    return
 
-    log("Insertion II still was not found.")
-    log("Expected Workshop IDs: " + ", ".join(INSERTION2_WORKSHOP_IDS))
-    log("If Steam downloaded a legacy.bin archive, install 7-Zip and run install.py again.")
+    log("SteamCMD downloaded the Workshop item but cs_insertion2.bsp could not be extracted.")
+    log("If the item contains legacy.bin, install 7-Zip and run install.py again.")
     log(f"Final required file: {target}")
     sys.exit(4)
 
