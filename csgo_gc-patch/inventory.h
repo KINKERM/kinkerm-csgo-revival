@@ -276,6 +276,7 @@ private:
 
     CSOEconItem *FindItem(uint64_t itemId);
     uint64_t StorageReference(const CSOEconItem &item) const;
+    bool RepairStorageUnits();
     bool IncrementCasketItemsCount(CSOEconItem &storage, int delta);
 
     void ReadFromFile();
