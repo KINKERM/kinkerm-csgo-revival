@@ -590,6 +590,14 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                     # Push that exact current inventory before allocation so the
                     # laptop receives the same selected mission.
                     upload_inventory(config)
+                    party_account_ids = []
+                    for token in str(request.get("party_account_ids") or "").split(","):
+                        token = token.strip()
+                        if token.isdigit() and int(token) > 0:
+                            value = int(token)
+                            if value not in party_account_ids:
+                                party_account_ids.append(value)
+
                     state = _http_json(
                         "POST", base + "/matchmaking/start",
                         {
@@ -597,6 +605,7 @@ def matchmaking_bridge(config: dict, stop_event: threading.Event) -> None:
                             "game_type": int(request.get("game_type") or 8),
                             "client_version": int(request.get("client_version") or 0),
                             "map": str(request.get("map") or ""),
+                            "party_account_ids": party_account_ids,
                         },
                     )
                     _write_mm_state(config, state)
