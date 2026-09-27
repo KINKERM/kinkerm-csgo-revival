@@ -80,6 +80,10 @@ $stageOperationUtilJs = Join-Path $stageDir "scripts\operation\operation_util.js
 $stageMissionContextJs = Join-Path $stageDir "scripts\context_menus\context_menu_select_mission_card.js"
 $stageActivateMissionJs = Join-Path $stageDir "scripts\popups\popup_activate_mission.js"
 $stageHudMissionJs = Join-Path $stageDir "scripts\hud\hudmissionpanel.js"
+$stageMainMenuRootJs = Join-Path $stageDir "scripts\mainmenu.js"
+$stageMainMenuStoreJs = Join-Path $stageDir "scripts\mainmenu_store.js"
+$stageDecodableJs = Join-Path $stageDir "scripts\popups\popup_capability_decodable.js"
+$stageInspectAsyncJs = Join-Path $stageDir "scripts\popups\popup_inspect_async-bar.js"
 Need-Path $stageXml "Staged mainmenu_play.xml"
 Need-Path $stageJs "Staged mainmenu_play.js"
 Need-Path $stageCss "Staged mainmenu_play.css"
@@ -90,6 +94,10 @@ Need-Path $stageOperationUtilJs "Staged operation_util.js"
 Need-Path $stageMissionContextJs "Staged context_menu_select_mission_card.js"
 Need-Path $stageActivateMissionJs "Staged popup_activate_mission.js"
 Need-Path $stageHudMissionJs "Staged hudmissionpanel.js"
+Need-Path $stageMainMenuRootJs "Staged mainmenu.js"
+Need-Path $stageMainMenuStoreJs "Staged mainmenu_store.js"
+Need-Path $stageDecodableJs "Staged popup_capability_decodable.js"
+Need-Path $stageInspectAsyncJs "Staged popup_inspect_async-bar.js"
 
 $xmlText = [IO.File]::ReadAllText($stageXml)
 $xmlText = [Text.RegularExpressions.Regex]::Replace($xmlText, ">\s+<", "><")
@@ -154,6 +162,32 @@ $hudLines = [Text.RegularExpressions.Regex]::Split($hudRaw, "\r?\n") |
 Write-Host ("[pbin] compact hudmissionpanel.js -> {0} B" -f
     ([IO.File]::ReadAllBytes($stageHudMissionJs).Length))
 
+# Release UI patches must fit fixed Legacy PBIN slots.
+foreach ($compactFile in @(
+    $stageOperationJs,
+    $stageOperationMissionCardJs,
+    $stageMainMenuRootJs,
+    $stageMainMenuStoreJs,
+    $stageDecodableJs,
+    $stageInspectAsyncJs
+)) {
+    $raw = [IO.File]::ReadAllText($compactFile)
+    $lines = [Text.RegularExpressions.Regex]::Split($raw, "\r?\n") |
+        ForEach-Object { $_.Trim() } |
+        Where-Object {
+            $_.Length -gt 0 -and
+            -not $_.StartsWith("//")
+        }
+    [IO.File]::WriteAllText(
+        $compactFile,
+        ($lines -join "`n"),
+        [Text.UTF8Encoding]::new($false)
+    )
+    Write-Host ("[pbin] compact {0} -> {1} B" -f
+        ([IO.Path]::GetFileName($compactFile)),
+        ([IO.File]::ReadAllBytes($compactFile).Length))
+}
+
 Push-Location $panoramaDir
 try {
     & py -3 ".\pbin.py" pack
@@ -188,7 +222,13 @@ if (-not $packedText.Contains("REVIVAL_MISSION_SELECT_V1")) {
 if (-not $packedText.Contains("revival operation hud")) {
     throw "Packed code.pbin is missing the in-game Operation mission HUD fallback"
 }
-Write-Host "PBIN queue + Operation mission/HUD markers OK" -ForegroundColor Green
+if (-not $packedText.Contains("REVIVAL_OPERATION_STORE_ONLY_V1")) {
+    throw "Packed code.pbin is missing the Operation-only bottom shop"
+}
+if (-not $packedText.Contains("REVIVAL_KEYLESS_CASES_V1")) {
+    throw "Packed code.pbin is missing keyless earned-case UI"
+}
+Write-Host "PBIN queue + Operation + keyless-case markers OK" -ForegroundColor Green
 
 $newHash = (Get-FileHash $codePbin -Algorithm SHA256).Hash
 $oldHash = (Get-FileHash $originalPbin -Algorithm SHA256).Hash
