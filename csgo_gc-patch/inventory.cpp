@@ -440,6 +440,36 @@ void Inventory::ReadFromFile()
             }
         }
 
+        // Recover the SeasonalOperations mission counter from persistent quest
+        // state. Older revival builds could complete a quest while leaving
+        // missions_completed at zero, which made the header disagree with the
+        // green completed row.
+        uint32_t derivedCompletedMissions = 0;
+        for (const auto &pair : m_operationQuestProgress)
+        {
+            const QuestDefinition *quest =
+                m_itemSchema.GetQuestDefinition(pair.first);
+            if (!quest || !quest->Goal())
+                continue;
+
+            // Only top-level mission-card quests count as completed missions;
+            // graph children (round/match OR branches) do not.
+            if (!m_itemSchema.GetOperationMissionCardForQuest(pair.first))
+                continue;
+
+            if (pair.second.progress >= quest->Goal())
+                ++derivedCompletedMissions;
+        }
+
+        if (derivedCompletedMissions > m_operationMissionsCompleted)
+        {
+            Platform::Print(
+                "REVIVAL_OPERATION_SUMMARY_REPAIR_V1 missions %u -> %u\n",
+                m_operationMissionsCompleted, derivedCompletedMissions);
+            m_operationMissionsCompleted = derivedCompletedMissions;
+            WriteToFile();
+        }
+
         // Self-heal inventories created by older revival builds. If a mission
         // was already selected before progress-cache seeding existed, make sure
         // the next full SOCache subscription still contains the parent and all
@@ -3379,9 +3409,10 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     uint64_t stars64 =
         crossedSegments * static_cast<uint64_t>(quest->operationalPoints);
 
-    // Keep the revival's existing completion bonus, but award it once only.
-    if (completedNow)
-        ++stars64;
+    // Stock Operation behavior: the quest's own operational_points/thresholds
+    // define its star reward. Do not add a synthetic +1 completion star.
+    if (completedNow && stars64 == 0 && quest->operationalPoints > 0)
+        stars64 = quest->operationalPoints;
 
     const uint32_t starsEarnedNow = stars64 > UINT32_MAX
         ? UINT32_MAX : static_cast<uint32_t>(stars64);
