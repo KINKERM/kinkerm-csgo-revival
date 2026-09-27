@@ -187,6 +187,9 @@ $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_RELEASE_GAMEPLAY_V38")) {
     throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_RELEASE_GAMEPLAY_V38"
 }
+if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
+    throw "Downloaded laptop agent is missing Competitive teamkill punishment."
+}
 Write-Host "    Verified current V38 release gameplay laptop agent (MR8 + teamkill punishment)." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
