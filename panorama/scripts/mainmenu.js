@@ -741,6 +741,11 @@ var MainMenu = ( function() {
 		var elLastMatch = $.CreatePanel( 'Panel', $.FindChildInContext( '#JsNewsContainer' ), 'JsLastMatch' );
 		elLastMatch.BLoadLayout( 'file://{resources}/layout/mainmenu_lastmatch.xml', false, false );
 
+		// Revival: keep the bottom panel because it contains the Operation shop
+		// entry point. mainmenu_store.js runs in operation-only mode.
+		var elStore = $.CreatePanel( 'Panel', $.FindChildInContext( '#JsNewsContainer' ), 'JsStorePanel' );
+		elStore.BLoadLayout( 'file://{resources}/layout/mainmenu_store.xml', false, false );
+
 		                             
 		                             
 		                                                                                                            
