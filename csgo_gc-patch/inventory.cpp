@@ -1048,14 +1048,23 @@ bool Inventory::UnlockCrate(uint64_t crateId,
     {
         DestroyItem(crate, destroyCrate);
 
-        // remove the key if one was used (yes, we don't validate keys...)
-        auto key = m_items.find(keyId);
-        if (key != m_items.end())
+        // Keys are optional on the revival. Keyless opening uses crateId as the
+        // placeholder tool id, so never try to consume that same id twice.
+        if (keyId && keyId != crateId)
         {
-            DestroyItem(key, destroyKey);
+            auto key = m_items.find(keyId);
+            if (key != m_items.end())
+            {
+                DestroyItem(key, destroyKey);
+            }
         }
     }
 
+    WriteToFile();
+    Platform::Print(
+        "REVIVAL_KEYLESS_CASES_V1 opened crate=%llu key=%llu\n",
+        static_cast<unsigned long long>(crateId),
+        static_cast<unsigned long long>(keyId));
     return true;
 }
 
