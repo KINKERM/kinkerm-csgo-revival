@@ -122,8 +122,12 @@ var InspectAsyncActionBar = ( function()
 		}
 		else if ( m_worktype === 'decodeable' )
 		{
-			                                                                 
-			if ( ItemInfo.ItemMatchDefName( m_itemid, 'spray' ) || ItemInfo.ItemDefinitionNameSubstrMatch(m_itemid, 'tournament_pass_') )
+			if ( m_isDecodeableKeyless &&
+				$.GetContextPanel().GetAttributeString( 'revivalkeylesscase', 'false' ) === 'true' )
+			{
+				InventoryAPI.UseTool( m_itemid, m_itemid );
+			}
+			else if ( ItemInfo.ItemMatchDefName( m_itemid, 'spray' ) || ItemInfo.ItemDefinitionNameSubstrMatch(m_itemid, 'tournament_pass_') )
 			{
 				InventoryAPI.UseTool( m_itemid, '' );
 			}
