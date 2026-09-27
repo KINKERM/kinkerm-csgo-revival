@@ -161,11 +161,87 @@ if (-not (Test-Path $insertionDest)) {
         }
     }
 
+    if (-not $installedInsertion) {
+        Write-Host "    Insertion II not in Steam cache; downloading directly with Valve SteamCMD..." -ForegroundColor Yellow
+        $steamcmdDir = Join-Path $env:LOCALAPPDATA "CSGO-Revival\steamcmd"
+        $steamcmdExe = Join-Path $steamcmdDir "steamcmd.exe"
+        New-Item $steamcmdDir -ItemType Directory -Force | Out-Null
+
+        if (-not (Test-Path $steamcmdExe)) {
+            $steamcmdZip = Join-Path $env:TEMP ("steamcmd-" + [guid]::NewGuid().ToString("N") + ".zip")
+            try {
+                Invoke-WebRequest "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip" -OutFile $steamcmdZip -UseBasicParsing
+                Expand-Archive -Path $steamcmdZip -DestinationPath $steamcmdDir -Force
+            }
+            finally {
+                Remove-Item $steamcmdZip -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        foreach ($wid in $workshopIds) {
+            & $steamcmdExe +login anonymous +workshop_download_item 730 $wid validate +quit
+            if ($LASTEXITCODE -ne 0) { continue }
+
+            $itemDir = Join-Path $steamcmdDir ("steamapps\workshop\content\730\" + $wid)
+            if (-not (Test-Path $itemDir)) { continue }
+
+            $directBsp = Get-ChildItem $itemDir -Recurse -Filter "cs_insertion2.bsp" -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($directBsp) {
+                New-Item (Split-Path $insertionDest -Parent) -ItemType Directory -Force | Out-Null
+                Copy-Item $directBsp.FullName $insertionDest -Force
+                $installedInsertion = $true
+                break
+            }
+
+            $legacy = Get-ChildItem $itemDir -Recurse -Filter "*legacy.bin" -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($legacy) {
+                $mapTemp = Join-Path $env:TEMP ("revival-insertion2-" + [guid]::NewGuid().ToString("N"))
+                New-Item $mapTemp -ItemType Directory -Force | Out-Null
+                try {
+                    $extracted = $false
+                    try {
+                        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                        [IO.Compression.ZipFile]::ExtractToDirectory($legacy.FullName, $mapTemp)
+                        $extracted = $true
+                    }
+                    catch {
+                        $sevenCandidates = @()
+                        $sevenCmd = Get-Command 7z.exe -ErrorAction SilentlyContinue
+                        if ($sevenCmd) { $sevenCandidates += $sevenCmd.Source }
+                        $sevenCandidates += (Join-Path $env:ProgramFiles "7-Zip\7z.exe")
+                        if (${env:ProgramFiles(x86)}) { $sevenCandidates += (Join-Path ${env:ProgramFiles(x86)} "7-Zip\7z.exe") }
+                        $seven = $sevenCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+                        if ($seven) {
+                            & $seven x -y "-o$mapTemp" $legacy.FullName | Out-Null
+                            $extracted = ($LASTEXITCODE -eq 0)
+                        }
+                    }
+
+                    if ($extracted) {
+                        $bsp = Get-ChildItem $mapTemp -Recurse -Filter "cs_insertion2.bsp" -File -ErrorAction SilentlyContinue |
+                            Select-Object -First 1
+                        if ($bsp) {
+                            New-Item (Split-Path $insertionDest -Parent) -ItemType Directory -Force | Out-Null
+                            Copy-Item $bsp.FullName $insertionDest -Force
+                            $installedInsertion = $true
+                            break
+                        }
+                    }
+                }
+                finally {
+                    Remove-Item $mapTemp -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+
     if ($installedInsertion) {
-        Write-Host "    Installed cs_insertion2.bsp from Steam Workshop cache." -ForegroundColor Green
+        Write-Host "    Installed cs_insertion2.bsp (no CS2 client required)." -ForegroundColor Green
     }
     else {
-        throw "Insertion II is required by Operation missions but cs_insertion2.bsp is missing. Subscribe/download Steam Workshop item 2395333051 (or compatibility item 2760936305), install 7-Zip if Steam stored it as legacy.bin, then rerun UPDATE_LAPTOP.ps1."
+        throw "SteamCMD could not install Insertion II. Try the same SteamCMD item with a normal Steam account, or install 7-Zip if the downloaded Workshop payload is legacy.bin."
     }
 }
 
