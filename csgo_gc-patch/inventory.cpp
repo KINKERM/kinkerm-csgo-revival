@@ -1046,6 +1046,11 @@ bool Inventory::UnlockCrate(uint64_t crateId,
     // remove the crate
     if (GetConfig().DestroyUsedItems())
     {
+        // CreateItem() above can rehash m_items, so never reuse the iterator
+        // captured before reward allocation.
+        crate = m_items.find(crateId);
+        if (crate == m_items.end())
+            return false;
         DestroyItem(crate, destroyCrate);
 
         // Keys are optional on the revival. Keyless opening uses crateId as the
