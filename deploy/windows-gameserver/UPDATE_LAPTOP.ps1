@@ -254,11 +254,7 @@ if (-not (Test-Path $insertionDest)) {
     }
 
     if ($installedInsertion) {
-        $navDest = Join-Path (Split-Path $insertionDest -Parent) "cs_insertion2.nav"
-        if (-not (Test-Path $navDest)) {
-            throw "Insertion II BSP installed but cs_insertion2.nav is missing. Refusing to host a map that would hang clients at 0% NAV download."
-        }
-        Write-Host "    Installed complete Insertion II payload (BSP + NAV; no CS2 client required)." -ForegroundColor Green
+        Write-Host "    Installed Insertion II BSP (NAV is generated/served by SRCDS)." -ForegroundColor Green
     }
     else {
         throw "SteamCMD could not install Insertion II automatically. Check SteamCMD output above for the Workshop download error."
@@ -342,8 +338,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V39")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V39"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V40")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V40"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -351,7 +347,10 @@ if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
 if (-not $agentText.Contains("REVIVAL_ADMIN_RESET_V1")) {
     throw "Downloaded laptop agent is missing admin major-reset handling."
 }
-Write-Host "    Verified current V39 public-release laptop agent (MR8 + teamkill + admin-reset handling)." -ForegroundColor Green
+if (-not $agentText.Contains("sv_allowdownload 1")) {
+    throw "Downloaded laptop agent is missing Insertion II NAV download support."
+}
+Write-Host "    Verified current V40 public-release laptop agent (MR8 + teamkill + admin-reset + map-download handling)." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
