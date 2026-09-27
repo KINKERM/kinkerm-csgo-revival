@@ -160,6 +160,8 @@ foreach ($marker in @(
     "REVIVAL_OPERATION_END_AUTHORITY_V1",
     "REVIVAL_LIVE_OPERATION_NO_REASSERT_V1",
     "REVIVAL_OPERATION_COMPLETION_PERSIST_V1",
+    "REVIVAL_STORAGE_UNITS_V1",
+    "REVIVAL_EARNED_DROPS_ONLY_V1",
     "REVIVAL_SYNTHETIC_MATCH_END_V1",
     "REVIVAL_NATIVE_DROP_REVEAL_V1",
     "REVIVAL_NATIVE_ENDMATCH_UI_V1",
@@ -182,10 +184,10 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_SHORT_MATCH_OPERATION_V37")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_SHORT_MATCH_OPERATION_V37"
+if (-not $agentText.Contains("REVIVAL_AGENT_RELEASE_GAMEPLAY_V38")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_RELEASE_GAMEPLAY_V38"
 }
-Write-Host "    Verified current V37 MR8 halftime-safe Operation laptop agent." -ForegroundColor Green
+Write-Host "    Verified current V38 release gameplay laptop agent (MR8 + teamkill punishment)." -ForegroundColor Green
 
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
 Write-Host "Your existing server_agent.json and Playit configuration were preserved."
