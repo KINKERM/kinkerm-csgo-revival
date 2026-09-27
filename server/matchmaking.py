@@ -90,6 +90,7 @@ class MatchmakingCoordinator:
         self._assignment: dict[str, Any] | None = None
         self._reward_queues: dict[str, list[str]] = {}
         self._last_reward_payload: dict[str, tuple[str, float]] = {}
+        self._item_ack_queues: dict[str, list[str]] = {}
         self._reset_generation = 0
 
     def _server_online_locked(self) -> bool:
@@ -530,6 +531,32 @@ class MatchmakingCoordinator:
             self._try_form_locked()
             return dict(self._states[steamid])
 
+    def queue_item_ack(self, steamid: str, payload_b64: str) -> dict[str, Any]:
+        """Queue one exact native CMsgItemAcknowledged for the live SRCDS."""
+        with self._lock:
+            if not steamid.isdigit() or not payload_b64:
+                return {"ok": False, "error": "invalid item acknowledgement"}
+
+            active = self._active_match_locked()
+            if active is None or active.state not in ("reserved", "in_match"):
+                return {"ok": False, "error": "no active match"}
+            if all(player.steamid != steamid for player in active.players):
+                return {"ok": False, "error": "player is not in active match"}
+
+            queue = self._item_ack_queues.setdefault(steamid, [])
+            queue.append(payload_b64)
+            if len(queue) > 16:
+                del queue[:-16]
+            return {"ok": True, "queued": len(queue)}
+
+    def _drain_item_acks_locked(self) -> list[dict[str, str]]:
+        out: list[dict[str, str]] = []
+        for steamid, queue in list(self._item_ack_queues.items()):
+            for payload_b64 in queue:
+                out.append({"steamid": steamid, "payload_b64": payload_b64})
+        self._item_ack_queues.clear()
+        return out
+
     def queue_reward(self, steamid: str, payload_b64: str) -> dict[str, Any]:
         with self._lock:
             if not steamid.isdigit() or not payload_b64:
@@ -730,6 +757,7 @@ class MatchmakingCoordinator:
                 "server_online": True,
                 "server_available": self._server_joinable_locked(),
                 "reset_generation": self._reset_generation,
+                "item_acks": self._drain_item_acks_locked(),
             }
 
     def server_match_started(self, match_id: int) -> None:
@@ -840,6 +868,7 @@ class MatchmakingCoordinator:
             self._assignment = None
             self._reward_queues.clear()
             self._last_reward_payload.clear()
+            self._item_ack_queues.clear()
             self._server["ready_match_id"] = 0
             self._server["reserved_account_ids"] = []
             self._server["ct_score"] = 0
