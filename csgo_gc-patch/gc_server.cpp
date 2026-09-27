@@ -550,20 +550,31 @@ bool WriteRewardSpool(
 
 std::string BuildQueuedReservationPayload(
     uint64_t cookie, uint64_t matchId,
-    const CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve &reserve)
+    const CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve &reserve,
+    bool joinInProgress)
 {
     char header[96];
-    snprintf(header, sizeof(header), "Q%llx,%llx,1:",
+    snprintf(header, sizeof(header), "%c%llx,%llx,1:",
+        joinInProgress ? 'G' : 'Q',
         static_cast<unsigned long long>(cookie),
         static_cast<unsigned long long>(matchId ? matchId : cookie));
 
     std::string payload = header;
-    char token[24];
-    for (int i = 0; i < reserve.account_ids_size(); ++i)
+
+    // Q = initial queued Competitive reservation. Source parses [AccountIDHex]
+    // entries and tracks stage 1/2 ready-up for every player.
+    // G = joinable in-progress reservation. Source intentionally keeps no
+    // m_arrReservationPlayers roster and its A2S_RESERVE_CHECK path immediately
+    // answers awaiting=0 for a valid matching cookie. That is the stock late-
+    // join behavior and avoids the stage=1 awaiting=127 total=0 failure.
+    if (!joinInProgress)
     {
-        // ReserveServerForQueuedGame parses the roster as hexadecimal AccountIDs.
-        snprintf(token, sizeof(token), "[%x]", reserve.account_ids(i));
-        payload += token;
+        char token[24];
+        for (int i = 0; i < reserve.account_ids_size(); ++i)
+        {
+            snprintf(token, sizeof(token), "[%x]", reserve.account_ids(i));
+            payload += token;
+        }
     }
     return payload;
 }
@@ -1258,10 +1269,13 @@ void ServerGC::SendMatchmakingReservation()
     // After every listed account has authenticated, stop refreshing the old
     // reservation instead of re-arming connected players. A later membership
     // change creates a new non-empty pending roster and re-arms Q immediately.
-    if (queueReserve.account_ids_size())
+    const bool joinInProgress =
+        ReservationNumber(kv, "live_joinable", 0) != 0;
+    if (joinInProgress || queueReserve.account_ids_size())
     {
         const std::string queuePayload =
-            BuildQueuedReservationPayload(GameServerCookieId, matchId, queueReserve);
+            BuildQueuedReservationPayload(
+                GameServerCookieId, matchId, queueReserve, joinInProgress);
         const bool queueChanged = queuePayload != m_lastQueueReservationPayload;
         if (queueChanged || ++m_queueReservationRefreshTicks >= 4)
         {
@@ -1272,8 +1286,9 @@ void ServerGC::SendMatchmakingReservation()
             if (queueChanged)
             {
                 Platform::Print(
-                    "REVIVAL_LATEJOIN_PENDING_ROSTER_V2 queued engine Q reservation match=%llu pending_roster=%d full_roster=%d\n",
-                    matchId, queueReserve.account_ids_size(), reserve.account_ids_size());
+                    "REVIVAL_JOIN_IN_PROGRESS_G_V1 engine reservation mode=%c match=%llu pending_roster=%d full_roster=%d\n",
+                    joinInProgress ? 'G' : 'Q', matchId,
+                    queueReserve.account_ids_size(), reserve.account_ids_size());
             }
         }
     }
