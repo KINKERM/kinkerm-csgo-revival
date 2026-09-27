@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V45"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V46"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -552,6 +552,7 @@ def write_native_reservation(
         f"game_type={reservation_game_type}",
         f"server_version={server_version}",
         f"map={str(assignment.get('map') or '').strip()}",
+        f"live_joinable={1 if assignment.get('live_joinable') else 0}",
         "account_ids=" + ",".join(str(x) for x in account_ids),
     ]
     tmp = request_path + ".tmp"
@@ -666,6 +667,7 @@ class ServerSlot:
         self.server_id = 0
         self.reserved_account_ids: set[int] = set()
         self.queued_account_ids: set[int] = set()
+        self.live_joinable = False
         self.ct_score = 0
         self.t_score = 0
         self.expected_account_ids: set[int] = set()
@@ -684,6 +686,7 @@ class ServerSlot:
         self.ready_at = 0.0
         self.source_match_started_at = 0.0
         self.using_cookie_fallback = False
+        self.live_joinable = False
         self.started = False
         self.runtime_applied = False
         self.runtime_guard_at = 0.0
@@ -712,22 +715,28 @@ class ServerSlot:
                     int(x) for x in assignment.get("account_ids", []) if int(x) > 0
                 }
                 added = new_accounts.difference(self.expected_account_ids)
+                new_live_joinable = bool(assignment.get("live_joinable"))
+                mode_changed = new_live_joinable != self.live_joinable
                 self.expected_account_ids.update(new_accounts)
                 if added:
                     sync_server_player_inventories(
                         self.cfg, assignment, clear_existing=False
                     )
-                    # Keep the request file current for builds that do support
-                    # native 9105 refreshes. In cookie-fallback mode the HTTP
-                    # coordinator is the membership authority.
+                if added or mode_changed:
                     write_native_reservation(
                         self.cfg["csgo_dir"], assignment, clear_response=False
                     )
-                    print(
-                        "[agent] drop-in player(s) staged for live match "
-                        f"{match_id}: {', '.join(str(x) for x in sorted(added))}; "
-                        "waiting for native reservation acknowledgement"
-                    )
+                    self.live_joinable = new_live_joinable
+                    if mode_changed:
+                        print(
+                            f"[agent] REVIVAL_JOIN_IN_PROGRESS_G_V1 match {match_id} "
+                            f"mode={'G' if new_live_joinable else 'Q'}"
+                        )
+                    if added:
+                        print(
+                            "[agent] drop-in player(s) staged for live match "
+                            f"{match_id}: {', '.join(str(x) for x in sorted(added))}"
+                        )
                 return
             self.stop()
 
@@ -851,6 +860,7 @@ class ServerSlot:
             self.ready_at = 0.0
             self.source_match_started_at = 0.0
             self.using_cookie_fallback = False
+            self.live_joinable = bool(assignment.get("live_joinable"))
             self.started = False
             self.runtime_applied = False
             self.runtime_guard_at = 0.0
