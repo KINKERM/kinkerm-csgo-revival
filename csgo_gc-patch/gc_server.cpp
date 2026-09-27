@@ -10,6 +10,9 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#ifdef _WIN32
+#include <io.h>
+#endif
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -33,7 +36,7 @@ ServerGC::ServerGC()
     StartThread();
 
     Platform::Print("ServerGC spawned\n");
-    Platform::Print("REVIVAL_OPERATION_END_AUTHORITY_V1 active; REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
+    Platform::Print("REVIVAL_OPERATION_END_AUTHORITY_V1 active; REVIVAL_SERVER_REWARD_BRIDGE_V1 active; REVIVAL_REWARD_SPOOL_QUEUE_V1 active; REVIVAL_SERVER_LOCAL_SOCACHE_V1 active; REVIVAL_SERVER_ACCEPT_ROSTER_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V4 active; REVIVAL_NATIVE_ENDMATCH_UI_V1 active; REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 active; REVIVAL_SERVER_RESERVATION_RETRY_V3 compatible; REVIVAL_SERVER_RESERVATION_RETRY_V2 compatible\n");
 }
 
 ServerGC::~ServerGC()
@@ -72,8 +75,71 @@ void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
     }
 }
 
+void ServerGC::ProcessRevivalItemAckSpool()
+{
+#ifdef _WIN32
+    struct _finddata_t entry;
+    intptr_t search = _findfirst("csgo_gc/server_item_acks/*.bin", &entry);
+    if (search == -1)
+        return;
+
+    do
+    {
+        if (entry.attrib & _A_SUBDIR)
+            continue;
+
+        const std::string path =
+            std::string("csgo_gc/server_item_acks/") + entry.name;
+        std::ifstream in(path, std::ios::binary);
+        if (!in.is_open())
+            continue;
+
+        std::vector<uint8_t> bytes(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        in.close();
+
+        if (bytes.empty() || bytes.size() > 64u * 1024u)
+        {
+            std::remove(path.c_str());
+            continue;
+        }
+
+        GCMessageRead message{ 0, bytes.data(), static_cast<uint32_t>(bytes.size()) };
+        if (!message.IsValid()
+            || !message.IsProtobuf()
+            || message.TypeUnmasked() != k_EMsgGCItemAcknowledged)
+        {
+            Platform::Print(
+                "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 rejected invalid spool %s\n",
+                entry.name);
+            std::remove(path.c_str());
+            continue;
+        }
+
+        // Feed SRCDS the same message it normally receives over the GC network.
+        // Source itself formats and broadcasts the standard
+        // Item_FoundInCrate/SayText2 chat line.
+        PostToHost(
+            HostEvent::Message,
+            message.TypeMasked(),
+            bytes.data(),
+            static_cast<uint32_t>(bytes.size()));
+
+        Platform::Print(
+            "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 delivered native item acknowledgement %s\n",
+            entry.name);
+        std::remove(path.c_str());
+    } while (_findnext(search, &entry) == 0);
+
+    _findclose(search);
+#endif
+}
+
 void ServerGC::HandleIdle()
 {
+    ProcessRevivalItemAckSpool();
+
     // End-match reveal is timing-sensitive: the stock scoreboard waits for the
     // server gamerules drop list during intermission. Poll this tiny local trigger
     // every GC idle tick rather than on the slower reservation refresh cadence.
