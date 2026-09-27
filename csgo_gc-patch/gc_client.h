@@ -115,7 +115,7 @@ private:
     std::string m_pendingOperationQueueMap;
     bool m_matchmakingFinalReserveSent{};
     // Kept resettable for compatibility with older state transitions.
-    // V4 live drop-ins use the stock ongoing-match reconnect path instead of
-    // scheduling a first/minimal 9107 (which cannot initiate QueueConnect).
+    // V5 live drop-ins use the same stock green ACCEPT -> stage 2 -> minimal
+    // QueueConnect flow as fresh matches, with a one-player client ready roster.
     uint32_t m_liveDropInConnectDelayTicks{};
 };
