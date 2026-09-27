@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V43"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V44"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -1602,6 +1602,48 @@ class ServerSlot:
                     pass
 
 
+def spool_item_acknowledgements(cfg: dict, acknowledgements: object) -> None:
+    if not isinstance(acknowledgements, list) or not acknowledgements:
+        return
+
+    outbox = os.path.join(cfg["csgo_dir"], "csgo_gc", "server_item_acks")
+    os.makedirs(outbox, exist_ok=True)
+
+    for entry in acknowledgements:
+        if not isinstance(entry, dict):
+            continue
+        steamid = str(entry.get("steamid") or "").strip()
+        payload_b64 = str(entry.get("payload_b64") or "").strip()
+        if not steamid.isdigit() or not payload_b64:
+            continue
+        try:
+            payload = base64.b64decode(payload_b64, validate=True)
+        except Exception:
+            continue
+        if not payload or len(payload) > 64 * 1024:
+            continue
+
+        stamp = time.time_ns()
+        final_path = os.path.join(outbox, f"{steamid}_{stamp}.bin")
+        temp_path = final_path + ".tmp"
+        try:
+            with open(temp_path, "wb") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(temp_path, final_path)
+            print(
+                f"[agent] REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 queued "
+                f"native item acknowledgement for {steamid} ({len(payload)} bytes)"
+            )
+        except OSError as exc:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+            print(f"[agent] failed to spool native item acknowledgement: {exc}")
+
+
 def maybe_start_playit(cfg: dict) -> subprocess.Popen | None:
     path = str(cfg.get("playit_exe") or "").strip()
     if not path:
@@ -1665,6 +1707,7 @@ def main() -> None:
             }
             try:
                 reply = post_json(base + "/matchmaking/server/heartbeat", body)
+                spool_item_acknowledgements(cfg, reply.get("item_acks"))
                 reset_generation = int(reply.get("reset_generation") or 0)
                 if last_reset_generation is None:
                     last_reset_generation = reset_generation
