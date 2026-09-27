@@ -134,6 +134,9 @@ def main() -> None:
             b"REVIVAL_CLIENT_READY_FLOW_V1",
             b"REVIVAL_CLIENT_ACCEPT_WATCH_V1",
             b"REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2",
+            b"REVIVAL_LIVE_DROPIN_ACCEPT_V6",
+            b"REVIVAL_PARTY_QUEUE_ROSTER_V1",
+            b"REVIVAL_LATEJOIN_PENDING_ROSTER_V2",
             b"REVIVAL_SERVER_ACCEPT_ROSTER_V1",
             b"REVIVAL_ENGINE_QUEUE_RESERVE_V1",
             b"REVIVAL_SERVER_LOCAL_SOCACHE_V1",
@@ -172,6 +175,8 @@ def main() -> None:
             b"REVIVAL_NATIVE_DROP_TIMING_V3",
             b"REVIVAL_NATIVE_DROP_BUNDLE_V1",
             b"REVIVAL_SERVER_DROP_IMPORT_V1",
+            b"REVIVAL_NATIVE_UNBOX_CHAT_V1",
+            b"REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1",
         ):
             if marker not in dll_blob:
                 print(f"[build_pack] ERROR: stale csgo_gc.dll, missing {marker.decode()}")
