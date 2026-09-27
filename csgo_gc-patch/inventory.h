@@ -129,6 +129,7 @@ public:
     // returns the item id and adds the item to the provided CMsgSOMultipleObjects
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
+    uint64_t GrantOperationPass(CMsgSOSingleObject &create);
 
     // Operation rewards differ from ordinary store purchases: Valve's collection
     // tokens, dossiers and sticker/patch packs are direct loot-list wrappers.
