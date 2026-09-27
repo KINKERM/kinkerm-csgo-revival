@@ -294,6 +294,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_REWARDS_CONNECTED_ONLY_V1")) {
         throw "Built csgo_gc.dll is missing connected-player-only reward filtering."
     }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_10_STAR_MISSIONS_V1")) {
+        throw "Built csgo_gc.dll is missing 10-star Operation mission rewards."
+    }
     if (-not $gcDllText.Contains("REVIVAL_SYNTHETIC_MATCH_END_V1")) {
         throw "Built csgo_gc.dll does not contain completed-match result fallback."
     }
