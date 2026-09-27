@@ -519,6 +519,17 @@ void ClientGC::HandleIdle()
         SendMatchmakingConnectReserve();
 #endif
 
+    if (m_liveDropInConnectDelayTicks)
+    {
+        --m_liveDropInConnectDelayTicks;
+        if (!m_liveDropInConnectDelayTicks)
+        {
+            SendMatchmakingConnectReserve();
+            Platform::Print(
+                "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V2 delayed QueueConnect reserve sent\n");
+        }
+    }
+
     // SharedGC wakes every 250 ms. Keep polling the tiny local state file
     // twice per second even after the stock client stops the SEARCH phase.
     // MatchEnd results arrive after Accept, when m_matchmakingActive is false.
@@ -1538,6 +1549,7 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
     m_matchmakingServerAddress.clear();
     m_matchmakingMap.clear();
     m_matchmakingFinalReserveSent = false;
+    m_liveDropInConnectDelayTicks = 0;
     RevivalDisarmAcceptWatcher();
 
     std::ostringstream request;
@@ -2258,12 +2270,6 @@ void ClientGC::PollMatchmakingBridge()
                 mapName.c_str());
         }
 
-        // 9107 itself is the transition into the stock match-ready flow.
-        // Do NOT immediately follow it with 9104 matchmaking=0: that cancels
-        // the UI/search state in the same tick and suppresses the green ACCEPT
-        // panel before the client can create its game/mmqueue session.
-        SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
-
         m_lastMatchmakingReservation = reservationId;
         m_revivalAuthoritativeMatchId = matchId;
         m_matchmakingIgnoreNextNonAbandonStop = false;
@@ -2273,21 +2279,47 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingServerAddress = numericServerAddress;
         m_matchmakingMap = mapName;
         m_matchmakingFinalReserveSent = false;
+
         if (liveDropIn)
         {
-            // The server is already playing this exact reservation. Do not run
-            // a fresh ready/accept cycle; immediately send the address+cookie
-            // reserve that moves retail Legacy into QueueConnect.
-            SendMatchmakingConnectReserve();
+            // A late join is not a new ready-up. Publish the stock ongoing-match
+            // state first so Legacy exits SEARCH and treats the reservation as
+            // reconnectable, then send the minimal QueueConnect 9107 on a later
+            // SharedGC tick.
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello ongoingHello;
+            BuildMatchmakingHello(ongoingHello);
+            ongoingHello.mutable_ongoingmatch()->CopyFrom(reserve);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
+                ongoingHello);
+
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate ongoingUpdate;
+            ongoingUpdate.set_matchmaking(0);
+            ongoingUpdate.add_ongoingmatch_account_id_sessions(AccountId());
+            ongoingUpdate.mutable_global_stats()->set_players_searching(0);
+            ongoingUpdate.mutable_global_stats()->set_servers_online(1);
+            ongoingUpdate.mutable_global_stats()->set_servers_available(1);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate,
+                ongoingUpdate);
+
+            m_matchmakingActive = false;
+            m_liveDropInConnectDelayTicks = 2;
+            RevivalDisarmAcceptWatcher();
+
             Platform::Print(
-                "REVIVAL_LIVE_DROPIN_DIRECT_V1 match=%llu reservation=%llu "
-                "server=%s map=%s\n",
+                "REVIVAL_LIVE_DROPIN_ONGOING_V2 match=%llu reservation=%llu "
+                "server=%s map=%s; QueueConnect scheduled\n",
                 static_cast<unsigned long long>(matchId),
                 static_cast<unsigned long long>(reservationId),
                 numericServerAddress.c_str(), mapName.c_str());
         }
         else
         {
+            // New allocations still use the normal first 9107 + ACCEPT flow.
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve,
+                reserve);
             RevivalArmAcceptWatcher(
                 directUdpIp, static_cast<uint16_t>(port),
                 static_cast<uint32_t>(accountIds.size()));
@@ -2313,6 +2345,7 @@ void ClientGC::PollMatchmakingBridge()
         m_matchmakingActive = false;
         m_lastMatchmakingReservation = 0;
         m_matchmakingIdleTicks = 0;
+        m_liveDropInConnectDelayTicks = 0;
     }
 }
 
