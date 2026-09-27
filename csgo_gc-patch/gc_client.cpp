@@ -608,6 +608,18 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             StorePurchaseFinalize(messageRead);
             break;
 
+        case k_EMsgGCCasketItemLoadContents:
+            ProcessCasketItemLoadContents(messageRead);
+            break;
+
+        case k_EMsgGCCasketItemAdd:
+            ProcessCasketItemAdd(messageRead);
+            break;
+
+        case k_EMsgGCCasketItemExtract:
+            ProcessCasketItemExtract(messageRead);
+            break;
+
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
                 MessageName(messageRead.TypeUnmasked()));
@@ -2831,6 +2843,103 @@ void ClientGC::RemoveItemName(GCMessageRead &messageRead)
     {
         assert(false);
     }
+}
+
+
+
+void ClientGC::ProcessCasketItemLoadContents(GCMessageRead &messageRead)
+{
+    CMsgCasketItem message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print(
+            "Parsing CMsgCasketItem load-contents failed, ignoring\n");
+        return;
+    }
+
+    CMsgGCItemCustomizationNotification notification;
+    notification.set_request(
+        k_EGCItemCustomizationNotification_CasketContents);
+    notification.add_item_id(message.casket_item_id());
+
+    // The stock inventory already has every contained item as an SO with
+    // attributes 272/273 pointing at this casket. This notification tells
+    // Panorama to open/filter the contents view.
+    SendMessageToGame(
+        false, k_EMsgGCItemCustomizationNotification, notification);
+
+    Platform::Print(
+        "REVIVAL_STORAGE_UNITS_V1 contents casket=%llu\n",
+        static_cast<unsigned long long>(message.casket_item_id()));
+}
+
+void ClientGC::ProcessCasketItemAdd(GCMessageRead &messageRead)
+{
+    CMsgCasketItem message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgCasketItem add failed, ignoring\n");
+        return;
+    }
+
+    CMsgSOSingleObject modifyCasket;
+    CMsgSOSingleObject modifyItem;
+    CMsgGCItemCustomizationNotification notification;
+
+    if (m_inventory.CasketItemAdd(
+            message.casket_item_id(), message.item_item_id(),
+            modifyCasket, modifyItem, notification))
+    {
+        SendMessageToGame(false, k_ESOMsg_Update, modifyItem);
+        SendMessageToGame(false, k_ESOMsg_Update, modifyCasket);
+        SendMessageToGame(
+            false, k_EMsgGCItemCustomizationNotification, notification);
+        return;
+    }
+
+    // A full Storage Unit is a normal user-facing condition, not an assert.
+    if (notification.has_request())
+    {
+        SendMessageToGame(
+            false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+    else
+    {
+        Platform::Print(
+            "REVIVAL_STORAGE_UNITS_V1 add rejected casket=%llu item=%llu\n",
+            static_cast<unsigned long long>(message.casket_item_id()),
+            static_cast<unsigned long long>(message.item_item_id()));
+    }
+}
+
+void ClientGC::ProcessCasketItemExtract(GCMessageRead &messageRead)
+{
+    CMsgCasketItem message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgCasketItem extract failed, ignoring\n");
+        return;
+    }
+
+    CMsgSOSingleObject modifyCasket;
+    CMsgSOSingleObject modifyItem;
+    CMsgGCItemCustomizationNotification notification;
+
+    if (m_inventory.CasketItemExtract(
+            message.casket_item_id(), message.item_item_id(),
+            modifyCasket, modifyItem, notification))
+    {
+        SendMessageToGame(false, k_ESOMsg_Update, modifyItem);
+        SendMessageToGame(false, k_ESOMsg_Update, modifyCasket);
+        SendMessageToGame(
+            false, k_EMsgGCItemCustomizationNotification, notification);
+        return;
+    }
+
+    Platform::Print(
+        "REVIVAL_STORAGE_UNITS_V1 extract rejected casket=%llu item=%llu\n",
+        static_cast<unsigned long long>(message.casket_item_id()),
+        static_cast<unsigned long long>(message.item_item_id()));
 }
 
 
