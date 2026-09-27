@@ -384,6 +384,12 @@ if (-not $agentText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1 match")) {
 if (-not $agentText.Contains("REVIVAL_Q_SLOT_PAD_V1 tournament extra-slot mode active")) {
     throw "Downloaded laptop agent is missing ten-human-slot queued reservation support."
 }
+if (-not $agentText.Contains('"-tournament", "revival"')) {
+    throw "Downloaded laptop agent is missing Source tournament slot-padding mode."
+}
+if (-not $agentText.Contains('"-tournament_extra_casters_slots", "10"')) {
+    throw "Downloaded laptop agent is missing ten extra queued reservation slots."
+}
 Write-Host "    Verified current V49 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
