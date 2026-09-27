@@ -72,7 +72,9 @@ $markers = @(
     "REVIVAL_NATIVE_DROP_CRASH_GUARD_V1",
     "REVIVAL_NATIVE_DROP_TIMING_V3",
     "REVIVAL_NATIVE_DROP_BUNDLE_V1",
-    "REVIVAL_SERVER_DROP_IMPORT_V1"
+    "REVIVAL_SERVER_DROP_IMPORT_V1",
+    "REVIVAL_NATIVE_UNBOX_CHAT_V1",
+    "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1"
 )
 foreach ($marker in $markers) {
     if (-not $blob.Contains($marker)) {
