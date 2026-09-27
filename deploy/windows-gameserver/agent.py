@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V46"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V47"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -361,6 +361,9 @@ sv_competitive_official_5v5 1
 sv_allowdownload 1
 sv_allowupload 0
 net_maxfilesize 64
+// Keep extra engine connection slots for late joiners while still advertising
+// and enforcing a 10-human Competitive match. Bots fill to 10 and auto-vacate.
+sv_visiblemaxplayers 10
 
 bot_quota 10
 bot_quota_mode fill
@@ -775,7 +778,7 @@ class ServerSlot:
                 "-secure",
                 "-tickrate", "64",
                 "-port", str(int(self.cfg["local_port"])),
-                "-maxplayers_override", "10",
+                "-maxplayers_override", "16",
                 "+game_type", "0",
                 "+game_mode", "1",
                 "+map", map_name,
@@ -807,6 +810,7 @@ class ServerSlot:
                     pass
 
             print(f"[agent] starting match {match_id} on {map_name} @ 64 tick")
+            print("[agent] REVIVAL_BOT_JOIN_CAPACITY_V1 engine_slots=16 visible_humans=10 bot_fill=10")
             if os.name == "nt":
                 creationflags = (
                     subprocess.CREATE_NEW_CONSOLE
@@ -1224,6 +1228,7 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5 1; "
+                    "sv_visiblemaxplayers 10; "
                     "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
                     "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
                     "bot_quota_mode fill; bot_quota 10; "
@@ -1498,7 +1503,8 @@ class ServerSlot:
                     "cash_player_killed_teammate -300; "
                     "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
                     "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
-                    "bot_quota_mode fill; bot_quota 10"
+                    "sv_visiblemaxplayers 10; "
+                    "bot_quota_mode fill; bot_auto_vacate 1; bot_quota 10"
                 ),
             )
         except Exception:
