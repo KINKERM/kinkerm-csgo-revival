@@ -519,17 +519,6 @@ void ClientGC::HandleIdle()
         SendMatchmakingConnectReserve();
 #endif
 
-    if (m_liveDropInConnectDelayTicks)
-    {
-        --m_liveDropInConnectDelayTicks;
-        if (!m_liveDropInConnectDelayTicks)
-        {
-            SendMatchmakingConnectReserve();
-            Platform::Print(
-                "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V3 minimal QueueConnect reserve sent\n");
-        }
-    }
-
     // SharedGC wakes every 250 ms. Keep polling the tiny local state file
     // twice per second even after the stock client stops the SEARCH phase.
     // MatchEnd results arrive after Accept, when m_matchmakingActive is false.
@@ -1395,6 +1384,15 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     }
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
+
+    if (m_lastMatchmakingReservation && !m_matchmakingServerAddress.empty())
+    {
+        Platform::Print(
+            "REVIVAL_LIVE_DROPIN_RECONNECT_V4 stock reconnect join-data response "
+            "reservation=%llu server=%s map=%s\n",
+            static_cast<unsigned long long>(m_lastMatchmakingReservation),
+            m_matchmakingServerAddress.c_str(), m_matchmakingMap.c_str());
+    }
 }
 
 void ClientGC::PollOperationPassPurchaseBridge()
@@ -2282,17 +2280,17 @@ void ClientGC::PollMatchmakingBridge()
 
         if (liveDropIn)
         {
-            // A player joining an ALREADY-RUNNING match must never enter the
-            // normal 5v5 ready/accept path. In particular, do not send a
-            // ClientHello.ongoingmatch containing the full nested reservation:
-            // this Legacy build treats that object as another ready-up and shows
-            // "Confirming match..." (1/5, 2/5, ...).
+            // A running match uses the stock RECONNECT path, not the fresh
+            // ACCEPT/QueueConnect path. 9107 by itself only advances an ACCEPT
+            // session that already exists; sending a minimal 9107 as the first
+            // packet therefore just stops SEARCH and does not connect.
             //
-            // First leave SEARCH while explicitly advertising the existing
-            // server as online/available. Then, on a later SharedGC tick, send
-            // only the minimal address+cookie 9107. With the engine Q roster
-            // already refreshed server-side, that packet is a direct
-            // QueueConnect/reconnect, not a new ACCEPT cycle.
+            // Publish the player's account as belonging to an ongoing match,
+            // then publish a *minimal* ongoingmatch descriptor in GC Hello.
+            // Do NOT copy the nested server reservation into ongoingmatch: this
+            // Legacy client interprets that full object as a new ready-up.
+            // Panorama sees HasOngoingMatch(), calls the stock reconnect API,
+            // and the engine asks us for CMsg...ClientRequestJoinServerData.
             CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate ongoingUpdate;
             ongoingUpdate.set_matchmaking(0);
             ongoingUpdate.add_ongoingmatch_account_id_sessions(AccountId());
@@ -2306,13 +2304,34 @@ void ClientGC::PollMatchmakingBridge()
                 false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate,
                 ongoingUpdate);
 
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientHello ongoingHello;
+            BuildMatchmakingHello(ongoingHello);
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve *ongoing =
+                ongoingHello.mutable_ongoingmatch();
+            ongoing->set_serverid(serverId);
+            if (directUdpIp)
+                ongoing->set_direct_udp_ip(directUdpIp);
+            ongoing->set_direct_udp_port(port);
+            ongoing->set_reservationid(reservationId);
+            ongoing->set_map(mapName);
+            ongoing->set_server_address(numericServerAddress);
+            ongoingHello.mutable_global_stats()->set_players_online(
+                static_cast<uint32_t>(accountIds.size()));
+            ongoingHello.mutable_global_stats()->set_players_searching(0);
+            ongoingHello.mutable_global_stats()->set_servers_online(1);
+            ongoingHello.mutable_global_stats()->set_servers_available(1);
+            ongoingHello.mutable_global_stats()->set_ongoing_matches(1);
+            SendMessageToGame(
+                false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello,
+                ongoingHello);
+
             m_matchmakingActive = false;
-            m_liveDropInConnectDelayTicks = 2;
+            m_liveDropInConnectDelayTicks = 0;
             RevivalDisarmAcceptWatcher();
 
             Platform::Print(
-                "REVIVAL_LIVE_DROPIN_QUEUECONNECT_V3 match=%llu reservation=%llu "
-                "server=%s map=%s; SEARCH stopped, server online, minimal 9107 scheduled\n",
+                "REVIVAL_LIVE_DROPIN_RECONNECT_V4 match=%llu reservation=%llu "
+                "server=%s map=%s; ongoing match published, awaiting stock reconnect join-data request\n",
                 static_cast<unsigned long long>(matchId),
                 static_cast<unsigned long long>(reservationId),
                 numericServerAddress.c_str(), mapName.c_str());
