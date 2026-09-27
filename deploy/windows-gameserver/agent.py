@@ -50,7 +50,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V39"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V40"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -338,6 +338,9 @@ sv_password ""
 sv_cheats 0
 sv_pure 0
 sv_allow_votes 1
+sv_allowdownload 1
+sv_allowupload 0
+net_maxfilesize 64
 sv_hibernate_when_empty 0
 sv_hibernate_postgame_delay 5
 __REVIVAL_STEAM_ACCOUNT_LINE__
@@ -354,6 +357,9 @@ log on
     late_path = os.path.join(cfg_dir, "gamemode_competitive_server.cfg")
     late = r"""// CS:GO Revival - final matchmaking overrides
 sv_competitive_official_5v5 1
+sv_allowdownload 1
+sv_allowupload 0
+net_maxfilesize 64
 
 bot_quota 10
 bot_quota_mode fill
@@ -1417,6 +1423,7 @@ class ServerSlot:
                 password,
                 (
                     "sv_competitive_official_5v5 1; "
+                    "sv_allowdownload 1; sv_allowupload 0; net_maxfilesize 64; "
                     "mp_timelimit 0; mp_maxrounds 16; mp_winlimit 0; "
                     "mp_halftime 1; mp_overtime_enable 0; "
                     "mp_autokick 1; mp_tkpunish 0; mp_spawnprotectiontime 5; "
