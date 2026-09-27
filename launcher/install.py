@@ -24,6 +24,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import runpy
 import sys
 import zipfile
 import shutil
@@ -335,10 +336,14 @@ def _extract_workshop_legacy(archive: str, dest: str) -> bool:
 
 
 def install_insertion2(csgo_dir: str) -> None:
-    target = os.path.join(csgo_dir, "csgo", "maps", "cs_insertion2.bsp")
-    if os.path.isfile(target):
-        log("Insertion II already installed.")
+    maps_dir = os.path.join(csgo_dir, "csgo", "maps")
+    target = os.path.join(maps_dir, "cs_insertion2.bsp")
+    nav_target = os.path.join(maps_dir, "cs_insertion2.nav")
+    if os.path.isfile(target) and os.path.isfile(nav_target):
+        log("Insertion II already installed (BSP + NAV).")
         return
+    if os.path.isfile(target) and not os.path.isfile(nav_target):
+        log("Insertion II BSP exists but NAV is missing; repairing complete payload.")
 
     def try_cache() -> bool:
         for item_dir in _workshop_item_dirs():
@@ -615,7 +620,11 @@ def main() -> None:
     # install.py is genuinely the only file a new player needs beforehand.
     launcher = os.path.join(csgo_dir, "revival", "launcher.py")
     if os.path.exists(launcher):
-        os.execv(sys.executable, [sys.executable, launcher, cfg])
+        # Run the installed launcher in this same Python process. This avoids a
+        # Windows argv quoting edge case where "C:\\Program Files\\..." was
+        # being split and Python tried to open "C:\\program".
+        sys.argv = [launcher, cfg]
+        runpy.run_path(launcher, run_name="__main__")
     else:
         log("release pack is incomplete: revival/launcher.py is missing.")
         sys.exit(5)
