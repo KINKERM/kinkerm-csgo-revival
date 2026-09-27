@@ -15,8 +15,8 @@ var OperationMissionCard = ( function()
 		'mg_lobby_mapveto',
 		'mg_de_dust2',
 		'mg_de_mirage',
-		'mg_de_cache',
-		'mg_de_cbble',
+		'mg_de_overpass',
+		'mg_de_vertigo',
 		'mg_de_inferno',
 		'mg_de_ancient',
 		'mg_de_nuke',
@@ -100,7 +100,7 @@ var OperationMissionCard = ( function()
 
 			// Infinite revival missions have no historical weekly cap. Each visible
 			// Competitive mission pays four stars when completed.
-			oCardDetails.operational_points = 4;
+			oCardDetails.operational_points = 3;
 			oCardDetails.isunlocked = true;
 			oCardDetails.idx = idx;
 			oCardDetails.bShowLock = false;
