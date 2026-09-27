@@ -89,6 +89,10 @@ private:
     uint64_t m_lastRewardedMatchId{};
     uint64_t m_lastOperationMissionMatchId{};
     uint64_t m_lastMissionProgressMatchId{};
+    // A round-progress packet may arrive before the authoritative coordinator
+    // says the player won. Keep win-branch dedupe independent so "21 rounds
+    // OR win 1 match" can still complete exactly once on a later confirmed win.
+    uint64_t m_lastOperationWinMatchId{};
     uint64_t m_lastUiDispatchedMatchId{};
     // Live Operation round mirroring. The laptop agent reports cumulative
     // player-centric round wins; only the delta since the previous poll is
