@@ -347,7 +347,8 @@ foreach ($marker in @(
     "REVIVAL_NATIVE_DROP_BUNDLE_V1",
     "REVIVAL_SERVER_DROP_IMPORT_V1",
     "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1",
-    "REVIVAL_LATEJOIN_PENDING_ROSTER_V2"
+    "REVIVAL_LATEJOIN_PENDING_ROSTER_V2",
+    "REVIVAL_JOIN_IN_PROGRESS_G_V1"
 )) {
     if (-not $installedGcText.Contains($marker)) {
         throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
@@ -356,8 +357,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V45")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V45"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V46")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V46"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -377,7 +378,7 @@ if (-not $agentText.Contains("REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 queued")) {
 if (-not $agentText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation refreshed")) {
     throw "Downloaded laptop agent is missing exact engine ready-up roster reporting."
 }
-Write-Host "    Verified current V45 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
+Write-Host "    Verified current V46 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
