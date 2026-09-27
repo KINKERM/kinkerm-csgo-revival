@@ -40,7 +40,7 @@ SERVER_URL = "https://cuckersfun.tail52305f.ts.net"
 # The published pack zip (a GitHub Release asset works great). It must extract
 # so that csgo_gc/csgo_gc.dll / config.txt / items_game.txt land in the CS:GO install.
 # See launcher/build_pack.py to build & upload it.
-PACK_URL = "https://github.com/KINKERM/kinkerm-csgo-revival/releases/latest/download/csgo-revival-pack.zip"
+PACK_URL = "https://github.com/KINKERM/CSGO-revival-public/releases/download/csgorevival/csgo-revival-pack.zip"
 INSERTION2_WORKSHOP_IDS = ("2395333051", "2760936305")
 STEAMCMD_URL = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
 SEVENZR_URL = "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"
@@ -248,6 +248,7 @@ def _workshop_item_dirs() -> list[str]:
 
 
 def _copy_insertion2_payload(src_root: str, csgo_dir: str) -> bool:
+    """Install the complete Insertion II payload, not only the BSP."""
     bsp = ""
     for base, dirs, files in os.walk(src_root):
         for name in files:
@@ -262,24 +263,53 @@ def _copy_insertion2_payload(src_root: str, csgo_dir: str) -> bool:
     csgo_root = os.path.join(csgo_dir, "csgo")
     maps_dir = os.path.join(csgo_root, "maps")
     os.makedirs(maps_dir, exist_ok=True)
-    shutil.copy2(bsp, os.path.join(maps_dir, "cs_insertion2.bsp"))
 
-    # Preserve any optional nav/radar/material payload included with the Workshop
-    # archive. Most assets are packed into the BSP, but copying these makes the
-    # installer robust across Workshop revisions.
+    # Copy every map companion sitting next to the BSP. The NAV is required in
+    # practice: otherwise Legacy Source can sit forever at
+    # "Downloading maps/cs_insertion2.nav... 0%".
+    bsp_dir = os.path.dirname(bsp)
+    copied = []
+    for name in os.listdir(bsp_dir):
+        low = name.lower()
+        if low.startswith("cs_insertion2."):
+            src = os.path.join(bsp_dir, name)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(maps_dir, name))
+                copied.append(name)
+
+    # Determine the payload's csgo/game root from the directory that owns maps/.
+    payload_game_root = os.path.dirname(bsp_dir) if os.path.basename(bsp_dir).lower() == "maps" else src_root
+
+    # Preserve optional supporting content from Workshop/legacy archives.
+    # Copying these directories is safe because this payload is dedicated to
+    # Insertion II and avoids missing radar/overview/material resources.
     for folder in ("materials", "models", "resource", "scripts", "sound"):
-        src = os.path.join(src_root, folder)
+        src = os.path.join(payload_game_root, folder)
         if os.path.isdir(src):
             shutil.copytree(src, os.path.join(csgo_root, folder), dirs_exist_ok=True)
-    src_maps = os.path.join(src_root, "maps")
-    if os.path.isdir(src_maps):
+
+    # Some archives add map sidecars under a second maps/ path.
+    src_maps = os.path.join(payload_game_root, "maps")
+    if os.path.isdir(src_maps) and os.path.normcase(src_maps) != os.path.normcase(bsp_dir):
         for name in os.listdir(src_maps):
             low = name.lower()
-            if low.startswith("cs_insertion2.") and low != "cs_insertion2.bsp":
-                shutil.copy2(
-                    os.path.join(src_maps, name),
-                    os.path.join(maps_dir, name),
-                )
+            if low.startswith("cs_insertion2."):
+                src = os.path.join(src_maps, name)
+                if os.path.isfile(src):
+                    shutil.copy2(src, os.path.join(maps_dir, name))
+                    if name not in copied:
+                        copied.append(name)
+
+    required_bsp = os.path.join(maps_dir, "cs_insertion2.bsp")
+    if not os.path.isfile(required_bsp):
+        return False
+
+    nav = os.path.join(maps_dir, "cs_insertion2.nav")
+    if os.path.isfile(nav):
+        log("Insertion II payload installed: " + ", ".join(sorted(copied)))
+    else:
+        log("WARNING: Insertion II payload has no cs_insertion2.nav; joining bot-filled servers may fail.")
+
     return True
 
 
