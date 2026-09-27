@@ -416,10 +416,16 @@ if (-not $SkipInstall) {
     $installedGc = Join-Path $CsgoDir "csgo_gc\csgo_gc.dll"
     $installedServer = Join-Path $CsgoDir "srcds.exe"
     $installedLauncher = Join-Path $CsgoDir "csgo_revival.exe"
+    $installedLauncherPy = Join-Path $CsgoDir "revival\launcher.py"
 
     Need-Path $installedGc "Installed csgo_gc.dll"
     Need-Path $installedServer "Installed srcds.exe"
     Need-Path $installedLauncher "Installed revival launcher"
+    Need-Path $installedLauncherPy "Installed matchmaking launcher runtime"
+    $installedLauncherPyText = Get-Content $installedLauncherPy -Raw
+    if (-not $installedLauncherPyText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
+        throw "Installed revival\launcher.py is missing live drop-in state serialization."
+    }
 
     $builtGcHash = (Get-FileHash $gcDll -Algorithm SHA256).Hash
     $installedGcHash = (Get-FileHash $installedGc -Algorithm SHA256).Hash
