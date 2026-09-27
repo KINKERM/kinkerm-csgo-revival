@@ -235,9 +235,6 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
         present = {int(it.get("def_index", 0) or 0) for it in items}
         if crate_def not in present:
             items.append({"def_index": crate_def, "quality": 4, "rarity": 1})
-        key_def = self.gold_tradeup_key_def
-        if key_def and key_def not in present:
-            items.append({"def_index": key_def, "quality": 4, "rarity": 1})
 
     # ---- routing -----------------------------------------------------------
     def do_GET(self):
@@ -441,7 +438,7 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
                     steamid,
                     str(body["case"]),
                     count=int(body.get("count", 1)),
-                    include_key=bool(body.get("include_key", True)),
+                    include_key=bool(body.get("include_key", False)),
                 )
                 return self._send_json(200, {"ok": True, "added": added})
 
