@@ -2538,6 +2538,35 @@ uint64_t Inventory::PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObje
     return item.id();
 }
 
+uint64_t Inventory::GrantOperationPass(CMsgSOSingleObject &create)
+{
+    const uint32_t passDef = GetConfig().OperationPassDef();
+
+    for (const auto &pair : m_items)
+    {
+        if (pair.second.def_index() == passDef)
+        {
+            Platform::Print(
+                "REVIVAL_OPERATION_PASS_BRIDGE_V1 pass already owned item=%llu\n",
+                static_cast<unsigned long long>(pair.second.id()));
+            return pair.second.id();
+        }
+    }
+
+    std::vector<CMsgSOSingleObject> created;
+    const uint64_t itemId = PurchaseItem(passDef, created);
+    if (!itemId || created.empty())
+        return 0;
+
+    create = created.front();
+    WriteToFile();
+
+    Platform::Print(
+        "REVIVAL_OPERATION_PASS_BRIDGE_V1 granted pass def=%u item=%llu\n",
+        passDef, static_cast<unsigned long long>(itemId));
+    return itemId;
+}
+
 uint64_t Inventory::PurchaseOperationReward(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update)
 {
     const LootList *lootList = m_itemSchema.GetDirectLootList(defIndex);
