@@ -3041,75 +3041,58 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
 
     OperationQuestProgressState &state = m_operationQuestProgress[questId];
     const uint32_t goal = quest->Goal();
-    const uint32_t oldProgress = std::min(state.progress, goal ? goal - 1 : 0u);
-    const uint64_t added = static_cast<uint32_t>(std::max(normalPointsEarned, 0));
-    const uint64_t total = static_cast<uint64_t>(oldProgress) + added;
+    const uint32_t oldProgress = std::min(state.progress, goal);
 
-    // Revival mission loop:
-    //   - preserve Valve's per-threshold star award
-    //   - remove the historical 10/6-stars-per-week card cap
-    //   - add +1 bonus star whenever the full mission is completed
-    //   - wrap progress back around so the same mission can be played forever
-    const uint64_t completedCycles = goal ? total / goal : 0;
-    const uint32_t newProgress = goal
-        ? static_cast<uint32_t>(total % goal)
-        : oldProgress;
+    // Completed missions are persistent now. Never wrap a finished quest back
+    // to zero, otherwise Panorama immediately renders the same mission as fresh.
+    if (oldProgress >= goal)
+    {
+        Platform::Print(
+            "REVIVAL_OPERATION_COMPLETION_PERSIST_V1 quest=%u already complete %u/%u\n",
+            questId, oldProgress, goal);
+        return false;
+    }
+
+    const uint64_t added =
+        static_cast<uint32_t>(std::max(normalPointsEarned, 0));
+    const uint64_t total = static_cast<uint64_t>(oldProgress) + added;
+    const uint32_t newProgress = static_cast<uint32_t>(
+        std::min<uint64_t>(total, goal));
+    const bool completedNow = oldProgress < goal && newProgress >= goal;
 
     uint64_t crossedSegments = 0;
-    if (!quest->thresholds.empty())
+    for (uint32_t threshold : quest->thresholds)
     {
-        if (completedCycles == 0)
-        {
-            for (uint32_t threshold : quest->thresholds)
-            {
-                if (oldProgress < threshold && total >= threshold)
-                    ++crossedSegments;
-            }
-        }
-        else
-        {
-            // Finish the current cycle.
-            for (uint32_t threshold : quest->thresholds)
-            {
-                if (oldProgress < threshold)
-                    ++crossedSegments;
-            }
-
-            // Any fully completed extra cycles.
-            if (completedCycles > 1)
-            {
-                crossedSegments +=
-                    (completedCycles - 1) * quest->thresholds.size();
-            }
-
-            // Thresholds already reached in the new wrapped cycle.
-            for (uint32_t threshold : quest->thresholds)
-            {
-                if (newProgress >= threshold)
-                    ++crossedSegments;
-            }
-        }
+        if (oldProgress < threshold && newProgress >= threshold)
+            ++crossedSegments;
     }
 
     uint64_t stars64 =
         crossedSegments * static_cast<uint64_t>(quest->operationalPoints);
-    stars64 += completedCycles; // +1 revival completion bonus per full mission
+
+    // Keep the revival's existing completion bonus, but award it once only.
+    if (completedNow)
+        ++stars64;
+
     const uint32_t starsEarnedNow = stars64 > UINT32_MAX
         ? UINT32_MAX : static_cast<uint32_t>(stars64);
 
     state.progress = newProgress;
 
-    if (completedCycles > 0)
+    if (completedNow)
     {
-        // A completed repeatable mission immediately becomes available again.
-        // Clear uncommitted bonus progress and the active-card pin so a normal
-        // Competitive queue after completion does not keep forcing the mission map.
         state.bonusPoints = 0;
+
+        const uint64_t completedSum =
+            static_cast<uint64_t>(m_operationMissionsCompleted) + 1u;
+        m_operationMissionsCompleted = completedSum > UINT32_MAX
+            ? UINT32_MAX : static_cast<uint32_t>(completedSum);
+
+        // Completion ends the active mission, but leaves its quest progress at
+        // the goal so the stock Operation UI shows it as completed.
         m_operationMissionId = 0;
         m_operationSelectedQuestId = 0;
 
-        // Match completed: clear the native active quest so the HUD does not
-        // keep showing a finished mission into the next ordinary match.
         CSOEconItemAttribute *questAttribute = nullptr;
         for (int i = 0; i < coin->attribute_size(); ++i)
         {
@@ -3126,6 +3109,10 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
             questAttribute->set_def_index(ItemSchema::AttributeQuestId);
         }
         m_itemSchema.SetAttributeUint32(questAttribute, 0);
+
+        Platform::Print(
+            "REVIVAL_OPERATION_COMPLETION_PERSIST_V1 quest=%u completed; missions=%u\n",
+            questId, m_operationMissionsCompleted);
     }
     else if (bonusPointsEarned > 0)
     {
@@ -3169,13 +3156,6 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         m_operationEarnedStars = earnedSum > UINT32_MAX
             ? UINT32_MAX : static_cast<uint32_t>(earnedSum);
 
-        // Coin tiers still use Valve's Riptide mission-earned thresholds:
-        // 33 Silver, 66 Gold, 100 Diamond. The stock Operation UI compares
-        // SeasonalOperations.missions_completed against those same thresholds,
-        // so publish earned mission stars here rather than a raw completion
-        // count. Purchased/spent stars never alter this lifetime value.
-        m_operationMissionsCompleted = m_operationEarnedStars;
-
         const uint32_t targetCoinDef = OperationCoinDefForEarnedStars();
         if (targetCoinDef && coin->def_index() != targetCoinDef)
         {
@@ -3193,12 +3173,11 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     WriteToFile();
 
     Platform::Print(
-        "REVIVAL_REPEATABLE_MISSIONS_V1 quest=%u +%d normal +%d bonus "
-        "progress %u/%u cycles=%llu +%u stars (earned=%u)\n",
+        "REVIVAL_OPERATION_PROGRESS_PERSIST_V1 quest=%u +%d normal +%d bonus "
+        "progress %u/%u completed=%u +%u stars (earned=%u missions=%u)\n",
         questId, normalPointsEarned, bonusPointsEarned,
-        state.progress, goal,
-        static_cast<unsigned long long>(completedCycles),
-        starsEarnedNow, m_operationEarnedStars);
+        state.progress, goal, completedNow ? 1u : 0u,
+        starsEarnedNow, m_operationEarnedStars, m_operationMissionsCompleted);
     return true;
 }
 
@@ -3358,26 +3337,38 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
             return roundChildId != 0;
         }
 
-        // Clear both real child branches before completing the parent. The
-        // parent itself wraps back to zero in ApplyOperationQuestProgress(), so
-        // after the reward animation the original mission UI is immediately
-        // ready for another run.
-        state.repeatableRounds = 0;
-        for (uint32_t childId : children)
+        // Preserve the branch that actually completed the OR graph. The old
+        // revival loop zeroed both children here, which awarded stars correctly
+        // but made Panorama render this same mission as 0/21 and 0/1 again.
+        state.repeatableRounds = static_cast<uint32_t>(
+            std::min<uint64_t>(roundTotal, roundGoal));
+
+        if (roundChildId)
         {
-            OperationQuestProgressState &childState =
-                m_operationQuestProgress[childId];
-            childState.progress = 0;
-            childState.bonusPoints = 0;
-            childState.repeatableRounds = 0;
-            AddOperationQuestState(childId, update);
+            OperationQuestProgressState &roundState =
+                m_operationQuestProgress[roundChildId];
+            roundState.progress = state.repeatableRounds;
+            roundState.bonusPoints = 0;
+            AddOperationQuestState(roundChildId, update);
+        }
+
+        if (wonMatch && matchChildId)
+        {
+            const QuestDefinition *matchChild =
+                m_itemSchema.GetQuestDefinition(matchChildId);
+            OperationQuestProgressState &matchState =
+                m_operationQuestProgress[matchChildId];
+            matchState.progress =
+                matchChild && matchChild->Goal() ? matchChild->Goal() : 1u;
+            matchState.bonusPoints = 0;
+            AddOperationQuestState(matchChildId, update);
         }
 
         const bool changed = ApplyOperationQuestProgress(
             selected->id, 1, 0, update);
 
         Platform::Print(
-            "REVIVAL_REPEATABLE_MISSIONS_V3 quest=%u map=%s completed via %s\n",
+            "REVIVAL_OPERATION_COMPLETION_PERSIST_V1 quest=%u map=%s completed via %s\n",
             selected->id, std::string(mapName).c_str(),
             wonMatch ? "match-win" : "round-goal");
         return changed;
