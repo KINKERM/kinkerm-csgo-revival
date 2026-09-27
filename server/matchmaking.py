@@ -87,6 +87,7 @@ class MatchmakingCoordinator:
         self._assignment: dict[str, Any] | None = None
         self._reward_queues: dict[str, list[str]] = {}
         self._last_reward_payload: dict[str, tuple[str, float]] = {}
+        self._reset_generation = 0
 
     def _server_online_locked(self) -> bool:
         return (
@@ -659,6 +660,7 @@ class MatchmakingCoordinator:
                 if self._assignment else None,
                 "server_online": True,
                 "server_available": self._server_joinable_locked(),
+                "reset_generation": self._reset_generation,
             }
 
     def server_match_started(self, match_id: int) -> None:
@@ -758,6 +760,24 @@ class MatchmakingCoordinator:
             self._server["reserved_account_ids"] = []
             self._try_form_locked()
             return steamids
+
+    def reset_runtime(self) -> int:
+        """Clear transient queue/match/reward state after a major data reset."""
+        with self._lock:
+            self._reset_generation += 1
+            self._queue.clear()
+            self._states.clear()
+            self._matches.clear()
+            self._assignment = None
+            self._reward_queues.clear()
+            self._last_reward_payload.clear()
+            self._server["ready_match_id"] = 0
+            self._server["reserved_account_ids"] = []
+            self._server["ct_score"] = 0
+            self._server["t_score"] = 0
+            self._server["player_teams"] = {}
+            self._server["player_rounds_won"] = {}
+            return self._reset_generation
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
