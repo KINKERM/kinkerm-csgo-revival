@@ -2296,17 +2296,18 @@ void ClientGC::PollMatchmakingBridge()
         std::vector<uint32_t> accountIds = BridgeU32List(state, "account_ids");
         if (accountIds.empty())
             accountIds.push_back(AccountId());
+        std::vector<uint32_t> queueAccountIds =
+            BridgeU32List(state, "queue_account_ids");
+        if (liveDropIn && queueAccountIds.empty())
+            queueAccountIds.push_back(AccountId());
 
-        // For a running match, only THIS late-joining player belongs in the
-        // client-side ready/ACCEPT roster. The server's native Q reservation
-        // still contains every connected/reserved account. Re-sending the full
-        // roster here makes Legacy wait for players already inside the match
-        // and leaves the joiner stuck at "Confirming match...".
-        if (liveDropIn)
-            details->add_account_ids(AccountId());
-        else
-            for (uint32_t accountId : accountIds)
-                details->add_account_ids(accountId);
+        // Client 9107 must exactly match Source's current engine Q ready-up
+        // roster. For a live match that roster contains only pending late
+        // joiners; players already inside the match are deliberately excluded.
+        const std::vector<uint32_t> &readyAccountIds =
+            liveDropIn ? queueAccountIds : accountIds;
+        for (uint32_t accountId : readyAccountIds)
+            details->add_account_ids(accountId);
         details->set_game_type(gameType);
         details->set_match_id(matchId);
         const uint32_t serverVersion = static_cast<uint32_t>(
@@ -2362,14 +2363,15 @@ void ClientGC::PollMatchmakingBridge()
                 reserve);
             RevivalArmAcceptWatcher(
                 directUdpIp, static_cast<uint16_t>(port),
-                static_cast<uint32_t>(accountIds.size()));
+                static_cast<uint32_t>(readyAccountIds.size()));
 
             Platform::Print(
-                "REVIVAL_LIVE_DROPIN_ACCEPT_V5 match=%llu reservation=%llu "
-                "server=%s map=%s; green ACCEPT armed for joining player only\n",
+                "REVIVAL_LIVE_DROPIN_ACCEPT_V6 match=%llu reservation=%llu "
+                "server=%s map=%s; green ACCEPT armed pending_roster=%u\n",
                 static_cast<unsigned long long>(matchId),
                 static_cast<unsigned long long>(reservationId),
-                numericServerAddress.c_str(), mapName.c_str());
+                numericServerAddress.c_str(), mapName.c_str(),
+                static_cast<unsigned>(readyAccountIds.size()));
         }
         else
         {
