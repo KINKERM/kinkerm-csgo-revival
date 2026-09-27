@@ -28,6 +28,64 @@ namespace
 constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
+constexpr uint32_t RevivalInventoryFoundInCrate = (1u << 30) | 4u;
+constexpr const char *RevivalNativeUnboxChatMarker = "REVIVAL_NATIVE_UNBOX_CHAT_V1";
+
+#ifdef _WIN32
+bool RevivalSpoolNativeItemAcknowledgement(
+    uint64_t itemId, const void *data, uint32_t size)
+{
+    if (!itemId || !data || !size || size > 64u * 1024u)
+        return false;
+
+    char executablePath[MAX_PATH] = {};
+    const DWORD pathLength = GetModuleFileNameA(
+        nullptr, executablePath, static_cast<DWORD>(sizeof(executablePath)));
+    if (!pathLength || pathLength >= sizeof(executablePath))
+        return false;
+
+    std::string root(executablePath, pathLength);
+    const size_t slash = root.find_last_of("\\/");
+    if (slash == std::string::npos)
+        return false;
+    root.resize(slash);
+
+    const std::string gcDir = root + "\\csgo_gc";
+    const std::string outboxDir = gcDir + "\\item_ack_outbox";
+    CreateDirectoryA(gcDir.c_str(), nullptr);
+    CreateDirectoryA(outboxDir.c_str(), nullptr);
+
+    std::ostringstream fileName;
+    fileName << outboxDir << "\\ack_" << itemId << "_"
+             << static_cast<unsigned long long>(GetTickCount64()) << ".bin";
+    const std::string finalPath = fileName.str();
+    const std::string tempPath = finalPath + ".tmp";
+
+    {
+        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
+        if (!out.is_open())
+            return false;
+        out.write(reinterpret_cast<const char *>(data), size);
+        out.flush();
+        if (!out.good())
+        {
+            out.close();
+            DeleteFileA(tempPath.c_str());
+            return false;
+        }
+    }
+
+    if (!MoveFileExA(
+            tempPath.c_str(), finalPath.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        DeleteFileA(tempPath.c_str());
+        return false;
+    }
+    return true;
+}
+#endif
+
 
 // Relative fallbacks for non-Windows builds and unusual launch cwd values.
 constexpr const char *OperationMissionBridgePaths[] = {
@@ -2579,9 +2637,32 @@ void ClientGC::SetItemPositions(GCMessageRead &messageRead)
     {
         for (const CMsgItemAcknowledged &acknowledgement : acknowledgements)
         {
-            // send these to the server only
+            // The stock path sends this GC net-message to SRCDS. Public revival
+            // matches can use direct UDP without a usable Steam P2P route, so
+            // preserve that path AND spool crate acknowledgements through the
+            // launcher/backend/laptop bridge. SRCDS then receives the exact
+            // native CMsgItemAcknowledged and emits Item_FoundInCrate/SayText2.
             GCMessageWrite messageWrite{ k_EMsgGCItemAcknowledged, acknowledgement };
             PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
+
+#ifdef _WIN32
+            if (m_lastMatchmakingReservation
+                && m_matchmakingServerId <= 1
+                && acknowledgement.has_iteminfo()
+                && acknowledgement.iteminfo().has_inventory()
+                && acknowledgement.iteminfo().inventory() == RevivalInventoryFoundInCrate)
+            {
+                const uint64_t itemId = acknowledgement.iteminfo().itemid();
+                const bool spooled = RevivalSpoolNativeItemAcknowledgement(
+                    itemId, messageWrite.Data(), messageWrite.Size());
+                Platform::Print(
+                    spooled
+                        ? "%s queued crate acknowledgement item=%llu for direct-UDP server relay\n"
+                        : "%s failed to queue crate acknowledgement item=%llu\n",
+                    RevivalNativeUnboxChatMarker,
+                    static_cast<unsigned long long>(itemId));
+            }
+#endif
         }
 
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
