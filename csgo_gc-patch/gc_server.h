@@ -23,6 +23,7 @@ private:
     void HandleNetMessage(uint64_t steamId, const void *data, uint32_t size);
     void HandleClientSOCacheUnsubscribe(uint64_t steamId);
     void HandleClientLocalInventoryRequest(uint64_t steamId);
+    void ProcessRevivalItemAckSpool();
 
     void SendServerWelcome();
     void SendMatchmakingReservation();
