@@ -9,28 +9,21 @@ var MainMenuStore = ( function()
 	const INVENTORY_FULL_THRESHOLD = 97;
 	var _Init = function()
 	{
+		// REVIVAL_OPERATION_STORE_ONLY_V1
+		// Keep the stock bottom panel solely as an entry point to the Operation
+		// star shop. Ordinary Store/Coupon content is intentionally not built;
+		// cases/capsules come from gameplay drops and rewards instead.
 		_CheckLicenseScreen();
 		if ( !MyPersonaAPI.IsConnectedToGC() )
 			return;
+
 		_CheckInventoryFull();
-		var bPerfectWorld = ( MyPersonaAPI.GetLauncherType() === "perfectworld" );
+
 		var itemsByCategory = {};
-		var tournamentId = NewsAPI.GetActiveTournamentEventID();
-		if ( ( tournamentId !== 0 ) &&
-			( '' !== StoreAPI.GetStoreItemSalePrice( InventoryAPI.GetFauxItemIDFromDefAndPaintIndex( g_ActiveTournamentStoreLayout[ 0 ][ 0 ], 0 ), 1, '' ) ) )
-		{
-			var oWinningTeam = EventUtil.GetTournamentWinner( tournamentId, 1 );
-			var sRestriction = InventoryAPI.GetDecodeableRestriction( "capsule" );
-			var bCanSellCapsules = ( sRestriction !== "restricted" && sRestriction !== "xray" );
-			if ( bCanSellCapsules || ( !bCanSellCapsules && !oWinningTeam ) )
-			{
-				m_elStore.SetDialogVariable( "tournament_name", $.Localize( "#CSGO_Tournament_Event_Location_" + NewsAPI.GetActiveTournamentEventID() ) );
-				itemsByCategory.tournament = _OperationTournamentSetupObj();
-			}
-		}
 		var nSeasonIndex = 10;
 		OperationUtil.ValidateOperationInfo( nSeasonIndex );
 		var oStatus = OperationUtil.GetOperationInfo();
+
 		if ( nSeasonIndex && nSeasonIndex > 0 )
 		{
 			var opname = GameTypesAPI.GetActiveSeasionCodeName();
@@ -40,36 +33,20 @@ var MainMenuStore = ( function()
 			}
 			m_elStore.SetDialogVariable( "operation_name", $.Localize( "#" + opname + '_name' ) );
 		}
-		if( OperationUtil.ValidateCoinAndSeasonIndex( nSeasonIndex, oStatus.nCoinRank ) )
+
+		if ( OperationUtil.ValidateCoinAndSeasonIndex( nSeasonIndex, oStatus.nCoinRank ) )
 		{
 			itemsByCategory.operation = _OperationStoreSetupObj( nSeasonIndex );
 		}
-		var aProTeams = _ProTeamsItems();
-		if ( aProTeams )
-		{
-			itemsByCategory.proteams = aProTeams;
-		}
-		itemsByCategory = _GetStoreItems( itemsByCategory );
-		if ( itemsByCategory.newstore && itemsByCategory.newstore.length < 2 )
-		{
-			m_itemNewReleases = itemsByCategory.newstore[0];
-			delete itemsByCategory.newstore;
-			if ( bPerfectWorld )
-			{
-				if ( !itemsByCategory.store )
-				{
-					itemsByCategory.store = [];
-				}
-				itemsByCategory.store.unshift( m_itemNewReleases );
-			}
-		}
-		else
-		{
-			m_itemNewReleases = null;
-		}
+
+		m_itemNewReleases = null;
 		_MakeCarousel( itemsByCategory );
 		_SortTabs();
-		_AccountWalletUpdated();
+
+		// No Steam wallet/store balance in the revival operation-only panel.
+		var elWallet = m_elStore.FindChildInLayoutFile( 'StoreNaveBarWalletBalance' );
+		if ( elWallet )
+			elWallet.AddClass( 'hidden' );
 	};
 	function _CheckInventoryFull ()
 	{
