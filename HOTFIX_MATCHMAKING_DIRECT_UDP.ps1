@@ -103,6 +103,9 @@ $launcherText = Get-Content $launcherSource -Raw
 if (-not $launcherText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
     throw "Launcher source is stale; missing live drop-in state bridge marker."
 }
+if (-not $launcherText.Contains("REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1")) {
+    throw "Launcher source is stale; missing party auto-adopt matchmaking bridge."
+}
 $launcherRuntimeDir = Join-Path $CsgoDir "revival"
 New-Item $launcherRuntimeDir -ItemType Directory -Force | Out-Null
 $launcherInstalled = Join-Path $launcherRuntimeDir "launcher.py"
@@ -110,6 +113,9 @@ Copy-Item $launcherSource $launcherInstalled -Force
 $installedLauncherText = Get-Content $launcherInstalled -Raw
 if (-not $installedLauncherText.Contains("REVIVAL_LAUNCHER_DROPIN_STATE_V1")) {
     throw "Installed launcher.py is stale; live drop-in state would be lost before reaching csgo_gc."
+}
+if (-not $installedLauncherText.Contains("REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1")) {
+    throw "Installed launcher.py is stale; party members would not auto-adopt the shared queue."
 }
 Write-Host "    Installed launcher preserves drop_in=1 into mm_state.txt." -ForegroundColor Green
 
