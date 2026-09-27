@@ -353,6 +353,7 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
                 game_type=int(body.get("game_type") or 8),
                 client_version=int(body.get("client_version") or 0),
                 preferred_map=str(body.get("map") or "").strip(),
+                party_account_ids=body.get("party_account_ids"),
             ))
 
         if path == "/matchmaking/stop":
