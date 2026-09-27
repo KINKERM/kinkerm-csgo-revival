@@ -90,7 +90,6 @@ private:
     // applied so each round updates once and halftime does not reset progress.
     uint64_t m_operationLiveMatchId{};
     uint32_t m_operationLiveRoundsApplied{};
-    uint32_t m_operationLiveRepublishTicks{};
     // Non-zero while a direct-UDP revival match owns item generation.
     // The server's 9137/SO bundle is authoritative; client 9136 must not
     // independently reroll the same item ids with different RNG.
