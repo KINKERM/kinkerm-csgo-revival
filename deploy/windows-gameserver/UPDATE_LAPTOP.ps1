@@ -356,8 +356,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V46")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V46"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V47")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V47"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -380,7 +380,10 @@ if (-not $agentText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation ref
 if (-not $agentText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1 match")) {
     throw "Downloaded laptop agent is missing Q-to-G live-match reservation switching."
 }
-Write-Host "    Verified current V46 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
+if (-not $agentText.Contains("REVIVAL_BOT_JOIN_CAPACITY_V1")) {
+    throw "Downloaded laptop agent is missing spare engine slots for bot-filled late joins."
+}
+Write-Host "    Verified current V47 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
