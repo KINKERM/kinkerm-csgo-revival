@@ -483,6 +483,7 @@ ClientGC::ClientGC(uint64_t steamId)
     RevivalInstallAcceptWatcher();
 
     Platform::Print("ClientGC spawned for user %llu\n", steamId);
+    Platform::Print("REVIVAL_LIVE_OPERATION_NO_REASSERT_V1 active\n");
 }
 
 ClientGC::~ClientGC()
@@ -2053,7 +2054,6 @@ void ClientGC::PollMatchmakingBridge()
             {
                 m_operationLiveMatchId = matchId;
                 m_operationLiveRoundsApplied = 0;
-                m_operationLiveRepublishTicks = 0;
             }
 
             const uint32_t liveRounds = static_cast<uint32_t>(
@@ -2089,32 +2089,6 @@ void ClientGC::PollMatchmakingBridge()
                 // even when the selected mission is not a round-win mission so
                 // one heartbeat cannot be retried forever.
                 m_operationLiveRoundsApplied = liveRounds;
-                m_operationLiveRepublishTicks = 0;
-            }
-            else if (liveRounds > 0)
-            {
-                // Halftime can rebuild the stock mission HUD/SOCache view even
-                // though our Inventory object correctly retained progress.
-                // Periodically re-publish the current zero-delta quest state so
-                // a CT/T swap can never make the visible 21-round branch jump
-                // back to 0 until another round is won.
-                ++m_operationLiveRepublishTicks;
-                if ((m_operationLiveRepublishTicks & 7u) == 0)
-                {
-                    CMsgSOMultipleObjects liveOperationRefresh;
-                    if (m_inventory.ApplySelectedOperationCompetitiveMission(
-                            mapName, 0, false, liveOperationRefresh))
-                    {
-                        SendMessageToGame(
-                            true, k_ESOMsg_UpdateMultiple,
-                            liveOperationRefresh);
-                        Platform::Print(
-                            "REVIVAL_LIVE_OPERATION_REASSERT_V1 match=%llu "
-                            "map=%s total=%u republished\n",
-                            static_cast<unsigned long long>(matchId),
-                            mapName.c_str(), liveRounds);
-                    }
-                }
             }
         }
 
