@@ -274,14 +274,11 @@ class MatchmakingCoordinator:
                 )
                 continue
 
-            # A selected Operation mission owns a specific map. Never attach
-            # that player to an incompatible live match just because this
-            # revival has one physical server. They remain queued until the
-            # current match ends and their requested map can allocate.
-            if player.preferred_map and player.preferred_map != match.map_name:
-                remaining.append(player)
-                continue
-
+            # A selected Operation mission only controls map choice when
+            # allocating a NEW server. If a match is already live, let the
+            # player drop into it regardless of their selected mission map.
+            # Mission progress remains map-gated client-side/server-side, so an
+            # incompatible mission simply does not advance in this match.
             match.players.append(player)
             existing[player.steamid] = player
             changed = True
