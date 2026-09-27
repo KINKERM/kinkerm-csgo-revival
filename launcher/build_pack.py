@@ -220,6 +220,12 @@ def main() -> None:
         print("[build_pack] added csgo_gc/config.txt")
         zf.write(args.items_game, "csgo/scripts/items/items_game.txt")
         print("[build_pack] added csgo/scripts/items/items_game.txt")
+        launcher_py = os.path.join(HERE, "launcher.py")
+        if not os.path.isfile(launcher_py):
+            print(f"[build_pack] ERROR: missing public launcher runtime: {launcher_py}")
+            sys.exit(4)
+        zf.write(launcher_py, "revival/launcher.py")
+        print("[build_pack] added revival/launcher.py")
         pbin_tool = os.path.join(REPO, "tools", "pbin.py")
         if not os.path.isfile(pbin_tool):
             print(f"[build_pack] ERROR: missing Panorama PBIN tool: {pbin_tool}")
