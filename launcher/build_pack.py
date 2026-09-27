@@ -177,7 +177,7 @@ def main() -> None:
             b"REVIVAL_NATIVE_DROP_TIMING_V3",
             b"REVIVAL_NATIVE_DROP_BUNDLE_V1",
             b"REVIVAL_SERVER_DROP_IMPORT_V1",
-            b"REVIVAL_NATIVE_UNBOX_CHAT_V1",
+            b"REVIVAL_NATIVE_UNBOX_CHAT_V2",
             b"REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1",
         ):
             if marker not in dll_blob:
