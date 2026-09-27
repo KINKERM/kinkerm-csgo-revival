@@ -119,20 +119,16 @@ if (-not $installedLauncherText.Contains("REVIVAL_LAUNCHER_PARTY_AUTOPOLL_V1")) 
 }
 Write-Host "    Installed launcher preserves drop_in=1 into mm_state.txt." -ForegroundColor Green
 
-Write-Host "[4/5] Installing Panorama stock-reconnect bridge..." -ForegroundColor Yellow
+Write-Host "[4/5] Repacking current Panorama scripts..." -ForegroundColor Yellow
 $reconnectJs = Join-Path $RevivalRepo "panorama\scripts\match-reconnect.js"
 Need-Path $reconnectJs "Panorama reconnect script"
-$reconnectText = Get-Content $reconnectJs -Raw
-if (-not $reconnectText.Contains("REVIVAL_PANORAMA_AUTO_RECONNECT_V1")) {
-    throw "Panorama reconnect script is stale; missing auto-reconnect marker."
-}
 $repackScript = Join-Path $RevivalRepo "REPACK_PANORAMA.ps1"
 Need-Path $repackScript "Panorama PBIN repack script"
 & powershell -NoProfile -ExecutionPolicy Bypass -File $repackScript -RevivalRepo $RevivalRepo -CsgoDir $CsgoDir
 if ($LASTEXITCODE -ne 0) {
     throw "Panorama PBIN repack failed with exit code $LASTEXITCODE"
 }
-Write-Host "    Installed stock ongoing-match reconnect UI bridge." -ForegroundColor Green
+Write-Host "    Panorama repacked with stock reconnect behavior." -ForegroundColor Green
 
 Write-Host "[5/5] Rebuilding laptop pack..." -ForegroundColor Yellow
 $pack = Join-Path $RevivalRepo "launcher\csgo-revival-pack.zip"
