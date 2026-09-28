@@ -3906,7 +3906,9 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
 
         if (expr.find("noscope") != std::string::npos
             || expr.find("no_scope") != std::string::npos
-            || expr.find("unscoped") != std::string::npos)
+            || expr.find("unscoped") != std::string::npos
+            || expr.find("not_zoomed") != std::string::npos
+            || expr.find("not_zoom") != std::string::npos)
             value = stats->noscopes;
         else if (expr.find("headshot") != std::string::npos)
             value = stats->headshots;
@@ -3953,8 +3955,31 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
             if (end != std::string::npos && end > begin)
             {
                 const std::string weapon = expr.substr(begin, end - begin);
-                auto it = stats->weaponKills.find(weapon);
-                value = it != stats->weaponKills.end() ? it->second : 0u;
+
+                // Some quest tokens are weapon CLASSES rather than concrete
+                // item names. Preserve the class counter selected above.
+                if (weapon == "smg")
+                    value = stats->smgKills;
+                else if (weapon == "rifle")
+                    value = stats->rifleKills;
+                else if (weapon == "pistol")
+                    value = stats->pistolKills;
+                else if (weapon == "sniper" || weapon == "sniperrifle")
+                    value = stats->sniperKills;
+                else if (weapon == "shotgun")
+                    value = stats->shotgunKills;
+                else if (weapon == "heavy" || weapon == "machinegun")
+                    value = stats->heavyKills;
+                else if (weapon == "knife" || weapon == "bayonet")
+                    value = stats->knifeKills;
+                else if (weapon == "hegrenade" || weapon == "molotov"
+                    || weapon == "incgrenade" || weapon == "inferno")
+                    value = stats->grenadeKills;
+                else
+                {
+                    auto it = stats->weaponKills.find(weapon);
+                    value = it != stats->weaponKills.end() ? it->second : 0u;
+                }
             }
         }
 
