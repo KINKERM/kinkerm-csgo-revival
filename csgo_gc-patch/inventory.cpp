@@ -3344,6 +3344,26 @@ std::string Inventory::PreferredOperationMissionMap() const
     {
         const QuestDefinition *quest =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
+
+        if (quest
+            && RevivalCustomMissionFor(m_operationSelectedQuestId)
+                != RevivalCustomMissionKind::None)
+        {
+            auto isRevivalMap = [](std::string_view map) {
+                return map == "de_dust2" || map == "de_mirage"
+                    || map == "de_cache" || map == "de_cbble"
+                    || map == "de_overpass" || map == "de_vertigo"
+                    || map == "de_inferno" || map == "de_ancient"
+                    || map == "de_nuke" || map == "de_train"
+                    || map == "cs_insertion2";
+            };
+
+            if (!quest->map.empty() && isRevivalMap(quest->map))
+                return quest->map;
+
+            // Retired/empty-map custom objectives use the shared queue.
+            return {};
+        }
         if (quest
             && quest->gameMode != "cooperative"
             && quest->gameMode != "coopmission"
@@ -3387,6 +3407,13 @@ uint32_t Inventory::PreferredOperationMissionQuest(
     {
         const QuestDefinition *quest =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
+
+        if (quest
+            && RevivalCustomMissionFor(m_operationSelectedQuestId)
+                != RevivalCustomMissionKind::None)
+        {
+            return m_operationSelectedQuestId;
+        }
         if (quest
             && quest->gameMode != "cooperative"
             && quest->gameMode != "coopmission"
@@ -3755,7 +3782,10 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
             };
 
             bool exactMapMatches =
-                exact->map == mapName || exact->map == "lobby_mapveto";
+                RevivalCustomMissionFor(exact->id)
+                    != RevivalCustomMissionKind::None
+                || exact->map == mapName
+                || exact->map == "lobby_mapveto";
             if (!exactMapMatches
                 && exact->mapGroup.rfind("mg_", 0) == 0)
             {
@@ -3842,6 +3872,33 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
 
     OperationQuestProgressState &state =
         m_operationQuestProgress[selected->id];
+
+    const RevivalCustomMissionKind customMission =
+        RevivalCustomMissionFor(selected->id);
+    if (customMission != RevivalCustomMissionKind::None)
+    {
+        if (!stats)
+            return false;
+
+        const uint32_t earned =
+            RevivalCustomMissionValue(customMission, *stats);
+        if (!earned)
+        {
+            Platform::Print(
+                "REVIVAL_CUSTOM_PVP_MISSIONS_V1 quest=%u no progress this match\n",
+                selected->id);
+            return false;
+        }
+
+        Platform::Print(
+            "REVIVAL_CUSTOM_PVP_MISSIONS_V1 quest=%u +%u goal=%u\n",
+            selected->id, earned, selected->Goal());
+        return ApplyOperationQuestProgress(
+            selected->id,
+            static_cast<int>(std::min<uint32_t>(earned, 1000000u)),
+            0,
+            update);
+    }
 
     // Riptide's main Competitive missions are OR graphs represented by a
     // parent quest with expression "QQ:|...|...": complete by either winning
