@@ -3282,8 +3282,10 @@ std::string Inventory::PreferredOperationMissionMap() const
         const QuestDefinition *quest =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
         if (quest
-            && (quest->gameMode.rfind("competitive", 0) == 0
-                || quest->gameMode == "scrimcomp2v2"))
+            && quest->gameMode != "cooperative"
+            && quest->gameMode != "coopmission"
+            && quest->gameMode != "guardian"
+            && quest->gameMode != "survival")
         {
             auto isRevivalMap = [](std::string_view map) {
                 return map == "de_dust2" || map == "de_mirage"
@@ -3323,8 +3325,10 @@ uint32_t Inventory::PreferredOperationMissionQuest(
         const QuestDefinition *quest =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
         if (quest
-            && (quest->gameMode.rfind("competitive", 0) == 0
-                || quest->gameMode == "scrimcomp2v2"))
+            && quest->gameMode != "cooperative"
+            && quest->gameMode != "coopmission"
+            && quest->gameMode != "guardian"
+            && quest->gameMode != "survival")
         {
             auto isRevivalMap = [](std::string_view map) {
                 return map == "de_dust2" || map == "de_mirage"
