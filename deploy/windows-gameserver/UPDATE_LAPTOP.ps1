@@ -322,6 +322,8 @@ foreach ($marker in @(
     "REVIVAL_GUARANTEED_MATCH_DROPS_V1",
     "REVIVAL_RANDOMIZED_LEGACY_DROPS_V2",
     "REVIVAL_REPEATABLE_MISSIONS_V5",
+    "REVIVAL_PVP_MISSION_STATS_V1",
+    "REVIVAL_OPERATION_REPLAY_V1",
     "REVIVAL_NATIVE_ACTIVE_QUEST_V1",
     "REVIVAL_OPERATION_SELECTION_BRIDGE_V2",
     "REVIVAL_OPERATION_SCHEMA_V2",
@@ -361,8 +363,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V50")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V50"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V51")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V51"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -391,13 +393,16 @@ if (-not $agentText.Contains("REVIVAL_Q_SLOT_PAD_V1 tournament extra-slot mode a
 if (-not $agentText.Contains("REVIVAL_GSLT_HOT_RELOAD_V1")) {
     throw "Downloaded laptop agent is missing per-match GSLT hot reload."
 }
+if (-not $agentText.Contains("REVIVAL_PVP_MISSION_STATS_V1") -or -not $agentText.Contains("player_kill_stats")) {
+    throw "Downloaded laptop agent is missing Riptide PvP mission kill-stat tracking."
+}
 if (-not $agentText.Contains('"-tournament", "revival"')) {
     throw "Downloaded laptop agent is missing Source tournament slot-padding mode."
 }
 if (-not $agentText.Contains('"-tournament_extra_casters_slots", "10"')) {
     throw "Downloaded laptop agent is missing ten extra queued reservation slots."
 }
-Write-Host "    Verified current V50 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
+Write-Host "    Verified current V51 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
