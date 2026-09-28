@@ -65,7 +65,6 @@ STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
 STEAM64_RE = re.compile(r'\b(7656119\d{10})\b')
 PLAYER_TEAM_RE = re.compile(r'<(CT|TERRORIST)>', re.I)
 
-
 GRENADE_KILL_WEAPONS = {"hegrenade", "inferno", "molotov", "incgrenade"}
 SNIPER_WEAPONS = {"awp", "ssg08", "scar20", "g3sg1"}
 RIFLE_WEAPONS = {"ak47", "m4a1", "m4a1_silencer", "aug", "sg556", "famas", "galilar"}
@@ -94,6 +93,7 @@ def revival_kill_category(weapon: str) -> str:
     if w in HEAVY_WEAPONS:
         return "heavy"
     return ""
+
 
 
 def account_id_from_text(text: str) -> int:
@@ -717,6 +717,7 @@ class ServerSlot:
         self.player_rounds_won: dict[int, int] = {}
         self.player_kill_stats: dict[int, dict[str, int]] = {}
         self.player_weapon_kills: dict[int, dict[str, int]] = {}
+        self.recent_kill_lines: dict[str, float] = {}
         # Track the two logical squads independently of physical CT/T sides.
         # MR8 swaps CT/T at halftime, but a player's squad identity must not
         # change. This is the authority for live mission rounds and match wins.
@@ -908,6 +909,7 @@ class ServerSlot:
             self.player_rounds_won.clear()
             self.player_kill_stats.clear()
             self.player_weapon_kills.clear()
+            self.recent_kill_lines.clear()
             self.side_squads = {"CT": "A", "TERRORIST": "B"}
             self.player_squads.clear()
             self.squad_scores = {"A": 0, "B": 0}
@@ -1035,10 +1037,20 @@ class ServerSlot:
                 if not self.source_match_started_at:
                     self.source_match_started_at = time.monotonic()
 
-        # Source's normal log line contains enough authoritative kill metadata
-        # for Riptide-style PvP missions, e.g. weapon, headshot, penetrated,
-        # through-smoke and (on builds that emit it) noscope.
+        # Track authoritative PvP mission kill stats from Source logs.
         if ' killed "' in line and ' with "' in line:
+            now = time.monotonic()
+            with self._lock:
+                previous = self.recent_kill_lines.get(line, 0.0)
+                duplicate_kill_line = now - previous < 3.0
+                self.recent_kill_lines[line] = now
+                if len(self.recent_kill_lines) > 256:
+                    cutoff = now - 5.0
+                    self.recent_kill_lines = {
+                        key: seen for key, seen in self.recent_kill_lines.items()
+                        if seen >= cutoff
+                    }
+
             attacker_part = line.split(' killed "', 1)[0]
             attacker_id = account_id_from_text(attacker_part)
             weapon_match = re.search(r' with "([^"]+)"(.*)        if m:
@@ -1645,7 +1657,7 @@ class ServerSlot:
                     )
                     fh.write(f"weapons_{account_id}={weapon_summary}\n")
                     fh.write(
-                        f"rounds_{account_id}="
+                        f"rounds_{account_id}=
                         f"{int(result['player_rounds_won'].get(key, 0))}\n"
                     )
                     fh.write(
@@ -1888,27 +1900,18 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 , line, re.I)
-            if attacker_id and weapon_match:
+            if attacker_id and weapon_match and not duplicate_kill_line:
                 weapon = weapon_match.group(1).lower().removeprefix("weapon_")
                 modifiers = weapon_match.group(2).lower()
                 with self._lock:
                     if (not self.expected_account_ids
                             or attacker_id in self.expected_account_ids):
                         stats = self.player_kill_stats.setdefault(attacker_id, {
-                            "kills": 0,
-                            "headshots": 0,
-                            "noscopes": 0,
-                            "through_smoke": 0,
-                            "blind": 0,
-                            "wallbang": 0,
-                            "grenade": 0,
-                            "knife": 0,
-                            "sniper": 0,
-                            "rifle": 0,
-                            "pistol": 0,
-                            "smg": 0,
-                            "shotgun": 0,
-                            "heavy": 0,
+                            "kills": 0, "headshots": 0, "noscopes": 0,
+                            "through_smoke": 0, "blind": 0, "wallbang": 0,
+                            "grenade": 0, "knife": 0, "sniper": 0,
+                            "rifle": 0, "pistol": 0, "smg": 0,
+                            "shotgun": 0, "heavy": 0,
                         })
                         stats["kills"] += 1
                         if "headshot" in modifiers:
@@ -1922,14 +1925,11 @@ if __name__ == "__main__":
                             stats["blind"] += 1
                         if "penetrated" in modifiers or "wallbang" in modifiers:
                             stats["wallbang"] += 1
-
                         category = revival_kill_category(weapon)
                         if category:
                             stats[category] += 1
-
                         weapons = self.player_weapon_kills.setdefault(attacker_id, {})
                         weapons[weapon] = weapons.get(weapon, 0) + 1
-
                         print(
                             f"[agent] REVIVAL_PVP_MISSION_STATS_V1 account={attacker_id} "
                             f"weapon={weapon} total={stats['kills']} "
