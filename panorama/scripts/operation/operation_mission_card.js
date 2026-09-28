@@ -29,6 +29,21 @@ var OperationMissionCard = ( function()
 			mode !== 'guardian' &&
 			mode !== 'survival';
 	};
+	var _GetRevivalDisplayWeek = function( idx )
+	{
+		var visibleWeek = 0;
+		for ( var i = 0; i <= idx; ++i )
+		{
+			var card = MissionsAPI.GetSeasonalOperationMissionCardDetails(
+				OperationUtil.GetOperationInfo().nSeasonAccess, i );
+			if ( card && card.quests && card.quests.filter( _IsRevivalCompetitiveMission ).length > 0 )
+			{
+				visibleWeek++;
+			}
+		}
+		return visibleWeek;
+	};
+
 
 	var _UpdateMissionCard = function( idx, elParent )
 	{
@@ -98,6 +113,7 @@ var OperationMissionCard = ( function()
 			oCardDetails.operational_points = 3;
 			oCardDetails.isunlocked = true;
 			oCardDetails.idx = idx;
+			oCardDetails.displayWeek = _GetRevivalDisplayWeek( idx );
 			oCardDetails.bShowLock = false;
 
 			return oCardDetails;
@@ -180,7 +196,7 @@ var OperationMissionCard = ( function()
 		
 		elMissionCard.SetDialogVariable( 'mission_name', $.Localize( oCardDetails.name ));
 		elMissionCard.SetDialogVariableInt( 'card_points_needed', oCardDetails.operational_points );
-		elMissionCard.SetDialogVariableInt( 'card_week', oCardDetails.idx + 1 );
+		elMissionCard.SetDialogVariableInt( 'card_week', oCardDetails.displayWeek || ( oCardDetails.idx + 1 ) );
 
 		_UpdateEarnedPoints( elMissionCard, oCardDetails );
 		                                                       
