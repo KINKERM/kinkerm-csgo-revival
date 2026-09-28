@@ -20,8 +20,14 @@ var OperationMissionCard = ( function()
 			return false;
 		}
 
-		return details.missionGameMode.startsWith( 'competitive' ) ||
-			details.missionGameMode === 'scrimcomp2v2';
+		// One shared Competitive queue: repurpose Riptide's PvP cards instead
+		// of dropping whole weeks just because Valve tagged their mission as
+		// Wingman/Casual/Retakes/Deathmatch. Co-op-only modes stay excluded.
+		var mode = details.missionGameMode;
+		return mode !== 'cooperative' &&
+			mode !== 'coopmission' &&
+			mode !== 'guardian' &&
+			mode !== 'survival';
 	};
 
 	var _UpdateMissionCard = function( idx, elParent )
