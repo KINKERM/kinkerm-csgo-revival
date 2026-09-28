@@ -756,20 +756,38 @@ std::vector<uint32_t> ItemSchema::QuestGraphChildren(uint32_t questId) const
         return out;
     }
 
-    std::string_view expression = quest->expression;
-    size_t pos = expression.find('|');
-    while (pos != std::string_view::npos)
+    // Riptide uses both QQ:|a|b (OR/checklist) and QQ:>a>b
+    // (ordered/sequential) graphs. The old revival only parsed '|', which made
+    // several Deathmatch weeks appear with zero usable subquests.
+    const std::string_view expression = quest->expression;
+    size_t pos = 3;
+    while (pos < expression.size())
     {
-        const size_t next = expression.find('|', pos + 1);
-        const std::string_view token = next == std::string_view::npos
-            ? expression.substr(pos + 1)
-            : expression.substr(pos + 1, next - pos - 1);
-        const uint32_t childId = FromString<uint32_t>(token);
-        if (childId && GetQuestDefinition(childId))
+        while (pos < expression.size()
+            && (expression[pos] == '|' || expression[pos] == '>'
+                || expression[pos] == ' ' || expression[pos] == '\t'))
         {
-            out.push_back(childId);
+            ++pos;
         }
-        pos = next;
+
+        const size_t begin = pos;
+        while (pos < expression.size()
+            && expression[pos] >= '0' && expression[pos] <= '9')
+        {
+            ++pos;
+        }
+
+        if (pos > begin)
+        {
+            const uint32_t childId = FromString<uint32_t>(
+                expression.substr(begin, pos - begin));
+            if (childId && GetQuestDefinition(childId))
+                out.push_back(childId);
+        }
+        else
+        {
+            ++pos;
+        }
     }
 
     return out;
