@@ -967,8 +967,42 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             CMsgGC_ServerQuestUpdateData *missionData =
                 missionRun.mutable_match_end_quest_data();
 
+            auto missionStat = [&end, &accountSuffix](const char *name) -> uint32_t
+            {
+                const std::string key = std::string(name) + "_" + accountSuffix;
+                return static_cast<uint32_t>(
+                    std::min<uint64_t>(
+                        ReservationNumber(end, key.c_str()), UINT32_MAX));
+            };
+
+            const uint32_t kills = missionStat("kills");
+            const uint32_t headshots = missionStat("headshots");
+            const uint32_t noscopes = missionStat("noscopes");
+            const uint32_t throughSmoke = missionStat("through_smoke");
+            const uint32_t blind = missionStat("blind");
+            const uint32_t wallbang = missionStat("wallbang");
+            const uint32_t grenade = missionStat("grenade");
+            const uint32_t knife = missionStat("knife");
+            const uint32_t sniper = missionStat("sniper");
+            const uint32_t rifle = missionStat("rifle");
+            const uint32_t pistol = missionStat("pistol");
+            const uint32_t smg = missionStat("smg");
+            const uint32_t shotgun = missionStat("shotgun");
+            const uint32_t heavy = missionStat("heavy");
+
+            std::string weapons;
+            auto weaponsIt = end.find("weapons_" + accountSuffix);
+            if (weaponsIt != end.end())
+                weapons = weaponsIt->second;
+
             std::ostringstream marker;
-            marker << "RVOPM1:" << roundsWon << ":" << (won ? 1 : 0);
+            marker << "RVOPM2:"
+                << roundsWon << ":" << (won ? 1 : 0) << ":"
+                << kills << ":" << headshots << ":" << noscopes << ":"
+                << throughSmoke << ":" << blind << ":" << wallbang << ":"
+                << grenade << ":" << knife << ":" << sniper << ":"
+                << rifle << ":" << pistol << ":" << smg << ":"
+                << shotgun << ":" << heavy << "|" << weapons;
             missionData->set_binary_data(marker.str());
 
             PlayerQuestData *missionPlayer =
@@ -981,9 +1015,10 @@ void ServerGC::ProcessRevivalMatchEndTrigger(bool nativeIntermission)
             queueMessage(missionWrite);
 
             Platform::Print(
-                "REVIVAL_REPEATABLE_MISSIONS_V4 queued mission fallback "
-                "account=%u map=%s rounds=%u won=%u\n",
-                accountId, matchMap.c_str(), roundsWon, won ? 1u : 0u);
+                "REVIVAL_PVP_MISSION_STATS_V1 queued mission fallback "
+                "account=%u map=%s rounds=%u won=%u kills=%u hs=%u ns=%u grenade=%u\n",
+                accountId, matchMap.c_str(), roundsWon, won ? 1u : 0u,
+                kills, headshots, noscopes, grenade);
         }
 
         auto publishDrop = [this, &queueMessage](
