@@ -1112,18 +1112,27 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                         message.serverinfo().map());
             }
 
-            if (revivalSelectedQuest)
+            const bool useResultFallback =
+                revivalSelectedQuest
+                && m_inventory.SelectedOperationMissionUsesResultFallback();
+
+            if (useResultFallback)
             {
-                // The V4 fallback is authoritative for revival Competitive
-                // missions. Ignore SRCDS' parallel native quest deltas for this
-                // match so the same win cannot award stars twice.
                 Platform::Print(
-                    "REVIVAL_REPEATABLE_MISSIONS_V4 deferring native quest "
-                    "deltas to fallback quest=%u map=%s\n",
+                    "REVIVAL_REPEATABLE_MISSIONS_V6 deferring result mission "
+                    "to fallback quest=%u map=%s\n",
                     revivalSelectedQuest, message.serverinfo().map().c_str());
             }
             else
             {
+                if (revivalSelectedQuest)
+                {
+                    Platform::Print(
+                        "REVIVAL_NATIVE_STAT_MISSIONS_V1 accepting native stat "
+                        "deltas quest=%u map=%s\n",
+                        revivalSelectedQuest, message.serverinfo().map().c_str());
+                }
+
                 for (const PlayerQuestData::QuestItemData &quest :
                     playerData.quest_item_data())
                 {
