@@ -12,6 +12,11 @@ var OperationMissionCard = ( function()
 	// Revival Operation mode: keep one matchmaking-style objective visible on
 	// every Riptide week. Valve alternated full Competitive and Wingman cards,
 	// and some original maps are retired in this revival.
+	var _m_revCustomMissionIds = [
+		1108, 1112, 1116, 1120, 1124, 1128, 1132, 1136,
+		1141, 1144, 1148, 1152, 1156, 1160, 1164, 1168
+	];
+
 	var _IsRevivalCompetitiveMission = function( missionId )
 	{
 		var details = OperationUtil.GetMissionDetails( missionId );
@@ -20,30 +25,14 @@ var OperationMissionCard = ( function()
 			return false;
 		}
 
-		// One shared Competitive queue: repurpose Riptide's PvP cards instead
-		// of dropping whole weeks just because Valve tagged their mission as
-		// Wingman/Casual/Retakes/Deathmatch. Co-op-only modes stay excluded.
-		var mode = details.missionGameMode;
-		return mode !== 'cooperative' &&
-			mode !== 'coopmission' &&
-			mode !== 'guardian' &&
-			mode !== 'survival';
+		// Every week keeps its normal Competitive/Wingman result mission, plus
+		// one revival PvP challenge. This prevents week numbers from vanishing
+		// while avoiding stock Guardian/DZ/graffiti objectives that the single
+		// Competitive server cannot measure correctly.
+		return details.missionGameMode.startsWith( 'competitive' ) ||
+			details.missionGameMode === 'scrimcomp2v2' ||
+			_m_revCustomMissionIds.indexOf( Number( missionId ) ) !== -1;
 	};
-	var _GetRevivalDisplayWeek = function( idx )
-	{
-		var visibleWeek = 0;
-		for ( var i = 0; i <= idx; ++i )
-		{
-			var card = MissionsAPI.GetSeasonalOperationMissionCardDetails(
-				OperationUtil.GetOperationInfo().nSeasonAccess, i );
-			if ( card && card.quests && card.quests.filter( _IsRevivalCompetitiveMission ).length > 0 )
-			{
-				visibleWeek++;
-			}
-		}
-		return visibleWeek;
-	};
-
 
 	var _UpdateMissionCard = function( idx, elParent )
 	{
