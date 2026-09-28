@@ -86,5 +86,18 @@ Write-Host ""
 Write-Host "GSLT updated successfully (ends in ...$fingerprint)." -ForegroundColor Green
 Write-Host "Backup: $backup" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "The revival agent reloads steam_account_token before each NEW srcds match." -ForegroundColor Green
-Write-Host "If a match is running now, leave it alone; the new token is used on the next server start." -ForegroundColor Yellow
+$agentPy = Join-Path $AgentDir "agent.py"
+$hotReload = $false
+if (Test-Path $agentPy) {
+    $agentText = Get-Content $agentPy -Raw
+    $hotReload = $agentText.Contains("REVIVAL_GSLT_HOT_RELOAD_V1")
+}
+
+if ($hotReload) {
+    Write-Host "The current revival agent reloads steam_account_token before each NEW srcds match." -ForegroundColor Green
+    Write-Host "If a match is running now, leave it alone; the new token is used on the next server start." -ForegroundColor Yellow
+}
+else {
+    Write-Host "This laptop has an older agent that does not hot-reload server_agent.json." -ForegroundColor Yellow
+    Write-Host "After the current match ends, close/restart the agent with start-agent.bat so it loads the new token." -ForegroundColor Yellow
+}
