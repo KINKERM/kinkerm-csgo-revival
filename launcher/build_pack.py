@@ -138,6 +138,8 @@ def main() -> None:
             b"REVIVAL_PARTY_QUEUE_ROSTER_V1",
             b"REVIVAL_PARTY_CLIENT_ADOPT_V2",
             b"REVIVAL_JOIN_IN_PROGRESS_G_V1",
+            b"REVIVAL_PVP_MISSION_STATS_V1",
+            b"REVIVAL_OPERATION_REPLAY_V1",
             b"REVIVAL_Q_SLOT_PAD_V1",
             b"REVIVAL_SERVER_ACCEPT_ROSTER_V1",
             b"REVIVAL_ENGINE_QUEUE_RESERVE_V1",
