@@ -1119,7 +1119,7 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
         }
 
         // Operation missions share the same real match-end path. The custom
-        // RVOPM1 packet is only a Direct-UDP fallback carrying authoritative
+        // RVOPM2 packet is the Direct-UDP fallback carrying authoritative
         // map/round result; the Inventory still evaluates the original Riptide
         // quest graph and emits the normal SeasonalOperation/QuestProgress SOs.
         const bool operationEligible =
@@ -1172,27 +1172,19 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
                         message.serverinfo().map());
             }
 
-            const bool useResultFallback =
-                revivalSelectedQuest
-                && m_inventory.SelectedOperationMissionUsesResultFallback();
-
-            if (useResultFallback)
+            if (revivalSelectedQuest)
             {
+                // All revival PvP missions use the direct-UDP fallback now.
+                // This avoids Valve's original mode/map constraints blocking
+                // repurposed Wingman/Casual/DM objectives and prevents native
+                // 9136 plus fallback from double-counting the same action.
                 Platform::Print(
-                    "REVIVAL_REPEATABLE_MISSIONS_V6 deferring result mission "
-                    "to fallback quest=%u map=%s\n",
+                    "REVIVAL_PVP_MISSION_STATS_V1 deferring native quest "
+                    "deltas to authoritative fallback quest=%u map=%s\n",
                     revivalSelectedQuest, message.serverinfo().map().c_str());
             }
             else
             {
-                if (revivalSelectedQuest)
-                {
-                    Platform::Print(
-                        "REVIVAL_NATIVE_STAT_MISSIONS_V1 accepting native stat "
-                        "deltas quest=%u map=%s\n",
-                        revivalSelectedQuest, message.serverinfo().map().c_str());
-                }
-
                 for (const PlayerQuestData::QuestItemData &quest :
                     playerData.quest_item_data())
                 {
