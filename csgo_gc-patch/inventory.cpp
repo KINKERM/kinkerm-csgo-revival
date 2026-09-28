@@ -3621,7 +3621,8 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
     std::string_view mapName,
     uint32_t roundsWon,
     bool wonMatch,
-    CMsgSOMultipleObjects &update)
+    CMsgSOMultipleObjects &update,
+    const OperationMissionStats *stats)
 {
     if (!m_operationMissionId || mapName.empty())
     {
@@ -3644,8 +3645,10 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
         const QuestDefinition *exact =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
         if (exact
-            && (exact->gameMode.find("competitive") == 0
-                || exact->gameMode == "scrimcomp2v2"))
+            && exact->gameMode != "cooperative"
+                && exact->gameMode != "coopmission"
+                && exact->gameMode != "guardian"
+                && exact->gameMode != "survival")
         {
             auto isRevivalMap = [](std::string_view map) {
                 return map == "de_dust2" || map == "de_mirage"
@@ -3689,8 +3692,10 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
             break;
         const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
         if (!quest
-            || (quest->gameMode.find("competitive") != 0
-                && quest->gameMode != "scrimcomp2v2"))
+            || (quest->gameMode == "cooperative"
+                || quest->gameMode == "coopmission"
+                || quest->gameMode == "guardian"
+                || quest->gameMode == "survival"))
         {
             continue;
         }
@@ -3851,29 +3856,82 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
     }
 
     int normalPoints = 0;
-    if (selected->expression.find("%act_win_match%") != std::string::npos)
+    const std::string &expr = selected->expression;
+    if (expr.find("%act_win_match%") != std::string::npos)
     {
         normalPoints = wonMatch ? 1 : 0;
     }
-    else if (selected->expression.find("%act_win_round%") != std::string::npos)
+    else if (expr.find("%act_win_round%") != std::string::npos)
     {
         normalPoints = static_cast<int>(
             std::min<uint32_t>(roundsWon, 1000000u));
     }
-    else
+    else if (stats)
     {
-        // We do not synthesize unsupported kill/MVP/etc. counters. Leaving the
-        // mission untouched is safer than awarding progress for the wrong stat.
-        Platform::Print(
-            "operation: selected Competitive quest %u uses unsupported expression '%s'\n",
-            selected->id, selected->expression.c_str());
-        return false;
+        uint32_t value = stats->kills;
+
+        if (expr.find("noscope") != std::string::npos
+            || expr.find("no_scope") != std::string::npos
+            || expr.find("unscoped") != std::string::npos)
+            value = stats->noscopes;
+        else if (expr.find("headshot") != std::string::npos)
+            value = stats->headshots;
+        else if (expr.find("hegrenade") != std::string::npos
+            || expr.find("molotov") != std::string::npos
+            || expr.find("incgrenade") != std::string::npos
+            || expr.find("grenade") != std::string::npos)
+            value = stats->grenadeKills;
+        else if (expr.find("knife") != std::string::npos
+            || expr.find("bayonet") != std::string::npos)
+            value = stats->knifeKills;
+        else if (expr.find("sniper") != std::string::npos)
+            value = stats->sniperKills;
+        else if (expr.find("rifle") != std::string::npos)
+            value = stats->rifleKills;
+        else if (expr.find("pistol") != std::string::npos)
+            value = stats->pistolKills;
+        else if (expr.find("smg") != std::string::npos)
+            value = stats->smgKills;
+        else if (expr.find("shotgun") != std::string::npos)
+            value = stats->shotgunKills;
+        else if (expr.find("heavy") != std::string::npos
+            || expr.find("machinegun") != std::string::npos)
+            value = stats->heavyKills;
+
+        // Exact %weapon_NAME% tokens beat the broad weapon-class counters.
+        const std::string weaponPrefix = "%weapon_";
+        const size_t weaponPos = expr.find(weaponPrefix);
+        if (weaponPos != std::string::npos)
+        {
+            const size_t begin = weaponPos + weaponPrefix.size();
+            const size_t end = expr.find('%', begin);
+            if (end != std::string::npos && end > begin)
+            {
+                const std::string weapon = expr.substr(begin, end - begin);
+                auto it = stats->weaponKills.find(weapon);
+                value = it != stats->weaponKills.end() ? it->second : 0u;
+            }
+        }
+
+        if (expr.find("%act_kill") != std::string::npos
+            || expr.find("kill") != std::string::npos)
+        {
+            normalPoints = static_cast<int>(
+                std::min<uint32_t>(value, 1000000u));
+        }
     }
 
     if (normalPoints <= 0)
     {
+        Platform::Print(
+            "REVIVAL_PVP_MISSION_STATS_V1 quest=%u no progress expr='%s'\n",
+            selected->id, selected->expression.c_str());
         return false;
     }
+
+    Platform::Print(
+        "REVIVAL_PVP_MISSION_STATS_V1 quest=%u progress=%d expr='%s'\n",
+        selected->id, normalPoints, selected->expression.c_str());
 
     return ApplyOperationQuestProgress(
         selected->id, normalPoints, 0, update);
