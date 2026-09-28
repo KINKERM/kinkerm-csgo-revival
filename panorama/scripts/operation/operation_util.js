@@ -350,7 +350,10 @@ var OperationUtil = ( function () {
 			nMissionSegments: MissionsAPI.GetQuestPoints( missionId, 'count' ),
 			nMissionPointsRemaining: MissionsAPI.GetQuestPoints( missionId, "remaining" ),
 			nOpPointsPerSegment: MissionsAPI.GetQuestDefinitionField( missionId, 'operational_points' ),
-			isReplayable: ( gameMode === 'cooperative' || gameMode === 'coopmission' ),
+			isReplayable: ( gameMode !== 'cooperative' &&
+				gameMode !== 'coopmission' &&
+				gameMode !== 'guardian' &&
+				gameMode !== 'survival' ),
 			isSingleMatch: MissionsAPI.GetQuestDefinitionField( missionId, "singlematch" ) === '1' ? true : false,
 			missionGoal: MissionsAPI.GetQuestPoints( missionId, "goal" ),
 			nUncommitted: MissionsAPI.GetQuestPoints( missionId, "uncommitted" ),
