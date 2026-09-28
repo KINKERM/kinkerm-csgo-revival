@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V50"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V51"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -64,6 +64,36 @@ STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
 STEAM64_RE = re.compile(r'\b(7656119\d{10})\b')
 PLAYER_TEAM_RE = re.compile(r'<(CT|TERRORIST)>', re.I)
+
+
+GRENADE_KILL_WEAPONS = {"hegrenade", "inferno", "molotov", "incgrenade"}
+SNIPER_WEAPONS = {"awp", "ssg08", "scar20", "g3sg1"}
+RIFLE_WEAPONS = {"ak47", "m4a1", "m4a1_silencer", "aug", "sg556", "famas", "galilar"}
+PISTOL_WEAPONS = {"glock", "hkp2000", "usp_silencer", "p250", "fiveseven", "tec9", "deagle", "revolver", "elite", "cz75a"}
+SMG_WEAPONS = {"mac10", "mp9", "mp7", "mp5sd", "ump45", "p90", "bizon"}
+SHOTGUN_WEAPONS = {"nova", "xm1014", "mag7", "sawedoff"}
+HEAVY_WEAPONS = {"m249", "negev"}
+
+
+def revival_kill_category(weapon: str) -> str:
+    w = weapon.lower().removeprefix("weapon_")
+    if w in GRENADE_KILL_WEAPONS:
+        return "grenade"
+    if w.startswith("knife") or w == "bayonet":
+        return "knife"
+    if w in SNIPER_WEAPONS:
+        return "sniper"
+    if w in RIFLE_WEAPONS:
+        return "rifle"
+    if w in PISTOL_WEAPONS:
+        return "pistol"
+    if w in SMG_WEAPONS:
+        return "smg"
+    if w in SHOTGUN_WEAPONS:
+        return "shotgun"
+    if w in HEAVY_WEAPONS:
+        return "heavy"
+    return ""
 
 
 def account_id_from_text(text: str) -> int:
@@ -685,6 +715,8 @@ class ServerSlot:
         self.connected_account_ids: set[int] = set()
         self.player_teams: dict[int, str] = {}
         self.player_rounds_won: dict[int, int] = {}
+        self.player_kill_stats: dict[int, dict[str, int]] = {}
+        self.player_weapon_kills: dict[int, dict[str, int]] = {}
         # Track the two logical squads independently of physical CT/T sides.
         # MR8 swaps CT/T at halftime, but a player's squad identity must not
         # change. This is the authority for live mission rounds and match wins.
@@ -874,6 +906,8 @@ class ServerSlot:
             self.connected_account_ids.clear()
             self.player_teams.clear()
             self.player_rounds_won.clear()
+            self.player_kill_stats.clear()
+            self.player_weapon_kills.clear()
             self.side_squads = {"CT": "A", "TERRORIST": "B"}
             self.player_squads.clear()
             self.squad_scores = {"A": 0, "B": 0}
@@ -1000,6 +1034,908 @@ class ServerSlot:
             with self._lock:
                 if not self.source_match_started_at:
                     self.source_match_started_at = time.monotonic()
+
+        # Source's normal log line contains enough authoritative kill metadata
+        # for Riptide-style PvP missions, e.g. weapon, headshot, penetrated,
+        # through-smoke and (on builds that emit it) noscope.
+        if ' killed "' in line and ' with "' in line:
+            attacker_part = line.split(' killed "', 1)[0]
+            attacker_id = account_id_from_text(attacker_part)
+            weapon_match = re.search(r' with "([^"]+)"(.*)        if m:
+            score = int(m.group(2))
+            side = m.group(1).upper()
+            scoring_event = False
+            halftime_flip = False
+            with self._lock:
+                # The same Source scoring line can appear in both console.log
+                # and the L*.log. Deduplicate by the side's latest score value,
+                # but NEVER derive progress from score-old_score: CT/T score
+                # values can move backwards when sides swap at halftime.
+                previous_logged_score = self.last_side_score.get(side, 0)
+                scoring_event = score > 0 and score != previous_logged_score
+                self.last_side_score[side] = score
+
+                if side == "CT":
+                    self.ct_score = score
+                else:
+                    self.t_score = score
+
+                if scoring_event:
+                    winning_squad = self.side_squads.get(side, "")
+                    if winning_squad:
+                        self.squad_scores[winning_squad] = (
+                            self.squad_scores.get(winning_squad, 0) + 1
+                        )
+                        for account_id in self.expected_account_ids:
+                            if self.player_squads.get(account_id) == winning_squad:
+                                self.player_rounds_won[account_id] = (
+                                    self.player_rounds_won.get(account_id, 0) + 1
+                                )
+
+                    self.total_scored_rounds += 1
+
+                    # Short Competitive is MR8: after eight completed rounds,
+                    # logical squad A/B stays fixed while physical CT/T swaps.
+                    if self.total_scored_rounds == 8:
+                        self.side_squads = {
+                            "CT": self.side_squads.get("TERRORIST", "B"),
+                            "TERRORIST": self.side_squads.get("CT", "A"),
+                        }
+                        halftime_flip = True
+
+                match_id = self.match_id
+                live_rounds = dict(self.player_rounds_won)
+                squad_scores = dict(self.squad_scores)
+
+            if scoring_event and match_id:
+                print(
+                    f"[agent] REVIVAL_LIVE_OPERATION_ROUNDS_V2 "
+                    f"match={match_id} score={self.ct_score}-{self.t_score} "
+                    f"squads={squad_scores} player_rounds={live_rounds}"
+                )
+            if halftime_flip and match_id:
+                print(
+                    f"[agent] REVIVAL_SHORT_MATCH_HALFTIME_V1 "
+                    f"match={match_id} physical-sides-swapped logical-squads-preserved"
+                )
+
+        seen_account_id = account_id_from_text(line)
+        if seen_account_id:
+            team_match = PLAYER_TEAM_RE.search(line)
+            if team_match:
+                team = team_match.group(1).upper()
+                if team in ("CT", "TERRORIST"):
+                    with self._lock:
+                        self.player_teams[seen_account_id] = team
+                        # Assign a logical squad once. Do not overwrite it after
+                        # halftime just because the player's physical side flips.
+                        if seen_account_id not in self.player_squads:
+                            squad = self.side_squads.get(team, "")
+                            if squad:
+                                self.player_squads[seen_account_id] = squad
+                                self.player_rounds_won.setdefault(
+                                    seen_account_id, 0
+                                )
+
+            with self._lock:
+                expected = (
+                    not self.expected_account_ids
+                    or seen_account_id in self.expected_account_ids
+                )
+                if expected:
+                    self.human_presence_seen = True
+
+            # "connected" can happen while the client is still loading for
+            # 10-30 seconds. Start Competitive only at Source's authoritative
+            # entered-game event.
+            if "entered the game" in line.lower():
+                self._player_entered(seen_account_id)
+
+        if any(p.search(line) for p in GAME_OVER_PATTERNS):
+            with self._lock:
+                valid_live_match = (
+                    self.started
+                    and self.human_presence_seen
+                    and bool(self.connected_account_ids)
+                    and not self._ended
+                )
+            if not valid_live_match:
+                return
+            print("[agent] match end detected")
+            self._report_end_once(
+                "game_over",
+                grace=float(self.cfg.get("post_match_grace_seconds", 70)),
+            )
+
+    def _reader(self) -> None:
+        """Tail Source's normal L*.log files; srcds owns a real Win32 console."""
+        proc = self.proc
+        if proc is None:
+            return
+
+        logs_dir = os.path.join(self.cfg["csgo_dir"], "csgo", "logs")
+        console_path = os.path.join(self.cfg["csgo_dir"], "csgo", "console.log")
+        current_path = ""
+        position = 0
+        console_position = 0
+
+        def newest_match_log() -> str:
+            try:
+                candidates = []
+                for name in os.listdir(logs_dir):
+                    if not re.match(r"^L.*\.log$", name, re.I):
+                        continue
+                    path = os.path.join(logs_dir, name)
+                    try:
+                        mtime = os.path.getmtime(path)
+                    except OSError:
+                        continue
+                    if (
+                        name not in self.log_files_before
+                        or mtime >= self.log_started_at - 2.0
+                    ):
+                        candidates.append((mtime, path))
+                if not candidates:
+                    return ""
+                candidates.sort()
+                return candidates[-1][1]
+            except OSError:
+                return ""
+
+        def drain() -> None:
+            nonlocal current_path, position
+            path = newest_match_log()
+            if not path:
+                return
+            if path != current_path:
+                current_path = path
+                position = 0
+            try:
+                # Track a byte offset explicitly. TextIO iteration + tell() is
+                # unreliable on growing Windows log files and could silently
+                # kill/rewind the old tailer before the human join line arrived.
+                with open(path, "rb") as fh:
+                    fh.seek(position)
+                    while True:
+                        raw = fh.readline()
+                        if not raw:
+                            break
+                        position = fh.tell()
+                        self._handle_server_log_line(
+                            raw.decode("utf-8", errors="replace")
+                        )
+            except Exception as exc:
+                print(f"[agent] Source log tail error: {exc}")
+
+        def drain_console() -> None:
+            nonlocal console_position
+            try:
+                if not os.path.isfile(console_path):
+                    return
+                with open(console_path, "rb") as fh:
+                    size = os.fstat(fh.fileno()).st_size
+                    if size < console_position:
+                        console_position = 0
+                    fh.seek(console_position)
+                    while True:
+                        raw = fh.readline()
+                        if not raw:
+                            break
+                        console_position = fh.tell()
+                        self._handle_server_log_line(
+                            raw.decode("utf-8", errors="replace")
+                        )
+            except Exception:
+                return
+
+        while proc.poll() is None:
+            drain()
+            drain_console()
+            time.sleep(0.20)
+
+        drain()
+        drain_console()
+        code = proc.wait()
+        # A disappeared SRCDS is diagnostic-worthy regardless of exit code.
+        # Only suppress the report when ServerSlot.stop() explicitly asked it
+        # to exit.
+        if not self.intentional_stop:
+            write_srcds_crash_report(self.cfg, code)
+        if not self._ended and self.match_id:
+            self._report_end_once(f"srcds_exit_{code}")
+
+    def _player_entered(self, account_id: int) -> None:
+        with self._lock:
+            if self._ended or not self.match_id:
+                return
+            if self.expected_account_ids and account_id not in self.expected_account_ids:
+                return
+            self.human_presence_seen = True
+            before = len(self.connected_account_ids)
+            self.connected_account_ids.add(account_id)
+            if len(self.connected_account_ids) != before:
+                print(f"[agent] accepted player entered: {account_id} "
+                      f"({len(self.connected_account_ids)}/{len(self.expected_account_ids)})")
+            should_start = (
+                not self.started
+                and len(self.connected_account_ids) >= 1
+            )
+
+        if should_start:
+            self._begin_match()
+
+    def _begin_match(self) -> None:
+        with self._lock:
+            if self.runtime_applied or self._ended or not self.match_id:
+                return
+            match_id = self.match_id
+            proc = self.proc
+            if proc is None or proc.poll() is not None:
+                return
+            port = int(self.cfg["local_port"])
+            password = self.rcon_password
+
+        try:
+            # Reassert only the small set that matters at the human-join edge.
+            # The full baseline lives in gamemode_competitive_server.cfg and is
+            # already loaded after Valve's competitive config.
+            send_local_rcon(
+                port,
+                password,
+                (
+                    "sv_competitive_official_5v5 1; "
+                    "bot_stop 0; bot_freeze 0; bot_dont_shoot 0; "
+                    "bot_join_after_player 1; bot_auto_vacate 1; bot_join_team any; "
+                    "bot_quota_mode fill; bot_quota 10; "
+                    "mp_autokick 1; mp_tkpunish 0; mp_spawnprotectiontime 5; "
+                    "mp_td_dmgtowarn 200; mp_td_dmgtokick 300; "
+                    "mp_td_spawndmgthreshold 50; "
+                    "mp_autoteambalance 0; mp_limitteams 0; "
+                    "mp_friendlyfire 1; "
+                    "ff_damage_reduction_bullets 0.33; "
+                    "ff_damage_reduction_grenade 0.85; "
+                    "ff_damage_reduction_grenade_self 1; "
+                    "ff_damage_reduction_other 0.4; "
+                    "cash_player_killed_teammate -300; "
+                    "mp_maxrounds 16; mp_winlimit 0; mp_halftime 1; "
+                    "mp_overtime_enable 0; "
+                    "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
+                    "mp_timelimit 0; mp_match_restart_delay 15; "
+                    "mp_competitive_endofmatch_extra_time 20; "
+                    "mp_endmatch_votenextmap 0; mp_match_end_restart 0; "
+                    "mp_warmup_pausetimer 0; mp_warmup_end"
+                ),
+            )
+            proof = send_local_rcon(
+                port,
+                password,
+                (
+                    "sv_competitive_official_5v5; "
+                    "bot_quota; bot_quota_mode; bot_join_after_player; "
+                    "bot_stop; bot_freeze; mp_maxrounds; mp_winlimit; "
+                    "mp_timelimit; mp_match_can_clinch; mp_halftime; "
+                    "mp_overtime_enable; mp_friendlyfire; mp_autokick; "
+                    "mp_tkpunish; mp_spawnprotectiontime; "
+                    "mp_td_dmgtowarn; mp_td_dmgtokick; "
+                    "mp_td_spawndmgthreshold; "
+                    "ff_damage_reduction_bullets; "
+                    "ff_damage_reduction_grenade; "
+                    "ff_damage_reduction_grenade_self; "
+                    "ff_damage_reduction_other; cash_player_killed_teammate; "
+                    "mp_warmuptime_all_players_connected; mp_warmup_pausetimer"
+                ),
+            )
+        except Exception as exc:
+            print(f"[agent] Competitive RCON apply failed; retrying: {exc}")
+            return
+
+        with self._lock:
+            if self._ended or self.match_id != match_id or self.runtime_applied:
+                return
+            self.runtime_applied = True
+            if not self.started:
+                self.started = True
+                self.match_play_started_at = time.monotonic()
+
+        print("[agent] Competitive match started")
+
+        print(
+            "[agent] REVIVAL_TEAMKILL_RULES_V1 active "
+            "(warn=200 damage, kick=300 damage, spawn=50/5s)"
+        )
+
+        try:
+            post_json(
+                self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/started",
+                {"match_id": match_id},
+            )
+        except Exception as exc:
+            print(f"[agent] start notification will retry via heartbeat: {exc}")
+        print(f"[agent] first human present; bot-filled match {match_id} started")
+
+    def refresh_native_reservation_response(self) -> None:
+        with self._lock:
+            match_id = self.match_id
+            old_reservation = self.reservation_id
+            if not match_id or not self.alive():
+                return
+
+        engine_state = read_engine_reservation_ready(self.cfg["csgo_dir"])
+        if int(engine_state.get("match_id") or 0) != match_id:
+            return
+        queued_accounts = {
+            int(x) for x in engine_state.get("account_ids", [])
+            if int(x) > 0
+        }
+
+        response = read_native_reservation_response(self.cfg["csgo_dir"])
+        if int(response.get("match_id") or 0) != match_id:
+            return
+        new_reservation = int(response.get("reservation_id") or 0)
+        new_server_id = int(response.get("server_id") or 0)
+        engine_mode = str(engine_state.get("mode") or "").upper()
+
+        if not new_reservation:
+            return
+
+        acknowledged = {
+            int(x) for x in str(response.get("account_ids") or "").split(",")
+            if x.strip().isdigit() and int(x) > 0
+        }
+
+        with self._lock:
+            if self.match_id != match_id:
+                return
+            membership_changed = acknowledged != self.reserved_account_ids
+            queue_changed = queued_accounts != self.queued_account_ids
+            self.reserved_account_ids = acknowledged
+            self.queued_account_ids = queued_accounts
+            self.reservation_id = new_reservation
+            self.server_id = new_server_id
+            self.ready_match_id = match_id
+            self.using_cookie_fallback = False
+            if new_reservation != old_reservation or membership_changed or queue_changed:
+                print(
+                    f"[agent] REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation refreshed "
+                    f"for match {match_id}: reservation={new_reservation}, "
+                    f"server_id={new_server_id or 'direct-udp'}, "
+                    f"accounts={','.join(str(x) for x in sorted(acknowledged))}, "
+                    f"queued={','.join(str(x) for x in sorted(queued_accounts))}, "
+                    f"engine_mode={engine_mode}"
+                )
+
+    def refresh_authenticated_players(self) -> None:
+        with self._lock:
+            if self._ended or not self.match_id or not self.alive():
+                return
+            expected = set(self.expected_account_ids)
+        if not expected:
+            return
+
+        auth_dir = server_auth_dir(self.cfg["csgo_dir"])
+        for account_id in sorted(expected):
+            marker = os.path.join(auth_dir, f"{account_id}.txt")
+            if not os.path.isfile(marker):
+                continue
+
+            with self._lock:
+                first = not self.human_presence_seen
+                self.human_presence_seen = True
+                should_mark_started = not self.started
+                match_id = self.match_id
+                if should_mark_started:
+                    self.started = True
+                    self.match_play_started_at = time.monotonic()
+
+            if first:
+                print(
+                    f"[agent] authoritative Source auth detected for reserved "
+                    f"account {account_id}; pre-join timeout disabled"
+                )
+
+            if should_mark_started:
+                try:
+                    post_json(
+                        self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/started",
+                        {"match_id": match_id},
+                    )
+                except Exception as exc:
+                    print(f"[agent] start notification retry via heartbeat: {exc}")
+                print(
+                    f"[agent] Source authenticated reserved human; match "
+                    f"{match_id} marked active"
+                )
+
+    def refresh_connected_players_via_rcon(self) -> None:
+        with self._lock:
+            if self._ended or self.started or not self.match_id or not self.alive():
+                return
+            expected = set(self.expected_account_ids)
+        if not expected:
+            return
+
+        try:
+            status = send_local_rcon(
+                int(self.cfg["local_port"]),
+                self.rcon_password,
+                "status",
+            )
+        except Exception as exc:
+            now = time.monotonic()
+            last = getattr(self, "_last_status_error_log", 0.0)
+            if now - last >= 10.0:
+                print(f"[agent] RCON status check failed: {exc}")
+                self._last_status_error_log = now
+            return
+
+        found: set[int] = set()
+        active: set[int] = set()
+        saw_any_human = False
+        for raw in status.splitlines():
+            upper = raw.upper()
+            if "STEAM_" in upper or "[U:1:" in upper or "7656119" in raw:
+                if "BOT" not in upper and "HLTV" not in upper:
+                    saw_any_human = True
+            account_id = account_id_from_text(raw)
+            if account_id and account_id in expected:
+                found.add(account_id)
+                if re.search(r"\bactive\b", raw, re.I):
+                    active.add(account_id)
+
+        if found:
+            with self._lock:
+                self.human_presence_seen = True
+
+        for account_id in sorted(active):
+            self._player_entered(account_id)
+
+        # Private one-match server: an unparsed real Steam player is enough to
+        # protect the allocation from cleanup, but not enough to start rounds.
+        if saw_any_human and not found:
+            with self._lock:
+                first_fallback = not self.human_presence_seen
+                self.human_presence_seen = True
+            if first_fallback:
+                print("[agent] RCON status shows a human player; preserving active reservation")
+
+    def check_accept_timeout(self) -> None:
+        # Do NOT independently kill a native reservation on a wall-clock timer.
+        # The coordinator owns cancellation/withdrawal. Previous builds could
+        # destroy a live Competitive server after five minutes when join
+        # detection missed the player even though Source had accepted them.
+        with self._lock:
+            if (
+                self._ended
+                or self.started
+                or self.human_presence_seen
+                or bool(self.connected_account_ids)
+                or not self.ready_at
+                or not self.match_id
+            ):
+                return
+            timeout = float(self.cfg.get("accept_timeout_seconds", 300))
+            if time.monotonic() - self.ready_at < timeout:
+                return
+            match_id = self.match_id
+            # Log once, then disable this local timer. The heartbeat assignment
+            # remains authoritative and explicit cancellation still stops srcds.
+            self.ready_at = 0.0
+        print(
+            f"[agent] pre-join timer reached for match {match_id}; "
+            "keeping reservation alive until coordinator withdraws it"
+        )
+
+    def enforce_competitive_runtime(self) -> None:
+        with self._lock:
+            if (
+                self._ended
+                or not self.started
+                or not self.match_id
+                or self.proc is None
+                or self.proc.poll() is not None
+            ):
+                return
+            now = time.monotonic()
+            if now - self.runtime_guard_at < 10.0:
+                return
+            self.runtime_guard_at = now
+            port = int(self.cfg["local_port"])
+            password = self.rcon_password
+
+        try:
+            send_local_rcon(
+                port,
+                password,
+                (
+                    "sv_competitive_official_5v5 1; "
+                    "sv_allowdownload 1; sv_allowupload 0; net_maxfilesize 64; "
+                    "mp_timelimit 0; mp_maxrounds 16; mp_winlimit 0; "
+                    "mp_halftime 1; mp_overtime_enable 0; "
+                    "mp_autokick 1; mp_tkpunish 0; mp_spawnprotectiontime 5; "
+                    "mp_td_dmgtowarn 200; mp_td_dmgtokick 300; "
+                    "mp_td_spawndmgthreshold 50; mp_friendlyfire 1; "
+                    "ff_damage_reduction_bullets 0.33; "
+                    "ff_damage_reduction_grenade 0.85; "
+                    "ff_damage_reduction_grenade_self 1; "
+                    "ff_damage_reduction_other 0.4; "
+                    "cash_player_killed_teammate -300; "
+                    "mp_match_can_clinch 1; mp_ignore_round_win_conditions 0; "
+                    "mp_match_end_restart 0; mp_endmatch_votenextmap 0; "
+                    "bot_quota_mode fill; bot_auto_vacate 1; bot_quota 10"
+                ),
+            )
+        except Exception:
+            return
+
+    def _report_end_once(self, reason: str, grace: float = 0.0) -> None:
+        with self._lock:
+            if self._ended or not self.match_id:
+                return
+            self._ended = True
+            match_id = self.match_id
+            elapsed = 0
+            if self.match_play_started_at:
+                elapsed = max(0, int(time.monotonic() - self.match_play_started_at))
+            player_rounds = {
+                str(account_id): int(self.player_rounds_won.get(account_id, 0))
+                for account_id in self.expected_account_ids
+            }
+            player_won: dict[str, bool] = {}
+            player_tied: dict[str, bool] = {}
+            for account_id in self.expected_account_ids:
+                squad = self.player_squads.get(account_id, "")
+                ours = int(self.squad_scores.get(squad, 0)) if squad else 0
+                other_squad = "B" if squad == "A" else ("A" if squad == "B" else "")
+                theirs = int(self.squad_scores.get(other_squad, 0)) if other_squad else 0
+                player_won[str(account_id)] = bool(squad and ours > theirs)
+                player_tied[str(account_id)] = bool(squad and ours == theirs)
+
+            result = {
+                "reason": reason,
+                "ct_score": self.ct_score,
+                "t_score": self.t_score,
+                "time_played": elapsed,
+                "connected_account_ids": sorted(self.connected_account_ids),
+                "player_teams": {
+                    str(account_id): team
+                    for account_id, team in self.player_teams.items()
+                    if account_id in self.expected_account_ids
+                },
+                "player_rounds_won": player_rounds,
+                "player_won": player_won,
+                "player_tied": player_tied,
+                "logical_squad_scores": dict(self.squad_scores),
+                "total_scored_rounds": int(self.total_scored_rounds),
+            }
+
+        # Tell the injected server GC to create the actual reward items and add
+        # their preview blocks to CCSGameRules::RecordPlayerItemDrop. Source's
+        # own intermission code then broadcasts SendPlayerItemDrops and fires
+        # endmatch_cmm_start_reveal_items, which is the real scoreboard reveal.
+        trigger_path = os.path.join(
+            self.cfg["csgo_dir"], "csgo_gc", "server_match_end_trigger.txt"
+        )
+        trigger_tmp = trigger_path + ".tmp"
+        try:
+            with open(trigger_tmp, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(f"match_id={match_id}\n")
+                fh.write(f"time_played={elapsed}\n")
+                fh.write(f"ct_score={self.ct_score}\n")
+                fh.write(f"t_score={self.t_score}\n")
+                for account_id, team in sorted(self.player_teams.items()):
+                    if account_id in self.expected_account_ids:
+                        fh.write(f"team_{account_id}={team}\n")
+                for account_id in sorted(self.expected_account_ids):
+                    key = str(account_id)
+                    kill_stats = self.player_kill_stats.get(account_id, {})
+                    weapon_stats = self.player_weapon_kills.get(account_id, {})
+                    for stat_name in (
+                        "kills", "headshots", "noscopes", "through_smoke",
+                        "blind", "wallbang", "grenade", "knife", "sniper",
+                        "rifle", "pistol", "smg", "shotgun", "heavy"
+                    ):
+                        fh.write(
+                            f"{stat_name}_{account_id}="
+                            f"{int(kill_stats.get(stat_name, 0))}\n"
+                        )
+                    weapon_summary = ",".join(
+                        f"{name}:{int(count)}"
+                        for name, count in sorted(weapon_stats.items())
+                        if count > 0
+                    )
+                    fh.write(f"weapons_{account_id}={weapon_summary}\n")
+                    fh.write(
+                        f"rounds_{account_id}="
+                        f"{int(result['player_rounds_won'].get(key, 0))}\n"
+                    )
+                    fh.write(
+                        f"won_{account_id}="
+                        f"{1 if result['player_won'].get(key, False) else 0}\n"
+                    )
+                    fh.write(
+                        f"tied_{account_id}="
+                        f"{1 if result['player_tied'].get(key, False) else 0}\n"
+                    )
+            os.replace(trigger_tmp, trigger_path)
+            print(f"[agent] native drop reveal trigger written for match {match_id}")
+        except OSError as exc:
+            print(f"[agent] failed to write native drop reveal trigger: {exc}")
+
+        # Publish the completed result immediately so XP/rank state reaches the
+        # client while intermission is still visible. Item drops themselves are
+        # generated exactly once by the server GC trigger above.
+        try:
+            post_json(
+                self.cfg["backend_url"].rstrip("/") + "/matchmaking/server/ended",
+                {"match_id": match_id, "result": result},
+            )
+            print(f"[agent] reported match {match_id} end immediately: {result}")
+        except Exception as exc:
+            print(f"[agent] failed to report match end: {exc}")
+
+        def finish() -> None:
+            if grace > 0:
+                print(f"[agent] keeping srcds alive {grace:.0f}s for end-match delivery")
+                time.sleep(grace)
+            self.stop()
+
+        if grace > 0:
+            threading.Thread(target=finish, daemon=True, name="match-end-grace").start()
+        else:
+            finish()
+
+    def stop(self) -> None:
+        proc = self.proc
+        self.intentional_stop = True
+        self.proc = None
+        self.ready_match_id = 0
+        self.reservation_id = 0
+        self.server_id = 0
+        self.reserved_account_ids.clear()
+        self.queued_account_ids.clear()
+        self.match_id = 0
+        self.ready_at = 0.0
+        self.source_match_started_at = 0.0
+        self.using_cookie_fallback = False
+        self.started = False
+        self.runtime_applied = False
+        self.human_presence_seen = False
+        self.expected_account_ids.clear()
+        self.connected_account_ids.clear()
+        self.player_teams.clear()
+        self.player_rounds_won.clear()
+        self.side_squads = {"CT": "A", "TERRORIST": "B"}
+        self.player_squads.clear()
+        self.squad_scores = {"A": 0, "B": 0}
+        self.last_side_score = {"CT": 0, "TERRORIST": 0}
+        self.total_scored_rounds = 0
+        self.match_play_started_at = 0.0
+        self.assignment_missing_since = 0.0
+        self.launched_at = 0.0
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            send_local_rcon(
+                int(self.cfg["local_port"]),
+                self.rcon_password,
+                "quit",
+            )
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+
+def spool_item_acknowledgements(cfg: dict, acknowledgements: object) -> None:
+    if not isinstance(acknowledgements, list) or not acknowledgements:
+        return
+
+    outbox = os.path.join(cfg["csgo_dir"], "csgo_gc", "server_item_acks")
+    os.makedirs(outbox, exist_ok=True)
+
+    for entry in acknowledgements:
+        if not isinstance(entry, dict):
+            continue
+        steamid = str(entry.get("steamid") or "").strip()
+        payload_b64 = str(entry.get("payload_b64") or "").strip()
+        if not steamid.isdigit() or not payload_b64:
+            continue
+        try:
+            payload = base64.b64decode(payload_b64, validate=True)
+        except Exception:
+            continue
+        if not payload or len(payload) > 64 * 1024:
+            continue
+
+        stamp = time.time_ns()
+        final_path = os.path.join(outbox, f"{steamid}_{stamp}.bin")
+        temp_path = final_path + ".tmp"
+        try:
+            with open(temp_path, "wb") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(temp_path, final_path)
+            print(
+                f"[agent] REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 queued "
+                f"native item acknowledgement for {steamid} ({len(payload)} bytes)"
+            )
+        except OSError as exc:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+            print(f"[agent] failed to spool native item acknowledgement: {exc}")
+
+
+def maybe_start_playit(cfg: dict) -> subprocess.Popen | None:
+    path = str(cfg.get("playit_exe") or "").strip()
+    if not path:
+        return None
+    if not os.path.isfile(path):
+        print(f"[agent] playit_exe not found: {path}")
+        return None
+    print("[agent] starting playit tunnel agent")
+    return subprocess.Popen([path], cwd=os.path.dirname(path))
+
+
+def main() -> None:
+    cfg = load_config()
+    maps = installed_maps(cfg["csgo_dir"])
+    if not maps:
+        raise SystemExit("[agent] no supported BSP maps found under csgo/maps")
+
+    print(f"[agent] {REVIVAL_AGENT_BUILD} active")
+    print("[agent] installed matchmaking maps: " + ", ".join(maps))
+    print(f"[agent] public tunnel: {cfg['public_host']}:{cfg['public_port']}")
+    playit = maybe_start_playit(cfg)
+    slot = ServerSlot(cfg)
+    base = cfg["backend_url"].rstrip("/")
+    agent_session_id = secrets.token_hex(8)
+    print(f"[agent] session id: {agent_session_id}")
+    last_reset_generation: int | None = None
+
+    try:
+        while True:
+            slot.refresh_native_reservation_response()
+            slot.refresh_authenticated_players()
+            slot.enforce_competitive_runtime()
+            flush_server_reward_bridge(cfg)
+            body = {
+                "agent_id": cfg["agent_id"],
+                "agent_session_id": agent_session_id,
+                "public_host": cfg["public_host"],
+                "public_port": int(cfg["public_port"]),
+                "server_version": read_csgo_server_version(cfg["csgo_dir"]),
+                "maps": maps,
+                "ready_match_id": slot.ready_match_id,
+                "reservation_id": slot.reservation_id,
+                "server_id": slot.server_id,
+                "reserved_account_ids": sorted(slot.reserved_account_ids),
+                "queued_account_ids": sorted(slot.queued_account_ids),
+                "engine_reservation_mode": str(
+                    read_engine_reservation_ready(cfg["csgo_dir"]).get("mode") or ""
+                ),
+                "started_match_id": slot.match_id if slot.started else 0,
+                # Live score/team data lets the desktop GC mirror Operation
+                # round-win progress during the match instead of waiting for
+                # the final MatchEndRunRewardDrops fallback.
+                "ct_score": slot.ct_score,
+                "t_score": slot.t_score,
+                "player_teams": {
+                    str(account_id): team
+                    for account_id, team in slot.player_teams.items()
+                    if account_id in slot.expected_account_ids
+                },
+                "player_rounds_won": {
+                    str(account_id): int(rounds)
+                    for account_id, rounds in slot.player_rounds_won.items()
+                    if account_id in slot.expected_account_ids
+                },
+            }
+            try:
+                reply = post_json(base + "/matchmaking/server/heartbeat", body)
+                spool_item_acknowledgements(cfg, reply.get("item_acks"))
+                reset_generation = int(reply.get("reset_generation") or 0)
+                if last_reset_generation is None:
+                    last_reset_generation = reset_generation
+                elif reset_generation != last_reset_generation:
+                    print(
+                        f"[agent] REVIVAL_ADMIN_RESET_V1 generation "
+                        f"{last_reset_generation}->{reset_generation}; stopping live srcds"
+                    )
+                    last_reset_generation = reset_generation
+                    slot.stop()
+
+                assignment = reply.get("assignment")
+                if isinstance(assignment, dict):
+                    slot.assignment_missing_since = 0.0
+                    slot.start(assignment)
+                elif slot.alive() and not slot.started:
+                    # Never tear down a GC-active server merely because the HTTP
+                    # coordinator omitted the assignment. Once the engine has a
+                    # reservation, check_accept_timeout() owns cleanup. Before
+                    # readiness, allow a full five-minute boot/recovery window.
+                    now = time.monotonic()
+                    if not slot.assignment_missing_since:
+                        slot.assignment_missing_since = now
+                        print("[agent] assignment temporarily absent; keeping srcds alive")
+                    if (
+                        not slot.ready_match_id
+                        and slot.launched_at
+                        and now - slot.launched_at >= 300.0
+                    ):
+                        print("[agent] no assignment/readiness for 300s; stopping stale srcds")
+                        slot.stop()
+                slot.check_accept_timeout()
+            except (urllib.error.URLError, ValueError, OSError) as exc:
+                print(f"[agent] heartbeat failed: {exc}")
+            time.sleep(2.0)
+    except KeyboardInterrupt:
+        print("\n[agent] stopping")
+    finally:
+        slot.stop()
+        if playit and playit.poll() is None:
+            playit.terminate()
+
+
+if __name__ == "__main__":
+    main()
+, line, re.I)
+            if attacker_id and weapon_match:
+                weapon = weapon_match.group(1).lower().removeprefix("weapon_")
+                modifiers = weapon_match.group(2).lower()
+                with self._lock:
+                    if (not self.expected_account_ids
+                            or attacker_id in self.expected_account_ids):
+                        stats = self.player_kill_stats.setdefault(attacker_id, {
+                            "kills": 0,
+                            "headshots": 0,
+                            "noscopes": 0,
+                            "through_smoke": 0,
+                            "blind": 0,
+                            "wallbang": 0,
+                            "grenade": 0,
+                            "knife": 0,
+                            "sniper": 0,
+                            "rifle": 0,
+                            "pistol": 0,
+                            "smg": 0,
+                            "shotgun": 0,
+                            "heavy": 0,
+                        })
+                        stats["kills"] += 1
+                        if "headshot" in modifiers:
+                            stats["headshots"] += 1
+                        if ("noscope" in modifiers or "no_scope" in modifiers
+                                or "no-scop" in modifiers or "unscoped" in modifiers):
+                            stats["noscopes"] += 1
+                        if "thrusmoke" in modifiers or "through smoke" in modifiers:
+                            stats["through_smoke"] += 1
+                        if "attackerblind" in modifiers or "blind" in modifiers:
+                            stats["blind"] += 1
+                        if "penetrated" in modifiers or "wallbang" in modifiers:
+                            stats["wallbang"] += 1
+
+                        category = revival_kill_category(weapon)
+                        if category:
+                            stats[category] += 1
+
+                        weapons = self.player_weapon_kills.setdefault(attacker_id, {})
+                        weapons[weapon] = weapons.get(weapon, 0) + 1
+
+                        print(
+                            f"[agent] REVIVAL_PVP_MISSION_STATS_V1 account={attacker_id} "
+                            f"weapon={weapon} total={stats['kills']} "
+                            f"hs={stats['headshots']} ns={stats['noscopes']} "
+                            f"grenade={stats['grenade']}"
+                        )
 
         m = TEAM_SCORE_RE.search(line)
         if m:
