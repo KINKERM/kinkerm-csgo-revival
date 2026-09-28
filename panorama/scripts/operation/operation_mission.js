@@ -298,21 +298,29 @@ var OperationMission = ( function()
 			oMissionDetails.missionGameMode === 'survival' ));
 
 		elMission.FindChildInLayoutFile( 'id-mission-card-icon-locked' ).visible = !isunlocked;
-		elMission.FindChildInLayoutFile( 'id-mission-card-icon-complete' ).visible = !oMissionDetails.isReplayable &&
+		var bRevivalReplayable = oMissionDetails.missionGameMode &&
+			( oMissionDetails.missionGameMode.startsWith( 'competitive' ) ||
+			  oMissionDetails.missionGameMode === 'scrimcomp2v2' );
+
+		elMission.FindChildInLayoutFile( 'id-mission-card-icon-complete' ).visible =
+			!oMissionDetails.isReplayable && !bRevivalReplayable &&
 			oMissionDetails.nMissionPointsRemaining === 0 &&
 			isunlocked;
 		elMission.FindChildInLayoutFile( 'id-mission-card-spinner' ).visble = isunlocked && currentlyPlayingMissionId === oMissionDetails.missionItemId;
-		elMission.FindChildInLayoutFile( 'id-mission-card-icon-replay' ).visible = oMissionDetails.isReplayable &&
+		elMission.FindChildInLayoutFile( 'id-mission-card-icon-replay' ).visible =
+			( oMissionDetails.isReplayable || bRevivalReplayable ) &&
 			oMissionDetails.nMissionPointsRemaining === 0 &&
 			isunlocked;
 	};
 
 	var _EnableDisableMission = function( elMission, isunlocked, oMissionDetails)
 	{
-		                                             
+		var bRevivalReplayable = oMissionDetails.missionGameMode &&
+			( oMissionDetails.missionGameMode.startsWith( 'competitive' ) ||
+			  oMissionDetails.missionGameMode === 'scrimcomp2v2' );
 		elMission.enabled = isunlocked &&
 		( oMissionDetails.nMissionPointsRemaining !== 0 ||
-			oMissionDetails.isReplayable );
+			oMissionDetails.isReplayable || bRevivalReplayable );
 	};
 
 	var _AddMissionActions = function( elMission, oMissionDetails, missionCardId )
