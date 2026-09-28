@@ -204,6 +204,16 @@ function LaunchMission ()
 			}
         }
 
+        // Revival Operation missions always enter the one shared Competitive
+        // queue. The original Riptide card may have been Wingman/Casual/
+        // Retakes/Deathmatch; keep its objective, not its retired queue.
+        if ( gameMode !== 'cooperative' && gameMode !== 'coopmission' &&
+            gameMode !== 'guardian' && gameMode !== 'survival' )
+        {
+            gameMode = 'competitive';
+            mapGroup = 'mg_lobby_mapveto';
+        }
+
 		var gameModeFlags = GameInterfaceAPI.GetSettingString( 'ui_playsettings_flags_official_' + gameMode );
 		gameModeFlags = gameModeFlags ? parseInt( gameModeFlags ) : 0;
 
