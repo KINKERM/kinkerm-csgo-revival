@@ -51,7 +51,7 @@ MAP_POOL = (
 # never turn our 9105 into a Valve-style queued reservation. Source's built-in
 # R<pointer> fallback and the client GC both use this exact cookie.
 REVIVAL_GAME_SERVER_COOKIE_ID = 0x293A206F6C6C6548
-REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V49"
+REVIVAL_AGENT_BUILD = "REVIVAL_AGENT_PUBLIC_RELEASE_V50"
 
 GAME_OVER_PATTERNS = (
     re.compile(r'World triggered "Game_Over"', re.I),
@@ -83,6 +83,16 @@ def account_id_from_log_line(line: str) -> int:
     if "entered the game" not in line.lower():
         return 0
     return account_id_from_text(line)
+
+
+def current_steam_account_token(fallback: str = "") -> str:
+    """Reload the GSLT from server_agent.json before every new srcds launch."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as fh:
+            live = json.load(fh)
+        return str(live.get("steam_account_token") or "").strip()
+    except (OSError, ValueError, TypeError):
+        return str(fallback or "").strip()
 
 
 def load_config() -> dict:
@@ -743,9 +753,17 @@ class ServerSlot:
 
             map_name = str(assignment.get("map") or "de_dust2")
             srcds = find_srcds(self.cfg["csgo_dir"])
+            live_token = current_steam_account_token(
+                self.cfg.get("steam_account_token", "")
+            )
+            self.cfg["steam_account_token"] = live_token
             ensure_match_cfg(
                 self.cfg["csgo_dir"],
-                self.cfg.get("steam_account_token", ""),
+                live_token,
+            )
+            print(
+                "[agent] REVIVAL_GSLT_HOT_RELOAD_V1 "
+                + ("loaded token for new srcds" if live_token else "no token configured")
             )
             sync_server_player_inventories(
                 self.cfg, assignment, clear_existing=True
