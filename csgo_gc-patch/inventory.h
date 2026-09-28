@@ -13,6 +13,9 @@ struct OperationMissionStats
     uint32_t kills{};
     uint32_t headshots{};
     uint32_t noscopes{};
+    uint32_t throughSmokeKills{};
+    uint32_t blindKills{};
+    uint32_t wallbangKills{};
     uint32_t grenadeKills{};
     uint32_t knifeKills{};
     uint32_t sniperKills{};
