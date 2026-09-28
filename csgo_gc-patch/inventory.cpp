@@ -3876,6 +3876,17 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
             value = stats->noscopes;
         else if (expr.find("headshot") != std::string::npos)
             value = stats->headshots;
+        else if (expr.find("thrusmoke") != std::string::npos
+            || expr.find("through_smoke") != std::string::npos
+            || expr.find("smoke") != std::string::npos)
+            value = stats->throughSmokeKills;
+        else if (expr.find("attackerblind") != std::string::npos
+            || expr.find("blind") != std::string::npos
+            || expr.find("flashed") != std::string::npos)
+            value = stats->blindKills;
+        else if (expr.find("penetrated") != std::string::npos
+            || expr.find("wallbang") != std::string::npos)
+            value = stats->wallbangKills;
         else if (expr.find("hegrenade") != std::string::npos
             || expr.find("molotov") != std::string::npos
             || expr.find("incgrenade") != std::string::npos
