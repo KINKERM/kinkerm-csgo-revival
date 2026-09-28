@@ -807,15 +807,74 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
     bool revivalMissionPacket = false;
     uint32_t revivalMissionRounds = 0;
     bool revivalMissionWon = false;
+    OperationMissionStats revivalMissionStats;
     if (message.has_match_end_quest_data())
     {
         const std::string &marker =
             message.match_end_quest_data().binary_data();
-        unsigned rounds = 0;
-        unsigned won = 0;
+
+        unsigned rounds = 0, won = 0, kills = 0, headshots = 0, noscopes = 0;
+        unsigned throughSmoke = 0, blind = 0, wallbang = 0, grenade = 0;
+        unsigned knife = 0, sniper = 0, rifle = 0, pistol = 0, smg = 0;
+        unsigned shotgun = 0, heavy = 0;
+
         if (std::sscanf(
+                marker.c_str(),
+                "RVOPM2:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u",
+                &rounds, &won, &kills, &headshots, &noscopes,
+                &throughSmoke, &blind, &wallbang, &grenade, &knife,
+                &sniper, &rifle, &pistol, &smg, &shotgun, &heavy) == 16)
+        {
+            revivalMissionPacket = true;
+            revivalMissionRounds = static_cast<uint32_t>(rounds);
+            revivalMissionWon = won != 0;
+            revivalMissionStats.kills = kills;
+            revivalMissionStats.headshots = headshots;
+            revivalMissionStats.noscopes = noscopes;
+            revivalMissionStats.throughSmokeKills = throughSmoke;
+            revivalMissionStats.blindKills = blind;
+            revivalMissionStats.wallbangKills = wallbang;
+            revivalMissionStats.grenadeKills = grenade;
+            revivalMissionStats.knifeKills = knife;
+            revivalMissionStats.sniperKills = sniper;
+            revivalMissionStats.rifleKills = rifle;
+            revivalMissionStats.pistolKills = pistol;
+            revivalMissionStats.smgKills = smg;
+            revivalMissionStats.shotgunKills = shotgun;
+            revivalMissionStats.heavyKills = heavy;
+
+            const size_t bar = marker.find('|');
+            if (bar != std::string::npos && bar + 1 < marker.size())
+            {
+                std::stringstream weaponStream(marker.substr(bar + 1));
+                std::string pair;
+                while (std::getline(weaponStream, pair, ','))
+                {
+                    const size_t colon = pair.find(':');
+                    if (colon == std::string::npos || colon == 0)
+                        continue;
+                    const std::string weapon = pair.substr(0, colon);
+                    char *end = nullptr;
+                    const unsigned long count =
+                        std::strtoul(pair.c_str() + colon + 1, &end, 10);
+                    if (end && *end == '\0' && count <= UINT32_MAX)
+                        revivalMissionStats.weaponKills[weapon] =
+                            static_cast<uint32_t>(count);
+                }
+            }
+
+            Platform::Print(
+                "REVIVAL_PVP_MISSION_STATS_V1 received rounds=%u won=%u "
+                "kills=%u hs=%u ns=%u grenade=%u weapons=%zu\n",
+                revivalMissionRounds, revivalMissionWon ? 1u : 0u,
+                revivalMissionStats.kills, revivalMissionStats.headshots,
+                revivalMissionStats.noscopes, revivalMissionStats.grenadeKills,
+                revivalMissionStats.weaponKills.size());
+        }
+        else if (std::sscanf(
                 marker.c_str(), "RVOPM1:%u:%u", &rounds, &won) == 2)
         {
+            // Backward-compatible packet from an older laptop/server build.
             revivalMissionPacket = true;
             revivalMissionRounds = static_cast<uint32_t>(rounds);
             revivalMissionWon = won != 0;
@@ -1085,7 +1144,8 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
             }
 
             if (m_inventory.ApplySelectedOperationCompetitiveMission(
-                    missionMap, remainingMissionRounds, won, operationUpdate))
+                    missionMap, remainingMissionRounds, won, operationUpdate,
+                    &revivalMissionStats))
             {
                 operationChanged = true;
             }
@@ -1188,7 +1248,7 @@ void ClientGC::MatchEndRunRewardDrops(GCMessageRead &messageRead)
     if (revivalMissionPacket)
     {
         Platform::Print(
-            "REVIVAL_REPEATABLE_MISSIONS_V5 completed mission packet "
+            "REVIVAL_PVP_MISSION_STATS_V1 completed mission packet "
             "match=%llu account=%u rounds=%u won=%u\n",
             static_cast<unsigned long long>(matchId), AccountId(),
             revivalMissionRounds, revivalMissionWon ? 1u : 0u);
