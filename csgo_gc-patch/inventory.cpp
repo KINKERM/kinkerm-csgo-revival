@@ -3184,8 +3184,10 @@ bool Inventory::SetOperationMissionSelection(
             const QuestDefinition *candidate =
                 m_itemSchema.GetQuestDefinition(candidateId);
             if (candidate
-                && (candidate->gameMode.rfind("competitive", 0) == 0
-                    || candidate->gameMode == "scrimcomp2v2"))
+                && candidate->gameMode != "cooperative"
+                && candidate->gameMode != "coopmission"
+                && candidate->gameMode != "guardian"
+                && candidate->gameMode != "survival")
             {
                 questId = candidateId;
                 break;
@@ -3615,6 +3617,38 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
         state.progress, goal, completedNow ? 1u : 0u,
         starsEarnedNow, m_operationEarnedStars, m_operationMissionsCompleted);
     return true;
+}
+
+bool Inventory::SelectedOperationMissionUsesResultFallback() const
+{
+    if (!m_operationSelectedQuestId)
+        return false;
+
+    const QuestDefinition *quest =
+        m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
+    if (!quest)
+        return false;
+
+    auto usesResult = [](const std::string &expr) {
+        return expr.find("%act_win_match%") != std::string::npos
+            || expr.find("%act_win_round%") != std::string::npos;
+    };
+
+    if (usesResult(quest->expression))
+        return true;
+
+    if (quest->expression.rfind("QQ:", 0) == 0)
+    {
+        for (uint32_t childId :
+            m_itemSchema.QuestGraphChildren(m_operationSelectedQuestId))
+        {
+            const QuestDefinition *child =
+                m_itemSchema.GetQuestDefinition(childId);
+            if (child && usesResult(child->expression))
+                return true;
+        }
+    }
+    return false;
 }
 
 bool Inventory::ApplySelectedOperationCompetitiveMission(
