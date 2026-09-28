@@ -315,6 +315,12 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_OR_WIN_REPAIR_V1")) {
         throw "Built csgo_gc.dll is missing Operation OR win-branch repair."
     }
+    if (-not $gcDllText.Contains("REVIVAL_PVP_MISSION_STATS_V1")) {
+        throw "Built csgo_gc.dll is missing PvP kill-style Operation mission support."
+    }
+    if (-not $gcDllText.Contains("REVIVAL_OPERATION_REPLAY_V1")) {
+        throw "Built csgo_gc.dll is missing repeatable completed-mission reset support."
+    }
     if (-not $gcDllText.Contains("REVIVAL_LIVE_DROPIN_ACCEPT_V6")) {
         throw "Built csgo_gc.dll is missing engine-roster live-drop-in ACCEPT handling."
     }
