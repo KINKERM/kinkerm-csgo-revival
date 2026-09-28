@@ -10,6 +10,67 @@
 
 constexpr const char *InventoryFilePath = "csgo_gc/inventory.txt";
 
+enum class RevivalCustomMissionKind
+{
+    None,
+    NoScope,
+    Headshot,
+    Rifle,
+    Grenade,
+    Knife,
+    Sniper,
+    Pistol,
+    Smg,
+    Wallbang,
+    ThroughSmoke,
+    Blind,
+};
+
+static RevivalCustomMissionKind RevivalCustomMissionFor(uint32_t questId)
+{
+    switch (questId)
+    {
+    case 1108: return RevivalCustomMissionKind::NoScope;      // week 1, goal 10
+    case 1112: return RevivalCustomMissionKind::Headshot;     // week 2, goal 1
+    case 1116: return RevivalCustomMissionKind::Rifle;        // week 3, goal 1
+    case 1120: return RevivalCustomMissionKind::Grenade;      // week 4, goal 10
+    case 1124: return RevivalCustomMissionKind::Knife;        // week 5, goal 1
+    case 1128: return RevivalCustomMissionKind::Sniper;       // week 6, goal 3
+    case 1132: return RevivalCustomMissionKind::Headshot;     // week 7, goal 10
+    case 1136: return RevivalCustomMissionKind::Pistol;       // week 8, goal 1
+    case 1141: return RevivalCustomMissionKind::Smg;          // week 9, goal 1
+    case 1144: return RevivalCustomMissionKind::Sniper;       // week 10, goal 10
+    case 1148: return RevivalCustomMissionKind::Wallbang;     // week 11, goal 1
+    case 1152: return RevivalCustomMissionKind::Knife;        // week 12, goal 3
+    case 1156: return RevivalCustomMissionKind::Rifle;        // week 13, goal 10
+    case 1160: return RevivalCustomMissionKind::ThroughSmoke; // week 14, goal 1
+    case 1164: return RevivalCustomMissionKind::Pistol;       // week 15, goal 1
+    case 1168: return RevivalCustomMissionKind::Blind;        // week 16, goal 1
+    default: return RevivalCustomMissionKind::None;
+    }
+}
+
+static uint32_t RevivalCustomMissionValue(
+    RevivalCustomMissionKind kind,
+    const OperationMissionStats &stats)
+{
+    switch (kind)
+    {
+    case RevivalCustomMissionKind::NoScope: return stats.noscopes;
+    case RevivalCustomMissionKind::Headshot: return stats.headshots;
+    case RevivalCustomMissionKind::Rifle: return stats.rifleKills;
+    case RevivalCustomMissionKind::Grenade: return stats.grenadeKills;
+    case RevivalCustomMissionKind::Knife: return stats.knifeKills;
+    case RevivalCustomMissionKind::Sniper: return stats.sniperKills;
+    case RevivalCustomMissionKind::Pistol: return stats.pistolKills;
+    case RevivalCustomMissionKind::Smg: return stats.smgKills;
+    case RevivalCustomMissionKind::Wallbang: return stats.wallbangKills;
+    case RevivalCustomMissionKind::ThroughSmoke: return stats.throughSmokeKills;
+    case RevivalCustomMissionKind::Blind: return stats.blindKills;
+    default: return 0;
+    }
+}
+
 // mikkotodo actual versioning
 constexpr uint64_t InventoryVersion = 7523377975160828514;
 
