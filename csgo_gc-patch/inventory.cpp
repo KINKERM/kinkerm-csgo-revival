@@ -3184,7 +3184,8 @@ bool Inventory::SetOperationMissionSelection(
             const QuestDefinition *candidate =
                 m_itemSchema.GetQuestDefinition(candidateId);
             if (candidate
-                && candidate->gameMode.rfind("competitive", 0) == 0)
+                && (candidate->gameMode.rfind("competitive", 0) == 0
+                    || candidate->gameMode == "scrimcomp2v2"))
             {
                 questId = candidateId;
                 break;
@@ -3207,6 +3208,22 @@ bool Inventory::SetOperationMissionSelection(
 
     m_operationMissionId = card->id;
     m_operationSelectedQuestId = questId;
+
+    // Revival missions are repeatable forever. Preserve lifetime stars and the
+    // total completed counter, but an explicit click on a finished mission
+    // starts a fresh run of that quest and its QQ graph children.
+    auto existingProgress = m_operationQuestProgress.find(questId);
+    if (existingProgress != m_operationQuestProgress.end()
+        && existingProgress->second.progress >= quest->Goal())
+    {
+        existingProgress->second = {};
+        for (uint32_t childId : m_itemSchema.QuestGraphChildren(questId))
+            m_operationQuestProgress[childId] = {};
+
+        Platform::Print(
+            "REVIVAL_OPERATION_REPLAY_V1 card=%u quest=%u reset for repeat\n",
+            card->id, questId);
+    }
 
     // The Panorama MissionsAPI does not derive GetQuestPoints() from the item
     // schema alone. It expects CSOQuestProgress objects in the client SOCache.
@@ -3264,18 +3281,31 @@ std::string Inventory::PreferredOperationMissionMap() const
     {
         const QuestDefinition *quest =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
-        if (quest && quest->gameMode.rfind("competitive", 0) == 0)
+        if (quest
+            && (quest->gameMode.rfind("competitive", 0) == 0
+                || quest->gameMode == "scrimcomp2v2"))
         {
-            // Riptide Premier uses lobby_mapveto: keep the shared Competitive
-            // pool and let the revival coordinator choose the actual BSP.
+            auto isRevivalMap = [](std::string_view map) {
+                return map == "de_dust2" || map == "de_mirage"
+                    || map == "de_cache" || map == "de_cbble"
+                    || map == "de_overpass" || map == "de_vertigo"
+                    || map == "de_inferno" || map == "de_ancient"
+                    || map == "de_nuke" || map == "de_train"
+                    || map == "cs_insertion2";
+            };
+
+            // Premier and retired-map/Wingman weeks use the one shared queue.
             if (quest->map == "lobby_mapveto")
                 return {};
 
             if (!quest->map.empty())
-                return quest->map;
+                return isRevivalMap(quest->map) ? quest->map : std::string{};
 
             if (quest->mapGroup.rfind("mg_", 0) == 0)
-                return quest->mapGroup.substr(3);
+            {
+                const std::string map = quest->mapGroup.substr(3);
+                return isRevivalMap(map) ? map : std::string{};
+            }
         }
     }
 
@@ -3292,8 +3322,19 @@ uint32_t Inventory::PreferredOperationMissionQuest(
     {
         const QuestDefinition *quest =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
-        if (quest && quest->gameMode.rfind("competitive", 0) == 0)
+        if (quest
+            && (quest->gameMode.rfind("competitive", 0) == 0
+                || quest->gameMode == "scrimcomp2v2"))
         {
+            auto isRevivalMap = [](std::string_view map) {
+                return map == "de_dust2" || map == "de_mirage"
+                    || map == "de_cache" || map == "de_cbble"
+                    || map == "de_overpass" || map == "de_vertigo"
+                    || map == "de_inferno" || map == "de_ancient"
+                    || map == "de_nuke" || map == "de_train"
+                    || map == "cs_insertion2";
+            };
+
             bool mapMatches = quest->map == actualMap
                 || quest->map == "lobby_mapveto";
 
@@ -3302,6 +3343,19 @@ uint32_t Inventory::PreferredOperationMissionQuest(
             {
                 mapMatches =
                     quest->mapGroup.substr(3) == actualMap;
+            }
+
+            const std::string originalMap =
+                !quest->map.empty()
+                    ? quest->map
+                    : (quest->mapGroup.rfind("mg_", 0) == 0
+                        ? quest->mapGroup.substr(3) : std::string{});
+
+            if (!originalMap.empty()
+                && originalMap != "lobby_mapveto"
+                && !isRevivalMap(originalMap))
+            {
+                mapMatches = true;
             }
 
             if (mapMatches)
@@ -3585,8 +3639,19 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
     {
         const QuestDefinition *exact =
             m_itemSchema.GetQuestDefinition(m_operationSelectedQuestId);
-        if (exact && exact->gameMode.find("competitive") == 0)
+        if (exact
+            && (exact->gameMode.find("competitive") == 0
+                || exact->gameMode == "scrimcomp2v2"))
         {
+            auto isRevivalMap = [](std::string_view map) {
+                return map == "de_dust2" || map == "de_mirage"
+                    || map == "de_cache" || map == "de_cbble"
+                    || map == "de_overpass" || map == "de_vertigo"
+                    || map == "de_inferno" || map == "de_ancient"
+                    || map == "de_nuke" || map == "de_train"
+                    || map == "cs_insertion2";
+            };
+
             bool exactMapMatches =
                 exact->map == mapName || exact->map == "lobby_mapveto";
             if (!exactMapMatches
@@ -3595,6 +3660,20 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
                 exactMapMatches =
                     exact->mapGroup.substr(3) == mapName;
             }
+
+            const std::string originalMap =
+                !exact->map.empty()
+                    ? exact->map
+                    : (exact->mapGroup.rfind("mg_", 0) == 0
+                        ? exact->mapGroup.substr(3) : std::string{});
+
+            if (!originalMap.empty()
+                && originalMap != "lobby_mapveto"
+                && !isRevivalMap(originalMap))
+            {
+                exactMapMatches = true;
+            }
+
             if (exactMapMatches)
                 selected = exact;
         }
@@ -3605,30 +3684,45 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
         if (selected)
             break;
         const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
-        if (!quest || quest->gameMode.find("competitive") != 0)
+        if (!quest
+            || (quest->gameMode.find("competitive") != 0
+                && quest->gameMode != "scrimcomp2v2"))
         {
             continue;
         }
 
+        auto isRevivalMap = [](std::string_view map) {
+            return map == "de_dust2" || map == "de_mirage"
+                || map == "de_cache" || map == "de_cbble"
+                || map == "de_overpass" || map == "de_vertigo"
+                || map == "de_inferno" || map == "de_ancient"
+                || map == "de_nuke" || map == "de_train"
+                || map == "cs_insertion2";
+        };
+
         bool mapMatches = quest->map == mapName;
 
-        // Premier's Riptide mission uses lobby_mapveto rather than a concrete
-        // BSP. In the revival that means "any map in our curated Competitive
-        // pool" instead of trying to resurrect Valve's veto backend.
         if (quest->map == "lobby_mapveto")
+            mapMatches = true;
+
+        if (!mapMatches && quest->mapGroup.rfind("mg_", 0) == 0)
+            mapMatches = quest->mapGroup.substr(3) == mapName;
+
+        const std::string originalMap =
+            !quest->map.empty()
+                ? quest->map
+                : (quest->mapGroup.rfind("mg_", 0) == 0
+                    ? quest->mapGroup.substr(3) : std::string{});
+
+        if (!originalMap.empty()
+            && originalMap != "lobby_mapveto"
+            && !isRevivalMap(originalMap))
         {
             mapMatches = true;
         }
 
-        if (!mapMatches && quest->mapGroup.rfind("mg_", 0) == 0)
-        {
-            mapMatches = quest->mapGroup.substr(3) == mapName;
-        }
-
         if (!mapMatches)
-        {
             continue;
-        }
 
         selected = quest;
         break;
