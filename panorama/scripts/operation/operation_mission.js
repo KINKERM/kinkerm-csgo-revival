@@ -1,7 +1,6 @@
 
 'use strict';
 
-	                   
 	                             
 
 var OperationMission = ( function()
@@ -10,7 +9,6 @@ var OperationMission = ( function()
 
 	var _CreateMission = function( elContainer, oMissionDetails, isUnlocked )
 	{
-		                                                                                                                    
 
 		var elMission = null;
 
@@ -22,7 +20,6 @@ var OperationMission = ( function()
 		{
 			elMission = elContainer.FindChildInLayoutFile( oMissionDetails.missionId );
 			
-			                                                                   
 			                                                                                                               
 			if( oMissionDetails.nMissionPointsRemaining === 0 && !elMission.BHasClass( 'complete' ))
 			{
@@ -48,18 +45,12 @@ var OperationMission = ( function()
 
 	var _UpdateMissionDisplay = function( elMission, oMissionDetails, isunlocked, missionCardId = null, bHideDesc = false )
 	{
-		                                                                                                        
 		                                                                                                                                 
-		                                                                                                      
 
-		                                                                                          
 		                                                                                                                                  
-		                                                                                                       
 		                                                                                                                                                 
-		                                                                       
 		                                                                         
 
-		                            
 		var goal = MissionsAPI.GetQuestPoints( oMissionDetails.missionId, "goal" );
 		if ( !goal || goal === -1 )
 		{
@@ -126,11 +117,8 @@ var OperationMission = ( function()
 		elMission.SetHasClass( 'complete', oMissionDetails.nMissionPointsRemaining === 0 && isunlocked );
 		elMission.SetHasClass( 'hidebar', MatchStatsAPI.GetGameMode() === "cooperative" && GameStateAPI.IsLocalPlayerPlayingMatch() );
 
-		                            	                                     
 		                          		                                    
-		                 				                                  
 		                 				                                
-		                   			                              
 		                                                                                                              
 
 		MissionsAPI.ApplyQuestDialogVarsToPanelJS( Number( oMissionDetails.missionItemId ), elMission );
@@ -211,7 +199,6 @@ var OperationMission = ( function()
 			return oSegmentData.nEarned;
 		}
 
-		                                                                                                             
 		                                                            
 		var oData = oMissionDetails.missonType === 'or' ? oSubQuestData : oSegmentData;
 		var nUncommitted = oMissionDetails.missonType === 'or' ? oSubQuestData.nUncommitted : oMissionDetails.nUncommitted;
@@ -298,29 +285,20 @@ var OperationMission = ( function()
 			oMissionDetails.missionGameMode === 'survival' ));
 
 		elMission.FindChildInLayoutFile( 'id-mission-card-icon-locked' ).visible = !isunlocked;
-		var bRevivalReplayable = oMissionDetails.missionGameMode &&
-			( oMissionDetails.missionGameMode.startsWith( 'competitive' ) ||
-			  oMissionDetails.missionGameMode === 'scrimcomp2v2' );
-
 		elMission.FindChildInLayoutFile( 'id-mission-card-icon-complete' ).visible =
-			!oMissionDetails.isReplayable && !bRevivalReplayable &&
-			oMissionDetails.nMissionPointsRemaining === 0 &&
-			isunlocked;
+			!oMissionDetails.isReplayable &&
+			oMissionDetails.nMissionPointsRemaining === 0 && isunlocked;
 		elMission.FindChildInLayoutFile( 'id-mission-card-spinner' ).visble = isunlocked && currentlyPlayingMissionId === oMissionDetails.missionItemId;
 		elMission.FindChildInLayoutFile( 'id-mission-card-icon-replay' ).visible =
-			( oMissionDetails.isReplayable || bRevivalReplayable ) &&
-			oMissionDetails.nMissionPointsRemaining === 0 &&
-			isunlocked;
+			oMissionDetails.isReplayable &&
+			oMissionDetails.nMissionPointsRemaining === 0 && isunlocked;
 	};
 
 	var _EnableDisableMission = function( elMission, isunlocked, oMissionDetails)
 	{
-		var bRevivalReplayable = oMissionDetails.missionGameMode &&
-			( oMissionDetails.missionGameMode.startsWith( 'competitive' ) ||
-			  oMissionDetails.missionGameMode === 'scrimcomp2v2' );
 		elMission.enabled = isunlocked &&
-		( oMissionDetails.nMissionPointsRemaining !== 0 ||
-			oMissionDetails.isReplayable || bRevivalReplayable );
+			( oMissionDetails.nMissionPointsRemaining !== 0 ||
+			  oMissionDetails.isReplayable );
 	};
 
 	var _AddMissionActions = function( elMission, oMissionDetails, missionCardId )
@@ -380,7 +358,6 @@ var OperationMission = ( function()
 				var oSubQuest = oMissionDetails.aSubQuests[ oSegmentData.nPreviousGoal + i ];
 				nPercentComplete = oSubQuest.nPercentComplete;
 				
-				                                                                
 				nPercentCompleteUncommitted = oSubQuest.nUncommitted < oSubQuest.nGoal ? 0 : 100;
 			}
 
@@ -401,7 +378,6 @@ var OperationMission = ( function()
 			return elStar;
 		}
 
-		                                                                                                      
 		elStar.SetDialogVariableInt( 'mission_points_goal', 0 );
 		elStar.SetDialogVariableInt( 'mission_points_earned', 0 );
 		elStar.SetHasClass( 'op-mission-card__hide-count', true );
@@ -466,14 +442,12 @@ var OperationMission = ( function()
 			return;
 		}
 
-		                                                                                
 		var gameMode = InventoryAPI.GetQuestGameMode( MissionItemID );
 		if ( gameMode === 'competitive' )
 		{
 			var bModeUnlocked = MyPersonaAPI.HasPrestige() || ( MyPersonaAPI.GetCurrentLevel() >= 2 );
 			if ( !bModeUnlocked )
 			{
-				                                                      
 				                                                               
 
 				UiToolkitAPI.ShowGenericPopupOk(
