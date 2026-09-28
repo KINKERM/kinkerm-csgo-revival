@@ -71,7 +71,6 @@ var OperationMissionCard = ( function()
 			oCardDetails.operational_points = 3;
 			oCardDetails.isunlocked = true;
 			oCardDetails.idx = idx;
-			oCardDetails.displayWeek = _GetRevivalDisplayWeek( idx );
 			oCardDetails.bShowLock = false;
 			return oCardDetails;
 		}
@@ -107,7 +106,7 @@ var OperationMissionCard = ( function()
 		elMissionCard.FindChildInLayoutFile( 'id-mission-card-tag' ).SetHasClass( 'hidden', oCardDetails.idx !== OperationUtil.GetOperationInfo().nActiveCardIndex );
 		elMissionCard.SetDialogVariable( 'mission_name', $.Localize( oCardDetails.name ));
 		elMissionCard.SetDialogVariableInt( 'card_points_needed', oCardDetails.operational_points );
-		elMissionCard.SetDialogVariableInt( 'card_week', oCardDetails.displayWeek || ( oCardDetails.idx + 1 ) );
+		elMissionCard.SetDialogVariableInt( 'card_week', oCardDetails.idx + 1 );
 		_UpdateEarnedPoints( elMissionCard, oCardDetails );
 	};
 	var _BackgroundImage = function ( elMissionCard, idx )
