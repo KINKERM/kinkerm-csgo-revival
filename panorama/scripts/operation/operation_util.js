@@ -16,6 +16,29 @@ var OperationUtil = ( function () {
 	var m_aStarDefIndexes = [4763, 4764, 4765]
 	var m_passStoreId = 4758;
 	var m_nOperationSeason = 10; // Operation Riptide season_access (CommunitySeasonEleven2021 item defs)
+	var _m_revCustomMissionText = {
+		1108: 'Get 10 no-scope kills in Competitive',
+		1112: 'Get 1 headshot kill in Competitive',
+		1116: 'Get 1 rifle kill in Competitive',
+		1120: 'Get 10 grenade kills in Competitive',
+		1124: 'Get 1 knife kill in Competitive',
+		1128: 'Get 3 sniper rifle kills in Competitive',
+		1132: 'Get 10 headshot kills in Competitive',
+		1136: 'Get 1 pistol kill in Competitive',
+		1141: 'Get 1 SMG kill in Competitive',
+		1144: 'Get 10 sniper rifle kills in Competitive',
+		1148: 'Get 1 wallbang kill in Competitive',
+		1152: 'Get 3 knife kills in Competitive',
+		1156: 'Get 10 rifle kills in Competitive',
+		1160: 'Get 1 kill through smoke in Competitive',
+		1164: 'Get 1 pistol kill in Competitive',
+		1168: 'Get 1 kill while blinded in Competitive'
+	};
+	var _IsRevivalCustomMission = function( missionId )
+	{
+		return Object.prototype.hasOwnProperty.call(
+			_m_revCustomMissionText, String( Number( missionId ) ) );
+	};
 	var _ValidateOperationInfo = function( nSeasonAccess )
 	{
 		m_nSeasonAccess = nSeasonAccess;
@@ -321,7 +344,7 @@ var OperationUtil = ( function () {
 		var oMissionDetails = _UpdateMissionDetailsObject (Number( missionId ) );
 		oMissionDetails.aSegmentsData = _UpdateSegmentData( oMissionDetails );
 		var numGraphCount = MissionsAPI.GetQuestGraphCount( Number( missionId ));
-		if ( numGraphCount > 0 )
+		if ( numGraphCount > 0 && !_IsRevivalCustomMission( missionId ) )
 		{
 			oMissionDetails.aSubQuests = _UpdateSubQuestData( Number( missionId ), numGraphCount, oMissionDetails.missonType === 'checklist' );
 		}
@@ -359,17 +382,26 @@ var OperationUtil = ( function () {
 			nUncommitted: MissionsAPI.GetQuestPoints( missionId, "uncommitted" ),
 			missionGameMode: gameMode,
 			missionMapGroup: mapGroup,
-			missonType: numQuestGraphType === 1 ? 'sequential' :
-				numQuestGraphType === 2 && missionGoal > 1 ? 'checklist' :
-					numQuestGraphType === 2 && missionGoal === 1 ? 'or' :
-						numQuestGraphType === 0 ? 'single' :
-							''
+			missonType: _IsRevivalCustomMission( missionId ) ? 'single' :
+				numQuestGraphType === 1 ? 'sequential' :
+					numQuestGraphType === 2 && missionGoal > 1 ? 'checklist' :
+						numQuestGraphType === 2 && missionGoal === 1 ? 'or' :
+							numQuestGraphType === 0 ? 'single' :
+								''
 		}
 	};
 	var _SetLocalizationStringAndVarsForMission = function( elMissionPanel, nQuestID, strSchemaField )
 	{
 		MissionsAPI.ApplyQuestDialogVarsToPanelJS( nQuestID, elMissionPanel );
-		elMissionPanel.SetLocalizationString( MissionsAPI.GetQuestDefinitionField( nQuestID, strSchemaField ) );
+		if ( strSchemaField === 'loc_description' &&
+			_IsRevivalCustomMission( nQuestID ) )
+		{
+			elMissionPanel.text =
+				_m_revCustomMissionText[ String( Number( nQuestID ) ) ];
+			return;
+		}
+		elMissionPanel.SetLocalizationString(
+			MissionsAPI.GetQuestDefinitionField( nQuestID, strSchemaField ) );
 	};
 	var _UpdateSegmentData = function( oMissionDetails )
 	{
