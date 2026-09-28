@@ -223,7 +223,10 @@ public:
         uint32_t missionCardId,
         CMsgSOMultipleObjects &update);
 
-    // Revival-native mission selection bridge. Unlike the retired Valve
+    
+    bool SelectedOperationMissionUsesResultFallback() const;
+
+// Revival-native mission selection bridge. Unlike the retired Valve
     // mission service, this persists both the selected card and the exact quest
     // chosen by Panorama so matchmaking, the native HUD and the laptop server
     // all share the same mission state.
