@@ -318,6 +318,9 @@ if ((-not $SkipBuild) -and (-not $autoReuseBuild)) {
     if (-not $gcDllText.Contains("REVIVAL_PVP_MISSION_STATS_V1")) {
         throw "Built csgo_gc.dll is missing PvP kill-style Operation mission support."
     }
+    if (-not $gcDllText.Contains("REVIVAL_CUSTOM_PVP_MISSIONS_V1")) {
+        throw "Built csgo_gc.dll is missing varied custom Operation PvP missions."
+    }
     if (-not $gcDllText.Contains("REVIVAL_OPERATION_REPLAY_V1")) {
         throw "Built csgo_gc.dll is missing repeatable completed-mission reset support."
     }
