@@ -8,6 +8,22 @@ class KeyValue;
 
 using ItemMap = std::unordered_map<uint64_t, CSOEconItem>;
 
+struct OperationMissionStats
+{
+    uint32_t kills{};
+    uint32_t headshots{};
+    uint32_t noscopes{};
+    uint32_t grenadeKills{};
+    uint32_t knifeKills{};
+    uint32_t sniperKills{};
+    uint32_t rifleKills{};
+    uint32_t pistolKills{};
+    uint32_t smgKills{};
+    uint32_t shotgunKills{};
+    uint32_t heavyKills{};
+    std::unordered_map<std::string, uint32_t> weaponKills;
+};
+
 struct OperationQuestProgressState
 {
     uint32_t progress{};
@@ -197,7 +213,8 @@ public:
         std::string_view mapName,
         uint32_t roundsWon,
         bool wonMatch,
-        CMsgSOMultipleObjects &update);
+        CMsgSOMultipleObjects &update,
+        const OperationMissionStats *stats = nullptr);
 
     bool SetOperationMissionCard(uint32_t season,
         uint32_t missionCardId,
