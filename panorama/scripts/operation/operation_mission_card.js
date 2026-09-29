@@ -5,8 +5,8 @@ var OperationMissionCard = ( function()
 	var _m_missionBacklogIndex = 0;
 	var _m_missionUnlockTimerHandler = null;
 	var _m_revCustomMissionIds = [
-		1108, 1112, 1116, 1120, 1124, 1128, 1132, 1136,
-		1141, 1144, 1148, 1152, 1156, 1160, 1164, 1168
+		1104, 1110, 1114, 1118, 1122, 1126, 1130, 1134,
+		1138, 1142, 1146, 1150, 1154, 1158, 1162, 1166
 	];
 	var _IsRevivalCompetitiveMission = function( missionId )
 	{
