@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Pack,
 
-    [string]$CsgoDir = "",
+    [string]$CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy",
 
     [string]$AgentDir = "C:\CSGO-Revival-Agent",
 
@@ -21,6 +21,9 @@ function Need-Path([string]$Path, [string]$Label) {
 
 $Pack = (Resolve-Path $Pack).Path
 Need-Path $Pack "Revival pack"
+if ([string]::IsNullOrWhiteSpace($CsgoDir)) {
+    $CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy"
+}
 Need-Path $CsgoDir "CS:GO Legacy folder"
 Need-Path (Join-Path $CsgoDir "csgo") "CS:GO csgo folder"
 
@@ -32,6 +35,9 @@ Write-Host "Agent:     $AgentDir"
 Write-Host ""
 
 New-Item $AgentDir -ItemType Directory -Force | Out-Null
+
+$agentConfig = Join-Path $AgentDir "server_agent.json"
+Need-Path $agentConfig "server_agent.json"
 
 # Keep the GSLT/admin helpers current.
 $setGslt = Join-Path $AgentDir "SET_GSLT.ps1"
@@ -338,17 +344,23 @@ foreach ($path in @(
     (Join-Path $CsgoDir "csgo\\scripts\\items\\items_game.txt"),
     (Join-Path $AgentDir "agent.py"),
     (Join-Path $AgentDir "start-agent.bat"),
-    (Join-Path $AgentDir "SET_ADMIN.ps1"),
-    (Join-Path $AgentDir "INSTALL_ADMIN_MODERATION.ps1"),
-    (Join-Path $AgentDir "revival_admin.sp"),
-    (Join-Path $CsgoDir "addons\metamod.vdf"),
-    (Join-Path $CsgoDir "addons\sourcemod\plugins\revival_admin.smx"),
-    (Join-Path $CsgoDir "addons\sourcemod\configs\admins_simple.ini"),
     $agentConfig
 )) {
     Need-Path $path "Required laptop file"
 }
 
+if ($adminConfigured -or $RequireAdminRuntime) {
+    foreach ($path in @(
+        (Join-Path $AgentDir "SET_ADMIN.ps1"),
+        (Join-Path $AgentDir "INSTALL_ADMIN_MODERATION.ps1"),
+        (Join-Path $AgentDir "revival_admin.sp"),
+        (Join-Path $CsgoDir "addons\\metamod.vdf"),
+        (Join-Path $CsgoDir "addons\\sourcemod\\plugins\\revival_admin.smx"),
+        (Join-Path $CsgoDir "addons\\sourcemod\\configs\\admins_simple.ini")
+    )) {
+        Need-Path $path "Required admin runtime file"
+    }
+}
 Write-Host ""
 $installedGc = Join-Path $CsgoDir "csgo_gc\csgo_gc.dll"
 $installedGcText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($installedGc))
@@ -459,13 +471,13 @@ if (-not $agentText.Contains('"-tournament", "revival"')) {
 if (-not $agentText.Contains('"-tournament_extra_casters_slots", "10"')) {
     throw "Downloaded laptop agent is missing ten extra queued reservation slots."
 }
-Write-Host "    Verified current V52 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
+Write-Host "    Verified V53 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
 if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V53")) {
     throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V53"
 }
-Write-Host "    Verified V52 laptop agent + admin moderation runtime." -ForegroundColor Green
+Write-Host "    Verified V53 laptop agent + admin moderation runtime." -ForegroundColor Green
 
 Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
 Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
