@@ -1326,6 +1326,10 @@ var Scoreboard = ( function()
 
 					elNameLabel.SetDialogVariable( 'player_name', MockAdapter.GetPlayerName( oPlayer.m_xuid ) );
 
+					var revivalIsAdmin = MockAdapter.GetPlayerClanTag( oPlayer.m_xuid ) === "[ADMIN]";
+					oPlayer.m_elPlayer.SetHasClass( "sb-row--revival-admin", revivalIsAdmin );
+					elNameLabel.SetHasClass( "revival-admin-name", revivalIsAdmin );
+
 					if ( MockAdapter.GetPlayerClanTag( oPlayer.m_xuid ) != "" )
 					{
 						elNameLabel.SetDialogVariable( 'player_clan', MockAdapter.GetPlayerClanTag( oPlayer.m_xuid ) );
