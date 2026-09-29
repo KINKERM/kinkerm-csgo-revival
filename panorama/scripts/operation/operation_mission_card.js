@@ -11,6 +11,13 @@ var OperationMissionCard = ( function()
 	var _IsRevivalCompetitiveMission = function( missionId )
 	{
 		var details = OperationUtil.GetMissionDetails( missionId );
+		// Revival's custom PvP missions intentionally reuse Riptide quest ids
+		// whose original queue may be Deathmatch/Casual/etc. They still belong
+		// on the shared Revival Competitive mission cards.
+		if ( _m_revCustomMissionIds.indexOf( Number( missionId ) ) !== -1 )
+		{
+			return true;
+		}
 		if ( !details || !details.missionGameMode )
 		{
 			return false;
