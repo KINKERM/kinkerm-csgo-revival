@@ -3307,8 +3307,14 @@ bool Inventory::SetOperationMissionSelection(
     // total completed counter, but an explicit click on a finished mission
     // starts a fresh run of that quest and its QQ graph children.
     auto existingProgress = m_operationQuestProgress.find(questId);
+    const RevivalCustomMissionKind replayKind =
+        RevivalCustomMissionFor(questId);
+    const uint32_t replayGoal = replayKind != RevivalCustomMissionKind::None
+        ? RevivalCustomMissionGoal(replayKind)
+        : quest->Goal();
     if (existingProgress != m_operationQuestProgress.end()
-        && existingProgress->second.progress >= quest->Goal())
+        && replayGoal > 0
+        && existingProgress->second.progress >= replayGoal)
     {
         existingProgress->second = {};
         for (uint32_t childId : m_itemSchema.QuestGraphChildren(questId))
