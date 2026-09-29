@@ -68,6 +68,18 @@ var OperationMissionCard = ( function()
 	var _GetMissionCardDetails = function( idx )
 	{
 		var oCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( OperationUtil.GetOperationInfo().nSeasonAccess, idx );
+		if ( !oCardDetails && idx >= 0 && idx < _m_revCustomMissionIds.length )
+		{
+			// Revival exposes all 16 PvP weeks permanently; do not let the
+			// stock weekly-backlog state hide a card after it has been completed.
+			oCardDetails = {
+				id: 9000 + idx,
+				name: 'Week ' + (idx + 1),
+				quests: [ _m_revCustomMissionIds[ idx ] ],
+				operational_points: 3,
+				isunlocked: true
+			};
+		}
 		if ( oCardDetails )
 		{
 			// Guarantee one revival-specific PvP objective on every one of the
