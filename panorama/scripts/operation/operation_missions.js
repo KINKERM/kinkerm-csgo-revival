@@ -15,8 +15,10 @@ var OperationMissions = ( function()
     
     var _MakeMissionCards = function( nSeasonAccess )
     {
-        var numMissionCards = MissionsAPI.GetSeasonalOperationMissionCardsCount( nSeasonAccess );
-                                                                      
+        var numMissionCards = Math.max(
+            MissionsAPI.GetSeasonalOperationMissionCardsCount( nSeasonAccess ),
+            16
+        );
         for ( var i = 0; i < numMissionCards; ++ i )
         {
             OperationMissionCard.UpdateMissionCard( i, m_missionsList );
