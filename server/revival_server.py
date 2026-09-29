@@ -254,9 +254,12 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
             steamid = path[len("/client/bootstrap/"):]
             if not steamid.isdigit():
                 return self._send_json(400, {"error": "invalid steamid"})
+            ban = self.matchmaking.moderation_entry(steamid)
             return self._send_json(200, {
                 "sync_token": self._client_sync_token(steamid),
                 "data_epoch": int(self.config_ref.get("data_epoch", 1) or 1),
+                "vac_banned": bool(ban),
+                "ban_reason": str(ban.get("reason") or "") if ban else "",
             })
 
         if path == "/admin":
@@ -293,6 +296,11 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
             if not self._authed():
                 return self._send_text(401, "unauthorized")
             return self._send_json(200, {"players": self.store.list_players()})
+
+        if path == "/admin/bans":
+            if not self._authed():
+                return self._send_text(401, "unauthorized")
+            return self._send_json(200, self.matchmaking.moderation_snapshot())
 
         if path.startswith("/admin/player/"):
             if not self._authed():
@@ -436,6 +444,25 @@ onsubmit="return confirm('Reset ALL revival player data? A backup will be kept o
             return self._send_text(404, "not found")
         if not self._authed():
             return self._send_text(401, "unauthorized")
+
+        if path == "/admin/ban":
+            body = self._read_json_body()
+            steamid = str(body.get("steamid", "")).strip()
+            if not steamid.isdigit():
+                return self._send_json(400, {"error": "valid SteamID64 required"})
+            result = self.matchmaking.block_account(
+                steamid,
+                reason=str(body.get("reason") or "VAC banned from secure server"),
+                source=str(body.get("source") or "admin"),
+            )
+            return self._send_json(200 if result.get("ok") else 400, result)
+
+        if path == "/admin/unban":
+            body = self._read_json_body()
+            steamid = str(body.get("steamid", "")).strip()
+            if not steamid.isdigit():
+                return self._send_json(400, {"error": "valid SteamID64 required"})
+            return self._send_json(200, self.matchmaking.unblock_account(steamid))
 
         body = self._read_json_body()
         steamid = str(body.get("steamid", "")).strip()
