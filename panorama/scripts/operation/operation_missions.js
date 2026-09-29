@@ -38,7 +38,9 @@ var OperationMissions = ( function()
                 return null;
             }
 
-            var jsoCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( nSeasonAccess, activeCardIndx );
+            var jsoCardDetails = OperationMissionCard.GetMissionCardDetails( activeCardIndx );
+            if ( !jsoCardDetails )
+                return null;
             var elMissionCard = elParent.FindChildInLayoutFile( OperationMissionCard.MissionCardPrefix + jsoCardDetails.id );
             if ( elMissionCard )
             {
