@@ -2,9 +2,11 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Pack,
 
-    [string]$CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy",
+    [string]$CsgoDir = "",
 
-    [string]$AgentDir = "C:\CSGO-Revival-Agent"
+    [string]$AgentDir = "C:\CSGO-Revival-Agent",
+
+    [switch]$RequireAdminRuntime
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +20,29 @@ function Need-Path([string]$Path, [string]$Label) {
 }
 
 $Pack = (Resolve-Path $Pack).Path
+
+# The laptop's server_agent.json is the authoritative CS:GO path. Do not make
+# the user reconfigure the updater every time Steam is installed somewhere
+# other than the old default path.
+$agentConfig = Join-Path $AgentDir "server_agent.json"
+if (-not (Test-Path $agentConfig)) {
+    throw "server_agent.json is missing from $AgentDir. This updater is for an already-configured laptop."
+}
+
+$agentConfigJson = Get-Content $agentConfig -Raw | ConvertFrom-Json
+if ([string]::IsNullOrWhiteSpace($CsgoDir)) {
+    if ($agentConfigJson.csgo_dir) {
+        $CsgoDir = [string]$agentConfigJson.csgo_dir
+    } else {
+        $CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy"
+    }
+}
+
+# Be tolerant of callers that pass JSON-style escaped Windows paths
+# (C:\Program Files\...) to PowerShell. Windows paths only need one slash.
+$CsgoDir = $CsgoDir.Replace("\\", "\")
+$CsgoDir = [IO.Path]::GetFullPath($CsgoDir)
+
 Need-Path $Pack "Revival pack"
 Need-Path $CsgoDir "CS:GO Legacy folder"
 Need-Path (Join-Path $CsgoDir "csgo") "CS:GO csgo folder"
@@ -38,11 +63,6 @@ $setAdmin = Join-Path $AgentDir "SET_ADMIN.ps1"
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/SET_ADMIN.ps1" -OutFile $setAdmin -UseBasicParsing
 
 # Preserve the laptop's existing backend URL / Playit endpoint / game path.
-$agentConfig = Join-Path $AgentDir "server_agent.json"
-if (-not (Test-Path $agentConfig)) {
-    throw "server_agent.json is missing from $AgentDir. This updater is for an already-configured laptop."
-}
-
 # Existing installs created before the native Accept flow used 90 seconds.
 # Keep user settings, but never let the pre-join reservation die before the
 # stock ready/accept/connect sequence has time to finish.
@@ -287,35 +307,187 @@ Write-Host "[3/4] Updating laptop agent files..." -ForegroundColor Yellow
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/agent.py" -OutFile (Join-Path $AgentDir "agent.py") -UseBasicParsing
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/start-agent.bat" -OutFile (Join-Path $AgentDir "start-agent.bat") -UseBasicParsing
 
-Write-Host "[4/5] Installing/refreshing server admin moderation runtime..." -ForegroundColor Yellow
+Write-Host "[4/5] Refreshing optional server admin moderation runtime..." -ForegroundColor Yellow
 $adminInstaller = Join-Path $AgentDir "INSTALL_ADMIN_MODERATION.ps1"
 $adminPlugin = Join-Path $AgentDir "revival_admin.sp"
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/INSTALL_ADMIN_MODERATION.ps1" -OutFile $adminInstaller -UseBasicParsing
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/revival_admin.sp" -OutFile $adminPlugin -UseBasicParsing
 
-# The installer is a separate PowerShell process, so its non-zero exit code
-# does not automatically become a terminating error in this updater.
-# Capture it explicitly; otherwise a failed MetaMod download/install falls
-# through to [5/5] and is misleadingly reported as "metamod.vdf missing".
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $adminInstaller -CsgoDir $CsgoDir
-$adminExit = $LASTEXITCODE
-if ($adminExit -ne 0) {
-    throw "INSTALL_ADMIN_MODERATION.ps1 failed with exit code $adminExit. MetaMod/SourceMod was not installed."
+# Admin/MetaMod is NOT a prerequisite for matchmaking. A clean laptop must be
+# able to update the GC/agent even when MetaMod has been removed or the admin
+# SteamID list has never been configured. If admin_steamids are configured,
+# install the moderation runtime automatically; otherwise leave it untouched.
+$adminConfigured = @($agentConfigJson.admin_steamids | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^[0-9]{17}
+foreach ($path in @(
+    (Join-Path $CsgoDir "srcds.exe"),
+    (Join-Path $CsgoDir "csgo_gc\\csgo_gc.dll"),
+    (Join-Path $CsgoDir "csgo_gc\\config.txt"),
+    (Join-Path $CsgoDir "csgo\\scripts\\items\\items_game.txt"),
+    (Join-Path $AgentDir "agent.py"),
+    (Join-Path $AgentDir "start-agent.bat"),
+    (Join-Path $AgentDir "SET_ADMIN.ps1"),
+    (Join-Path $AgentDir "INSTALL_ADMIN_MODERATION.ps1"),
+    (Join-Path $AgentDir "revival_admin.sp"),
+    $agentConfig
+)) {
+    Need-Path $path "Required laptop file"
 }
 
-# Self-heal the common case where the admin runtime was partially removed
-# (for example by a security product) after the installer completed.
-$metaModVdf = Join-Path $CsgoDir "addons\metamod.vdf"
-if (-not (Test-Path $metaModVdf)) {
-    Write-Host "    MetaMod VDF still missing; retrying admin runtime installation once..." -ForegroundColor Yellow
+if ($RequireAdminRuntime) {
+    foreach ($path in @(
+        (Join-Path $CsgoDir "addons\metamod.vdf"),
+        (Join-Path $CsgoDir "addons\sourcemod\plugins\revival_admin.smx"),
+        (Join-Path $CsgoDir "addons\sourcemod\configs\admins_simple.ini")
+    )) {
+        Need-Path $path "Required admin runtime file"
+    }
+}
+
+Write-Host ""
+$installedGc = Join-Path $CsgoDir "csgo_gc\csgo_gc.dll"
+$installedGcText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($installedGc))
+foreach ($marker in @(
+    "REVIVAL_MM_BRIDGE_CLEAN_V1",
+    "REVIVAL_SERVER_RESERVATION_RETRY_V4",
+    "REVIVAL_SERVER_GC_OFFLINE_DELIVERY_V1",
+    "REVIVAL_SERVER_ID_EXPORT_V1",
+    "REVIVAL_CLIENT_COOKIE_RESERVE_V3",
+    "REVIVAL_CLIENT_DIRECT_UDP_V1",
+    "REVIVAL_CLIENT_READY_FLOW_V1",
+    "REVIVAL_CLIENT_ACCEPT_WATCH_V1",
+    "REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2",
+    "REVIVAL_SERVER_ACCEPT_ROSTER_V1",
+    "REVIVAL_ENGINE_QUEUE_RESERVE_V1",
+    "REVIVAL_SERVER_LOCAL_SOCACHE_V1",
+    "REVIVAL_SERVER_LOCAL_SOCACHE_AUTH_V1",
+    "REVIVAL_SERVER_PLAYER_AUTH_V1",
+    "REVIVAL_SERVER_REWARD_BRIDGE_V1",
+    "REVIVAL_REWARD_SPOOL_QUEUE_V1",
+    "REVIVAL_CLIENT_REWARD_BRIDGE_V1",
+    "REVIVAL_GUARANTEED_MATCH_DROPS_V1",
+    "REVIVAL_RANDOMIZED_LEGACY_DROPS_V2",
+    "REVIVAL_REPEATABLE_MISSIONS_V5",
+    "REVIVAL_PVP_MISSION_STATS_V1",
+    "REVIVAL_CUSTOM_PVP_MISSIONS_V1",
+    "REVIVAL_OPERATION_REPLAY_V1",
+    "REVIVAL_NATIVE_ACTIVE_QUEST_V1",
+    "REVIVAL_OPERATION_SELECTION_BRIDGE_V2",
+    "REVIVAL_OPERATION_SCHEMA_V2",
+    "REVIVAL_OPERATION_CARD_PARSE_V3",
+    "REVIVAL_OPERATION_PROGRESS_CACHE_V1",
+    "REVIVAL_LIVE_OPERATION_ROUNDS_V1",
+    "REVIVAL_LIVE_OPERATION_FINAL_V1",
+    "REVIVAL_OPERATION_END_AUTHORITY_V1",
+    "REVIVAL_LIVE_OPERATION_NO_REASSERT_V1",
+    "REVIVAL_OPERATION_COMPLETION_PERSIST_V1",
+    "REVIVAL_STORAGE_UNITS_V1",
+    "REVIVAL_EARNED_DROPS_ONLY_V1",
+    "REVIVAL_KEYLESS_CASES_V1",
+    "REVIVAL_OPERATION_SUMMARY_REPAIR_V1",
+    "REVIVAL_SYNTHETIC_MATCH_END_V1",
+    "REVIVAL_NATIVE_DROP_REVEAL_V1",
+    "REVIVAL_NATIVE_ENDMATCH_UI_V1",
+    "REVIVAL_PROGRESS_BUNDLE_V2",
+    "REVIVAL_SERVER_ITEM_AUTHORITY_V1",
+    "REVIVAL_SERVER_DROP_IMPORT_V2",
+    "REVIVAL_NATIVE_RANK_STATE_V2",
+    "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V3",
+    "REVIVAL_CLIENT_USERMESSAGE_UI_V1",
+    "REVIVAL_NATIVE_ENDMATCH_CLIENT_UI_V1",
+    "REVIVAL_NATIVE_DROP_CRASH_GUARD_V1",
+    "REVIVAL_NATIVE_DROP_TIMING_V3",
+    "REVIVAL_NATIVE_DROP_BUNDLE_V1",
+    "REVIVAL_SERVER_DROP_IMPORT_V1",
+    "REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1",
+    "REVIVAL_JOIN_IN_PROGRESS_G_V1",
+    "REVIVAL_Q_SLOT_PAD_V1"
+)) {
+    if (-not $installedGcText.Contains($marker)) {
+        throw "Installed laptop csgo_gc.dll is stale; missing marker $marker"
+    }
+}
+Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
+
+$agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V53")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V53"
+}
+if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
+    throw "Downloaded laptop agent is missing Competitive teamkill punishment."
+}
+if (-not $agentText.Contains("REVIVAL_ADMIN_RESET_V1")) {
+    throw "Downloaded laptop agent is missing admin major-reset handling."
+}
+if (-not $agentText.Contains("sv_allowdownload 1")) {
+    throw "Downloaded laptop agent is missing Insertion II NAV download support."
+}
+if (-not $agentText.Contains("drop-in player(s) staged for live match")) {
+    throw "Downloaded laptop agent is missing native-ack live late-join reservation handling."
+}
+if (-not $agentText.Contains("REVIVAL_SERVER_UNBOX_CHAT_RELAY_V1 queued")) {
+    throw "Downloaded laptop agent is missing native unbox chat relay handling."
+}
+if (-not $agentText.Contains("REVIVAL_LATEJOIN_PENDING_ROSTER_V1 reservation refreshed")) {
+    throw "Downloaded laptop agent is missing exact engine ready-up roster reporting."
+}
+if (-not $agentText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1 match")) {
+    throw "Downloaded laptop agent is missing Q-to-G live-match reservation switching."
+}
+if (-not $agentText.Contains("REVIVAL_Q_SLOT_PAD_V1 tournament extra-slot mode active")) {
+    throw "Downloaded laptop agent is missing ten-human-slot queued reservation support."
+}
+if (-not $agentText.Contains("REVIVAL_NATIVE_VAC_BAN_V1 persisted")) {
+    throw "Downloaded laptop agent is missing global VAC-ban enforcement."
+}
+if (-not $agentText.Contains("REVIVAL_GSLT_HOT_RELOAD_V1")) {
+    throw "Downloaded laptop agent is missing per-match GSLT hot reload."
+}
+if (-not $agentText.Contains("REVIVAL_PVP_MISSION_STATS_V1") -or -not $agentText.Contains("player_kill_stats")) {
+    throw "Downloaded laptop agent is missing Riptide PvP mission kill-stat tracking."
+}
+if (-not $agentText.Contains('"-tournament", "revival"')) {
+    throw "Downloaded laptop agent is missing Source tournament slot-padding mode."
+}
+if (-not $agentText.Contains('"-tournament_extra_casters_slots", "10"')) {
+    throw "Downloaded laptop agent is missing ten extra queued reservation slots."
+}
+Write-Host "    Verified current V52 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
+
+$agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V53")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V53"
+}
+Write-Host "    Verified V52 laptop agent + admin moderation runtime." -ForegroundColor Green
+
+Write-Host "REVIVAL_SERVER_LAUNCHER_PRESERVE_V1: existing srcds.exe preserved." -ForegroundColor DarkGray
+Write-Host "LAPTOP UPDATE COMPLETE" -ForegroundColor Green
+Write-Host "Your existing server_agent.json and Playit configuration were preserved."
+Write-Host ""
+Write-Host "Start Playit if it is not already running, then run:"
+Write-Host ("  cd `"" + $AgentDir + "`"")
+Write-Host "  .\\start-agent.bat"
+Write-Host ""
+ }).Count -gt 0
+$adminRuntimeReady = (Test-Path (Join-Path $CsgoDir "addons\metamod.vdf")) -and
+    (Test-Path (Join-Path $CsgoDir "addons\sourcemod\plugins\revival_admin.smx"))
+
+if ($adminConfigured -or $RequireAdminRuntime) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $adminInstaller -CsgoDir $CsgoDir
-    $adminRetryExit = $LASTEXITCODE
-    if ($adminRetryExit -ne 0) {
-        throw "INSTALL_ADMIN_MODERATION.ps1 retry failed with exit code $adminRetryExit."
+    $adminExit = $LASTEXITCODE
+    if ($adminExit -ne 0) {
+        if ($RequireAdminRuntime) {
+            throw "INSTALL_ADMIN_MODERATION.ps1 failed with exit code $adminExit."
+        }
+        Write-Host "    WARNING: admin runtime install failed (exit $adminExit); matchmaking update will continue." -ForegroundColor Yellow
     }
-    if (-not (Test-Path $metaModVdf)) {
-        throw "MetaMod installation completed without addons\metamod.vdf. Check Windows Security/quarantine history."
-    }
+    $adminRuntimeReady = (Test-Path (Join-Path $CsgoDir "addons\metamod.vdf")) -and
+        (Test-Path (Join-Path $CsgoDir "addons\sourcemod\plugins\revival_admin.smx"))
+}
+
+if ($adminRuntimeReady) {
+    Write-Host "    MetaMod/SourceMod admin runtime: ready." -ForegroundColor Green
+} else {
+    Write-Host "    MetaMod/SourceMod admin runtime: skipped/not configured. This does NOT block matchmaking." -ForegroundColor DarkGray
 }
 
 Write-Host "[5/5] Validating..." -ForegroundColor Yellow
