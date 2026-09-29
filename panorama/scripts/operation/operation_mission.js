@@ -51,7 +51,8 @@ var OperationMission = ( function()
 		                                                                                                                                                 
 		                                                                         
 
-		var goal = MissionsAPI.GetQuestPoints( oMissionDetails.missionId, "goal" );
+		var goal = OperationUtil.GetRevivalCustomMissionGoal( oMissionDetails.missionId ) ||
+			MissionsAPI.GetQuestPoints( oMissionDetails.missionId, "goal" );
 		if ( !goal || goal === -1 )
 		{
 			return;
