@@ -24,6 +24,9 @@ enum class RevivalCustomMissionKind
     Wallbang,
     ThroughSmoke,
     Blind,
+    Kills,
+    Shotgun,
+    Heavy,
 };
 
 static RevivalCustomMissionKind RevivalCustomMissionFor(uint32_t questId)
@@ -67,6 +70,9 @@ static uint32_t RevivalCustomMissionValue(
     case RevivalCustomMissionKind::Wallbang: return stats.wallbangKills;
     case RevivalCustomMissionKind::ThroughSmoke: return stats.throughSmokeKills;
     case RevivalCustomMissionKind::Blind: return stats.blindKills;
+    case RevivalCustomMissionKind::Kills: return stats.kills;
+    case RevivalCustomMissionKind::Shotgun: return stats.shotgunKills;
+    case RevivalCustomMissionKind::Heavy: return stats.heavyKills;
     default: return 0;
     }
 }
