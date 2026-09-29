@@ -130,6 +130,12 @@ try {
     $itemsDest = Join-Path $CsgoDir "csgo\\scripts\\items"
     New-Item $itemsDest -ItemType Directory -Force | Out-Null
     Copy-Item (Join-Path $temp "csgo\\scripts\\items\\items_game.txt") (Join-Path $itemsDest "items_game.txt") -Force
+
+    $itemsGameText = Get-Content (Join-Path $itemsDest "items_game.txt") -Raw
+    if ($itemsGameText -notmatch "REVIVAL_CUSTOM_PVP_MISSIONS_SCHEMA_V1") {
+        throw "Pack contains an unpatched items_game.txt; rebuild the pack from the current operation-revival-finish branch."
+    }
+    Write-Host "    Verified custom 16-week mission schema." -ForegroundColor Green
 }
 finally {
     Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
