@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Normalize the caller-provided Windows path before using it for Test-Path/Join-Path.
+$CsgoDir = [IO.Path]::GetFullPath($CsgoDir)
+
 if (-not (Test-Path (Join-Path $CsgoDir "csgo"))) {
     throw "CS:GO Legacy folder not found: $CsgoDir"
 }
@@ -37,6 +40,26 @@ try {
     Write-Host "[3/5] Installing server extensions..." -ForegroundColor Yellow
     Copy-Item (Join-Path $mmDir "*") $CsgoDir -Recurse -Force
     Copy-Item (Join-Path $smDir "*") $CsgoDir -Recurse -Force
+
+    # MetaMod's Windows package normally supplies addons\\metamod.vdf.
+    # If a security product or an incomplete extraction removed only the VDF,
+    # restore the standard loader file as long as the actual MetaMod DLL exists.
+    $metaVdf = Join-Path $CsgoDir "addons\metamod.vdf"
+    $metaDll = Join-Path $CsgoDir "addons\metamod\bin\server.dll"
+    if (-not (Test-Path $metaVdf)) {
+        if (-not (Test-Path $metaDll)) {
+            throw "MetaMod installation is incomplete: neither addons\\metamod.vdf nor addons\\metamod\\bin\\server.dll exists."
+        }
+        $metaAddons = Split-Path $metaVdf -Parent
+        New-Item $metaAddons -ItemType Directory -Force | Out-Null
+        @'
+"Plugin"
+{
+	"file"	"addons/metamod/bin/server"
+}
+'@ | Set-Content $metaVdf -Encoding ASCII -NoNewline
+        Write-Host "    Restored missing MetaMod loader: $metaVdf" -ForegroundColor Green
+    }
 
     $sm = Join-Path $CsgoDir "addons\sourcemod"
     $adminFile = Join-Path $sm "configs\admins_simple.ini"
