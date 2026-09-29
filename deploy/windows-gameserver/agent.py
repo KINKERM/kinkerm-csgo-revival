@@ -64,8 +64,6 @@ STEAM2_RE = re.compile(r'STEAM_[0-5]:(\d):(\d+)', re.I)
 STEAM3_RE = re.compile(r'\[U:1:(\d+)\]', re.I)
 STEAM64_RE = re.compile(r'\b(7656119\d{10})\b')
 PLAYER_TEAM_RE = re.compile(r'<(CT|TERRORIST)>', re.I)
-PLAYER_CHAT_RE = re.compile(r'"[^"]*<([0-9]+)><([^>]+)><([^>]*)>" say "([^"]*)"', re.I)
-PLAYER_LOG_RE = re.compile(r'"[^"]*<([0-9]+)><([^>]+)><([^>]*)>"', re.I)
 
 GRENADE_KILL_WEAPONS = {"hegrenade", "inferno", "molotov", "incgrenade"}
 SNIPER_WEAPONS = {"awp", "ssg08", "scar20", "g3sg1"}
@@ -146,7 +144,6 @@ def load_config() -> dict:
     cfg.setdefault("accept_timeout_seconds", 300)
     cfg["accept_timeout_seconds"] = max(300.0, float(cfg.get("accept_timeout_seconds", 300)))
     cfg.setdefault("post_match_grace_seconds", 60)
-    cfg.setdefault("admin_steamids", [])
     cfg["post_match_grace_seconds"] = max(
         60.0, float(cfg.get("post_match_grace_seconds", 60))
     )
@@ -741,11 +738,6 @@ class ServerSlot:
         self._lock = threading.RLock()
         self._ended = False
         self.rcon_password = secrets.token_hex(16)
-        self.admin_account_ids: set[int] = {
-            account_id_from_steamid64(str(x))
-            for x in self.cfg.get("admin_steamids", [])
-            if str(x).strip().isdigit()
-        }
         self.log_started_at = 0.0
         self.log_files_before: set[str] = set()
         self.assignment_missing_since = 0.0
@@ -1025,27 +1017,6 @@ class ServerSlot:
         else:
             print("[agent] srcds exited before matchmaking became ready")
 
-    def _persist_restricted_accounts(self) -> None:
-        tmp = self.restricted_path + ".tmp"
-        try:
-            with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-                json.dump(sorted(self.restricted_accounts), fh)
-                fh.write("\n")
-            os.replace(tmp, self.restricted_path)
-        except OSError as exc:
-            print(f"[agent] restriction persistence failed: {exc}")
-
-    def _kick_log_userid(self, userid: int, reason: str) -> None:
-        if not userid:
-            return
-        try:
-            send_local_rcon(
-                self.cfg["local_port"], self.rcon_password,
-                f'kickid {userid} "{reason}"'
-            )
-        except Exception as exc:
-            print(f"[agent] moderation kick failed: {exc}")
-
     def _handle_server_log_line(self, line: str) -> None:
         line = line.rstrip()
         if not line:
@@ -1065,31 +1036,6 @@ class ServerSlot:
             with self._lock:
                 if not self.source_match_started_at:
                     self.source_match_started_at = time.monotonic()
-
-        chat_match = PLAYER_CHAT_RE.search(line)
-        if chat_match:
-            chat_account = account_id_from_text(line)
-            chat_text = chat_match.group(4).strip()
-            if chat_account in self.admin_account_ids and chat_text.lower().startswith("!admin "):
-                parts = chat_text[7:].strip().split()
-                action = parts[0].lower() if parts else ""
-                try:
-                    if action == "gravity" and len(parts) == 2 and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", parts[1]):
-                        send_local_rcon(self.cfg["local_port"], self.rcon_password, f"sv_gravity {parts[1]}")
-                    elif action == "restart":
-                        send_local_rcon(self.cfg["local_port"], self.rcon_password, "mp_restartgame 1")
-                    elif action == "kick" and len(parts) == 2 and parts[1].isdigit():
-                        send_local_rcon(self.cfg["local_port"], self.rcon_password, f'kickid {parts[1]} "server admin"')
-                    elif action == "map" and len(parts) == 2 and parts[1] in set(installed_maps(self.cfg["csgo_dir"])):
-                        send_local_rcon(self.cfg["local_port"], self.rcon_password, f"changelevel {parts[1]}")
-                    elif action == "ban_gun":
-                        self.admin_ban_gun_accounts.add(chat_account)
-                        send_local_rcon(self.cfg["local_port"], self.rcon_password, "say [ADMIN] moderation tool armed")
-                    elif action == "ban_gun_off":
-                        self.admin_ban_gun_accounts.discard(chat_account)
-                        send_local_rcon(self.cfg["local_port"], self.rcon_password, "say [ADMIN] moderation tool disarmed")
-                except Exception as exc:
-                    print(f"[agent] admin command failed: {exc}")
 
         # Track authoritative PvP mission kill stats from Source logs.
         if ' killed "' in line and ' with "' in line:
@@ -1111,25 +1057,6 @@ class ServerSlot:
             if attacker_id and weapon_match and not duplicate_kill_line:
                 weapon = weapon_match.group(1).lower().removeprefix("weapon_")
                 modifiers = weapon_match.group(2).lower()
-                victim_id = 0
-                victim_userid = 0
-                try:
-                    victim_text = line.split(' killed "', 1)[1].split('" with "', 1)[0]
-                    victim_match = PLAYER_LOG_RE.search('"' + victim_text + '"')
-                    if victim_match:
-                        victim_userid = int(victim_match.group(1))
-                        victim_id = account_id_from_text(victim_match.group(2))
-                except (IndexError, ValueError):
-                    pass
-                if (
-                    attacker_id in self.admin_ban_gun_accounts
-                    and weapon == "glock"
-                    and victim_id
-                    and victim_id != attacker_id
-                ):
-                    self.restricted_accounts.add(victim_id)
-                    self._persist_restricted_accounts()
-                    self._kick_log_userid(victim_userid, "VAC banned from secure server")
                 with self._lock:
                     if (not self.expected_account_ids
                             or attacker_id in self.expected_account_ids):
@@ -1253,11 +1180,7 @@ class ServerSlot:
             # 10-30 seconds. Start Competitive only at Source's authoritative
             # entered-game event.
             if "entered the game" in line.lower():
-                if seen_account_id in self.restricted_accounts:
-                    m = PLAYER_LOG_RE.search(line)
-                    self._kick_log_userid(int(m.group(1)) if m else 0, "VAC banned from secure server")
-                else:
-                    self._player_entered(seen_account_id)
+                self._player_entered(seen_account_id)
 
         if any(p.search(line) for p in GAME_OVER_PATTERNS):
             with self._lock:
