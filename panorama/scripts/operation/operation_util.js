@@ -28,26 +28,22 @@ var OperationUtil = ( function () {
 		1141: 'Get 1 SMG kill in Competitive',
 		1144: 'Get 10 sniper rifle kills in Competitive',
 		1148: 'Get 1 wallbang kill in Competitive',
-		1152: 'Get 3 knife kills in Competitive',
-		1156: 'Get 10 rifle kills in Competitive',
+		1152: 'Get 3 kills while blinded in Competitive',
+		1156: 'Get 10 kills in Competitive',
 		1160: 'Get 1 kill through smoke in Competitive',
-		1164: 'Get 1 pistol kill in Competitive',
-		1168: 'Get 1 kill while blinded in Competitive'
+		1164: 'Get 1 shotgun kill in Competitive',
+		1168: 'Get 1 heavy weapon kill in Competitive'
 	};
 	var _IsRevivalCustomMission = function( missionId )
 	{
-		return Object.prototype.hasOwnProperty.call(
-			_m_revCustomMissionText, String( Number( missionId ) ) );
+		return _m_revCustomMissionText[ Number( missionId ) ] !== undefined;
 	};
 	var _ValidateOperationInfo = function( nSeasonAccess )
 	{
 		m_nSeasonAccess = nSeasonAccess;
 		if ( nSeasonAccess < 0 || nSeasonAccess === null || nSeasonAccess === undefined )
 			return false;
-		// The owned Operation coin is the authoritative spendable-star wallet.
-		// Walk all four Riptide coin ranks because mission progression upgrades the
-		// coin definition while preserving the same wallet attribute.
-		var stars = 0;
+			var stars = 0;
 		var bOwnsCoin = false;
 		var coinRank = 0;
 		for ( var c = 0; c < m_aCoinDefIndexes.length; c++ )
@@ -73,10 +69,7 @@ var OperationUtil = ( function () {
 		m_nRedeemableGoodsCount = m_rewardSchema.length;
 		m_bPrime = true;
 		m_bPremiumUser = bOwnsCoin;
-		// The revival GC now publishes the real SeasonalOperations SO (type 41).
-		// Keep the coin scan as a fallback for old inventories, but use the SO for
-		// non-spendable mission progress and active-card state.
-		m_numTierUnlocked = 0;
+			m_numTierUnlocked = 0;
 		m_numMissionsCompleted = 0;
 		m_nActiveCardIndex = -1;
 		try
