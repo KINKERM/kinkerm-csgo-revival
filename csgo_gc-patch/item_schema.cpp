@@ -1380,6 +1380,27 @@ void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, u
         }
 
         const size_t cardIndex = m_operationMissionCards.size();
+
+        // The revival provides one custom Competitive objective per Riptide
+        // week. If a retired client schema omitted that quest from a card,
+        // attach it server-side so replay/selection still resolves to the
+        // correct weekly card.
+        static const uint32_t revivalCustomQuestIds[] = {
+            1108, 1112, 1116, 1120, 1124, 1128, 1132, 1136,
+            1141, 1144, 1148, 1152, 1156, 1160, 1164, 1168
+        };
+        if (cardIndex < sizeof(revivalCustomQuestIds) / sizeof(revivalCustomQuestIds[0]))
+        {
+            const uint32_t customQuestId = revivalCustomQuestIds[cardIndex];
+            if (m_questDefinitions.find(customQuestId) != m_questDefinitions.end()
+                && std::find(
+                    card.questIds.begin(), card.questIds.end(), customQuestId)
+                    == card.questIds.end())
+            {
+                card.questIds.push_back(customQuestId);
+            }
+        }
+
         m_operationMissionCards.push_back(std::move(card));
 
         for (uint32_t questId : m_operationMissionCards.back().questIds)
@@ -1453,7 +1474,7 @@ void ItemSchema::ParseSeasonalOperation(const KeyValue *seasonalOperationsKey, u
     }
 
     Platform::Print(
-        "REVIVAL_OPERATION_CARD_PARSE_V3 parsed %zu mission cards and %zu "
+        "REVIVAL_OPERATION_CARD_PARSE_V4 parsed %zu mission cards and %zu "
         "Operation quests for season %u\n",
         m_operationMissionCards.size(),
         m_operationMissionCardByQuest.size(),
