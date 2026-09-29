@@ -11,7 +11,7 @@ if (-not (Test-Path $path)) {
     throw "server_agent.json not found. Copy server_agent.example.json first."
 }
 $data = Get-Content $path -Raw | ConvertFrom-Json
-$data.admin_steamids = @($SteamId64)
+$data | Add-Member -MemberType NoteProperty -Name "admin_steamids" -Value @($SteamId64) -Force
 $data | ConvertTo-Json -Depth 8 | Set-Content $path -Encoding UTF8
 
 # Keep SourceMod's native admin database in sync too. The installer can also
