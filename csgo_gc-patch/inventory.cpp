@@ -56,6 +56,28 @@ static RevivalCustomMissionKind RevivalCustomMissionFor(uint32_t questId)
     }
 }
 
+static uint32_t RevivalCustomMissionGoal(RevivalCustomMissionKind kind)
+{
+    switch (kind)
+    {
+    case RevivalCustomMissionKind::NoScope: return 10;
+    case RevivalCustomMissionKind::Headshot: return 1;
+    case RevivalCustomMissionKind::Rifle: return 1;
+    case RevivalCustomMissionKind::Grenade: return 10;
+    case RevivalCustomMissionKind::Knife: return 1;
+    case RevivalCustomMissionKind::Sniper: return 3;
+    case RevivalCustomMissionKind::Pistol: return 1;
+    case RevivalCustomMissionKind::Smg: return 1;
+    case RevivalCustomMissionKind::Wallbang: return 1;
+    case RevivalCustomMissionKind::ThroughSmoke: return 1;
+    case RevivalCustomMissionKind::Blind: return 3;
+    case RevivalCustomMissionKind::Kills: return 10;
+    case RevivalCustomMissionKind::Shotgun: return 1;
+    case RevivalCustomMissionKind::Heavy: return 1;
+    default: return 0;
+    }
+}
+
 static uint32_t RevivalCustomMissionValue(
     RevivalCustomMissionKind kind,
     const OperationMissionStats &stats)
@@ -3567,9 +3589,9 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     }
 
     const QuestDefinition *quest = m_itemSchema.GetQuestDefinition(questId);
-    if (!quest || quest->Goal() == 0)
+    if (!quest)
     {
-        Platform::Print("operation: ignored unknown/non-Riptide quest %u\n", questId);
+        Platform::Print("operation: ignored unknown quest %u\n", questId);
         return false;
     }
 
@@ -3579,7 +3601,16 @@ bool Inventory::ApplyOperationQuestProgress(uint32_t questId,
     }
 
     OperationQuestProgressState &state = m_operationQuestProgress[questId];
-    const uint32_t goal = quest->Goal();
+    const RevivalCustomMissionKind customKind =
+        RevivalCustomMissionFor(questId);
+    const uint32_t goal = customKind != RevivalCustomMissionKind::None
+        ? RevivalCustomMissionGoal(customKind)
+        : quest->Goal();
+    if (goal == 0)
+    {
+        Platform::Print("operation: ignored non-Riptide quest %u\n", questId);
+        return false;
+    }
     const uint32_t oldProgress = std::min(state.progress, goal);
 
     // Completed missions are persistent now. Never wrap a finished quest back
@@ -3904,10 +3935,10 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
             selected->id,
             static_cast<unsigned int>(customMission),
             earned,
-            selected->Goal());
+            RevivalCustomMissionGoal(customMission));
         Platform::Print(
             "REVIVAL_CUSTOM_PVP_MISSIONS_V1 quest=%u +%u goal=%u\n",
-            selected->id, earned, selected->Goal());
+            selected->id, earned, RevivalCustomMissionGoal(customMission));
         return ApplyOperationQuestProgress(
             selected->id,
             static_cast<int>(std::min<uint32_t>(earned, 1000000u)),
