@@ -2,9 +2,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Pack,
 
-    [string]$CsgoDir = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\csgo legacy",
+    [string]$CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy",
 
-    [string]$AgentDir = "C:\\CSGO-Revival-Agent"
+    [string]$AgentDir = "C:\CSGO-Revival-Agent"
 )
 
 $ErrorActionPreference = "Stop"
@@ -292,7 +292,31 @@ $adminInstaller = Join-Path $AgentDir "INSTALL_ADMIN_MODERATION.ps1"
 $adminPlugin = Join-Path $AgentDir "revival_admin.sp"
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/INSTALL_ADMIN_MODERATION.ps1" -OutFile $adminInstaller -UseBasicParsing
 Invoke-WebRequest "$RawBase/deploy/windows-gameserver/revival_admin.sp" -OutFile $adminPlugin -UseBasicParsing
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $adminInstaller -CsgoDir $CsgoDir
+
+# The installer is a separate PowerShell process, so its non-zero exit code
+# does not automatically become a terminating error in this updater.
+# Capture it explicitly; otherwise a failed MetaMod download/install falls
+# through to [5/5] and is misleadingly reported as "metamod.vdf missing".
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $adminInstaller -CsgoDir $CsgoDir
+$adminExit = $LASTEXITCODE
+if ($adminExit -ne 0) {
+    throw "INSTALL_ADMIN_MODERATION.ps1 failed with exit code $adminExit. MetaMod/SourceMod was not installed."
+}
+
+# Self-heal the common case where the admin runtime was partially removed
+# (for example by a security product) after the installer completed.
+$metaModVdf = Join-Path $CsgoDir "addons\metamod.vdf"
+if (-not (Test-Path $metaModVdf)) {
+    Write-Host "    MetaMod VDF still missing; retrying admin runtime installation once..." -ForegroundColor Yellow
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $adminInstaller -CsgoDir $CsgoDir
+    $adminRetryExit = $LASTEXITCODE
+    if ($adminRetryExit -ne 0) {
+        throw "INSTALL_ADMIN_MODERATION.ps1 retry failed with exit code $adminRetryExit."
+    }
+    if (-not (Test-Path $metaModVdf)) {
+        throw "MetaMod installation completed without addons\metamod.vdf. Check Windows Security/quarantine history."
+    }
+}
 
 Write-Host "[5/5] Validating..." -ForegroundColor Yellow
 foreach ($path in @(
