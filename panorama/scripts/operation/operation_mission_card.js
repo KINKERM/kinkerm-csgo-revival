@@ -70,6 +70,15 @@ var OperationMissionCard = ( function()
 		var oCardDetails = MissionsAPI.GetSeasonalOperationMissionCardDetails( OperationUtil.GetOperationInfo().nSeasonAccess, idx );
 		if ( oCardDetails )
 		{
+			// Guarantee one revival-specific PvP objective on every one of the
+			// original 16 Riptide weekly cards, even if the retired client schema
+			// dropped that quest from the card's native quest list.
+			var customMissionId = _m_revCustomMissionIds[ idx ];
+			if ( customMissionId !== undefined &&
+				oCardDetails.quests.indexOf( customMissionId ) === -1 )
+			{
+				oCardDetails.quests.push( customMissionId );
+			}
 			oCardDetails.quests = oCardDetails.quests.filter( _IsRevivalCompetitiveMission );
 			if ( oCardDetails.quests.length <= 0 )
 			{
