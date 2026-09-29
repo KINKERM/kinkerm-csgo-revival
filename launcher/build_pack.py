@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import sys
 import zipfile
 
@@ -44,101 +43,6 @@ SERVER_LAUNCHERS = ("srcds.exe", "srcds_linux", "srcds_win64.exe",
                     "srcds_linux64")
 LAUNCHERS = CLIENT_LAUNCHERS + SERVER_LAUNCHERS
 RUNTIME_NAMES = set(GC_LIBS) | set(LAUNCHERS)
-
-REVIVAL_CUSTOM_MISSION_GOALS = {
-    1104: 10, 1110: 1, 1114: 1, 1118: 10,
-    1122: 1, 1126: 3, 1130: 10, 1134: 1,
-    1138: 1, 1142: 10, 1146: 1, 1150: 3,
-    1154: 10, 1158: 1, 1162: 1, 1166: 1,
-}
-
-REVIVAL_CUSTOM_SCHEMA_MARKER = "REVIVAL_CUSTOM_PVP_MISSIONS_SCHEMA_V1"
-
-def _brace_end(text: str, open_pos: int) -> int:
-    depth = 0
-    in_string = False
-    escape = False
-    for i in range(open_pos, len(text)):
-        ch = text[i]
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == '{':
-            depth += 1
-        elif ch == '}':
-            depth -= 1
-            if depth == 0:
-                return i
-    raise ValueError("unbalanced items_game.txt braces")
-
-def patch_revival_operation_schema(source: str) -> str:
-    """Patch the revival PvP quest parents into one scalar objective each."""
-    quests_match = re.search(r'(?m)^\s*"quests"\s*\n\s*\{', source)
-    if not quests_match:
-        raise ValueError('items_game.txt has no "quests" block')
-
-    quests_open = source.find('{', quests_match.start())
-    quests_end = _brace_end(source, quests_open)
-    block = source[quests_open:quests_end + 1]
-
-    for quest_id, goal in REVIVAL_CUSTOM_MISSION_GOALS.items():
-        m = re.search(
-            r'(?m)^\s*"' + str(quest_id) + r'"\s*\n\s*\{',
-            block,
-        )
-        if not m:
-            raise ValueError(
-                f'custom Riptide quest {quest_id} missing from items_game.txt'
-            )
-
-        q_open = block.find('{', m.start())
-        q_end = _brace_end(block, q_open)
-        q = block[q_open:q_end + 1]
-
-        # The packed schema uses the GC's scalar progress value.
-        points_pattern = r'(?m)^(\s*)"points"\s+"[^"]*"\s*\n?'
-        q, points_count = re.subn(
-            points_pattern,
-            rf'\1"points" "{goal}"\n',
-            q,
-            count=1,
-        )
-        if points_count == 0:
-            q = q[:-1] + f'\n\t\t"points" "{goal}"\n\t' + '}'
-
-        # Do not let the stock child-expression graph replace our scalar
-        # objective with the original "win rounds / win match" objectives.
-        q = re.sub(
-            r'(?m)^\s*"expression"\s+"[^"]*"\s*\n?',
-            '',
-            q,
-        )
-
-        # Keep these cards in the shared Competitive queue.
-        q, _ = re.subn(
-            r'(?m)^\s*"gamemode"\s+"[^"]*"\s*\n?',
-            '\t\t"gamemode" "competitive"\n',
-            q,
-            count=1,
-        )
-        q, _ = re.subn(
-            r'(?m)^\s*"map"\s+"[^"]*"\s*\n?',
-            '\t\t"map" "lobby_mapveto"\n',
-            q,
-            count=1,
-        )
-
-        block = block[:q_open] + q + block[q_end + 1:]
-
-    patched = source[:quests_open] + block + source[quests_end + 1:]
-    return "// " + REVIVAL_CUSTOM_SCHEMA_MARKER + "\n" + patched
 
 # dirs we never descend into
 SKIP_DIRS = {".git", ".github", ".vs", ".idea", "__pycache__"}
@@ -251,7 +155,7 @@ def main() -> None:
             b"REVIVAL_NATIVE_ACTIVE_QUEST_V1",
             b"REVIVAL_OPERATION_SELECTION_BRIDGE_V2",
             b"REVIVAL_OPERATION_SCHEMA_V2",
-            b"REVIVAL_OPERATION_CARD_PARSE_V4",
+            b"REVIVAL_OPERATION_CARD_PARSE_V3",
             b"REVIVAL_OPERATION_PROGRESS_CACHE_V1",
             b"REVIVAL_LIVE_OPERATION_ROUNDS_V1",
             b"REVIVAL_LIVE_OPERATION_FINAL_V1",
