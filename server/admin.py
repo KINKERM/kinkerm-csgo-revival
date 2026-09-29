@@ -117,6 +117,15 @@ def main() -> None:
     p_cl = sub.add_parser("clear", help="wipe a player's inventory")
     p_cl.add_argument("steamid")
 
+    p_ban = sub.add_parser("ban", help="globally VAC-ban a SteamID from Revival")
+    p_ban.add_argument("steamid")
+    p_ban.add_argument("--reason", default="VAC banned from secure server")
+
+    p_unban = sub.add_parser("unban", help="remove a global Revival VAC ban")
+    p_unban.add_argument("steamid")
+
+    sub.add_parser("bans", help="list globally VAC-banned SteamIDs")
+
     args = parser.parse_args()
     token = resolve_token(args.token)
 
