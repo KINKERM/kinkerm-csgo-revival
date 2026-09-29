@@ -7,8 +7,11 @@ Run from <CSGO>/csgo/panorama:
     py -3 pbin.py patch_panorama
     py -3 pbin.py restore_panorama
 
-The packer preserves the original PBIN per-file slot sizes. Modified files must
-fit inside their original slots; shorter files are padded with spaces.
+The packer keeps the original entry order, but entries are variable-sized. The
+old revival packer treated every entry as a fixed-size slot and rejected any
+modified Panorama file that grew by one byte. PBIN is parsed as sequential ZIP
+local entries, so entries can safely grow; the writer now stores the real size
+and does not pad modified files.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import pickle
 import shutil
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 PBIN_MAGIC = b"PAN\x02"
@@ -132,12 +136,13 @@ def pack() -> int:
             return 1
 
         payload = path.read_bytes()
-        if len(payload) > original_size:
-            print(f"[pbin] {name}: {len(payload)} B > {original_size} B")
-            return 2
-
         name_bytes = name.encode("utf-8")
-        # Stored entries are uncompressed and retain the original fixed slot size.
+        # PBIN is a sequential ZIP-local-entry stream. The game reads the
+        # compressed/uncompressed sizes from each local header before advancing
+        # to the next entry, so there is no requirement for the replacement file
+        # to fit the old payload slot.
+        actual_size = len(payload)
+        crc32 = zlib.crc32(payload) & 0xFFFFFFFF
         header = bytearray()
         header += LOCAL_MAGIC
         header += b"\x0A\x00"       # version
@@ -145,16 +150,15 @@ def pack() -> int:
         header += b"\x00\x00"       # compression = store
         header += b"\x00\x00"       # time
         header += b"\x00\x00"       # date
-        header += b"\x82\xC2\xA9\x51"
-        header += struct.pack("<I", original_size)
-        header += struct.pack("<I", original_size)
+        header += struct.pack("<I", crc32)
+        header += struct.pack("<I", actual_size)
+        header += struct.pack("<I", actual_size)
         header += struct.pack("<H", len(name_bytes))
         header += b"\x00\x00"       # extra length
 
         out += header
         out += name_bytes
         out += payload
-        out += b" " * (original_size - len(payload))
 
     tail = table["__CODE_PBIN_END__"]
     if not isinstance(tail, (bytes, bytearray)):
