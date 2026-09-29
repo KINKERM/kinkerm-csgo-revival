@@ -88,6 +88,25 @@ def _save_config(path: str, config: dict) -> None:
     os.replace(tmp, path)
 
 
+def _moderation_state_path(config: dict) -> str:
+    return os.path.join(config["csgo_dir"], "csgo_gc", "moderation.txt")
+
+
+def _write_moderation_state(config: dict, data: dict) -> None:
+    steamid = str(config.get("steam_id") or "").strip()
+    banned = bool(data.get("vac_banned"))
+    reason = str(data.get("ban_reason") or "").replace("\r", " ").replace("\n", " ").strip()
+    body = (
+        f"steamid={steamid}\n"
+        f"vac_banned={1 if banned else 0}\n"
+        f"reason={reason}\n"
+    )
+    try:
+        _atomic_write_text(_moderation_state_path(config), body)
+    except OSError as exc:
+        print(f"[launcher] moderation state write failed: {exc}")
+
+
 def refresh_client_bootstrap(config: dict, cfg_path: str) -> None:
     url = (
         config["server_url"].rstrip("/")
@@ -102,6 +121,8 @@ def refresh_client_bootstrap(config: dict, cfg_path: str) -> None:
         if not config.get("sync_token"):
             print("[launcher] persistence credentials are unavailable.")
         return
+
+    _write_moderation_state(config, data)
 
     token = str(data.get("sync_token") or "")
     epoch = str(int(data.get("data_epoch") or 1))
@@ -132,6 +153,7 @@ def watch_data_epoch(
         try:
             with urllib.request.urlopen(url, timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
+            _write_moderation_state(config, data)
             epoch = int(data.get("data_epoch") or 1)
             if epoch != initial:
                 config["data_epoch"] = str(epoch)
