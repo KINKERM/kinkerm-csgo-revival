@@ -3902,6 +3902,12 @@ bool Inventory::ApplySelectedOperationCompetitiveMission(
         }
 
         Platform::Print(
+            "REVIVAL_CUSTOM_PVP_MISSIONS_V2 active quest=%u kind=%u +%u goal=%u\n",
+            selected->id,
+            static_cast<unsigned int>(customMission),
+            earned,
+            selected->Goal());
+        Platform::Print(
             "REVIVAL_CUSTOM_PVP_MISSIONS_V1 quest=%u +%u goal=%u\n",
             selected->id, earned, selected->Goal());
         return ApplyOperationQuestProgress(
