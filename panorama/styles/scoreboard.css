@@ -1797,3 +1797,31 @@ Label.sb-row__cell--mvps__count {
 
 	transform: translateY( 0px);
 }
+
+
+/* Revival owner/admin marker. The server sets [ADMIN] as the clan tag;
+   this client-side class makes the tag/name visibly cycle through rainbow hues. */
+@keyframes revival_admin_rainbow
+{
+    0%   { color: #ff4040; }
+    16%  { color: #ff9f40; }
+    33%  { color: #ffff40; }
+    50%  { color: #40ff80; }
+    66%  { color: #40c0ff; }
+    83%  { color: #a060ff; }
+    100% { color: #ff4040; }
+}
+
+.revival-admin-name
+{
+    animation-name: revival_admin_rainbow;
+    animation-duration: 2.4s;
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+    font-weight: bold;
+}
+
+.sb-row--revival-admin .sb-clantag
+{
+    font-weight: bold;
+}
