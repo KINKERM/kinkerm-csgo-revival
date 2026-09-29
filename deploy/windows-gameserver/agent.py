@@ -743,6 +743,7 @@ class ServerSlot:
         self.assignment_missing_since = 0.0
         self.launched_at = 0.0
         self.intentional_stop = False
+        self._last_global_vac_bans: set[int] = set()
 
     def alive(self) -> bool:
         with self._lock:
@@ -1552,37 +1553,77 @@ class ServerSlot:
     def enforce_global_vac_bans(self, blocked: object) -> None:
         if not isinstance(blocked, dict):
             return
+
         blocked_accounts = {
             int(account_id)
             for account_id in blocked.keys()
             if str(account_id).isdigit() and int(account_id) > 0
         }
-        if not blocked_accounts:
-            return
 
         with self._lock:
             if self._ended or not self.alive():
                 return
             port = int(self.cfg["local_port"])
             password = self.rcon_password
+            previous = set(self._last_global_vac_bans)
+
+        def steam2(account_id: int) -> str:
+            return f"STEAM_1:{account_id & 1}:{account_id // 2}"
+
+        added = blocked_accounts - previous
+        removed = previous - blocked_accounts
+
+        try:
+            # Keep Source's own permanent SteamID ban list in sync with the
+            # central Revival moderation store. This makes direct-connect and
+            # post-restart joins obey the same global decision as matchmaking.
+            for account_id in sorted(added):
+                send_local_rcon(
+                    port,
+                    password,
+                    f"banid 0 {steam2(account_id)}; writeid",
+                )
+                print(
+                    f"[agent] REVIVAL_NATIVE_VAC_BAN_V1 persisted "
+                    f"account={account_id} steamid={steam2(account_id)}"
+                )
+
+            for account_id in sorted(removed):
+                send_local_rcon(
+                    port,
+                    password,
+                    f"removeid {steam2(account_id)}; writeid",
+                )
+                print(
+                    f"[agent] REVIVAL_NATIVE_VAC_BAN_V1 removed "
+                    f"account={account_id} steamid={steam2(account_id)}"
+                )
+
+            with self._lock:
+                self._last_global_vac_bans = set(blocked_accounts)
+        except Exception:
+            return
+
+        if not blocked_accounts:
+            return
 
         try:
             status = send_local_rcon(port, password, "status")
         except Exception:
             return
 
-        kicked: set[int] = set()
         for raw in status.splitlines():
             account_id = account_id_from_text(raw)
             if not account_id or account_id not in blocked_accounts:
                 continue
 
-            # Source's status output begins player rows with '#<userid>'.
+            # Source status rows begin with a session userid. Use that userid
+            # only for the live kick; the persistent identity is the SteamID.
             match = re.search(r"^\s*#\s*(\d+)\s+", raw)
             if not match:
                 continue
             userid = int(match.group(1))
-            if userid <= 0 or userid in kicked:
+            if userid <= 0:
                 continue
 
             try:
@@ -1591,7 +1632,6 @@ class ServerSlot:
                     password,
                     f'kickid {userid} "VAC banned from secure server"',
                 )
-                kicked.add(userid)
                 print(
                     f"[agent] REVIVAL_NATIVE_VAC_BAN_V1 kicked "
                     f"account={account_id} userid={userid}"
