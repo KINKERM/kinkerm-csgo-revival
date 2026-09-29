@@ -140,6 +140,7 @@ def main() -> None:
             b"REVIVAL_JOIN_IN_PROGRESS_G_V1",
             b"REVIVAL_PVP_MISSION_STATS_V1",
             b"REVIVAL_CUSTOM_PVP_MISSIONS_V1",
+            b"REVIVAL_CUSTOM_PVP_MISSIONS_V2",
             b"REVIVAL_OPERATION_REPLAY_V1",
             b"REVIVAL_Q_SLOT_PAD_V1",
             b"REVIVAL_SERVER_ACCEPT_ROSTER_V1",
