@@ -28,6 +28,7 @@ namespace
 constexpr const char *MatchmakingRequestPath = "csgo_gc/mm_request.txt";
 constexpr const char *MatchmakingStatePath = "csgo_gc/mm_state.txt";
 constexpr const char *MatchmakingRewardPath = "csgo_gc/mm_reward.bin";
+constexpr const char *RevivalModerationPath = "csgo_gc/moderation.txt";
 constexpr uint32_t RevivalInventoryUnacked = (1u << 30);
 constexpr uint32_t RevivalInventoryReserved = (1u << 31);
 constexpr uint32_t RevivalInventoryFormatMask =
@@ -583,6 +584,8 @@ ClientGC::~ClientGC()
 void ClientGC::HandleIdle()
 {
     PollRewardBridge();
+    if ((++m_moderationPollTicks & 7u) == 0)
+        PollModerationState();
     PollOperationPassPurchaseBridge();
     PollOperationMissionSelectionBridge();
 
@@ -1316,7 +1319,7 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_active_survey_id(0);
     message.mutable_global_stats()->set_required_appid_version2(13862); // csgo s2
 
-    message.set_vac_banned(GetConfig().VacBanned());
+    message.set_vac_banned(m_vacBanned ? 1 : 0);
     message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
     message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
     message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
@@ -1367,6 +1370,7 @@ void ClientGC::SendRankUpdate()
 
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
+    PollModerationState();
     Platform::Print("REVIVAL_MM_BRIDGE_CLEAN_V1 loaded\n");
     Platform::Print("REVIVAL_CLIENT_COOKIE_RESERVE_V3 active; REVIVAL_CLIENT_DIRECT_UDP_V1 active; REVIVAL_CLIENT_READY_FLOW_V1 active; REVIVAL_CLIENT_ACCEPT_WATCH_V1 active; REVIVAL_CLIENT_DIRECT_ACCEPT_ROUTE_V2 active; REVIVAL_CLIENT_REWARD_BRIDGE_V1 active; REVIVAL_GUARANTEED_MATCH_DROPS_V1 active; REVIVAL_CLIENT_COOKIE_RESERVE_V2 compatible\n");
 
@@ -2266,6 +2270,78 @@ void ClientGC::ProcessCompletedMatchBridge(
     Platform::Print(
         "REVIVAL_MATCH_RESULT_FALLBACK_V2 complete match=%llu xp=%u\n",
         matchId, awardedXp);
+}
+
+
+void ClientGC::PollModerationState()
+{
+    std::vector<std::string> candidates;
+    candidates.emplace_back(RevivalModerationPath);
+
+#ifdef _WIN32
+    char executablePath[MAX_PATH] = {};
+    const DWORD pathLength = GetModuleFileNameA(
+        nullptr, executablePath, static_cast<DWORD>(sizeof(executablePath)));
+    if (pathLength > 0 && pathLength < sizeof(executablePath))
+    {
+        std::string root(executablePath, pathLength);
+        const size_t slash = root.find_last_of("\\/");
+        if (slash != std::string::npos)
+        {
+            root.resize(slash);
+            candidates.insert(candidates.begin(), root + "\\csgo_gc\\moderation.txt");
+        }
+    }
+#endif
+
+    std::unordered_map<std::string, std::string> values;
+    for (const std::string &path : candidates)
+    {
+        std::ifstream in(path);
+        if (!in.is_open())
+            continue;
+
+        std::string line;
+        while (std::getline(in, line))
+        {
+            const size_t eq = line.find('=');
+            if (eq == std::string::npos)
+                continue;
+            values[line.substr(0, eq)] = line.substr(eq + 1);
+        }
+        if (!values.empty())
+            break;
+    }
+
+    const std::string steamid = values["steamid"];
+    if (!steamid.empty() && steamid != std::to_string(m_steamId))
+        return;
+
+    const bool banned = values["vac_banned"] == "1";
+    const std::string reason = values["reason"];
+
+    if (banned == m_vacBanned && reason == m_vacBanReason)
+        return;
+
+    m_vacBanned = banned;
+    m_vacBanReason = reason;
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello hello;
+    BuildMatchmakingHello(hello);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, hello);
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+    update.set_matchmaking(m_vacBanned ? 0 : (m_matchmakingActive ? 1 : 0));
+    if (m_vacBanned)
+        update.add_vacbanned_account_id_sessions(AccountId());
+    if (!m_vacBanned && !m_matchmakingActive)
+        update.mutable_global_stats()->set_servers_available(0);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+
+    Platform::Print(
+        "REVIVAL_NATIVE_VAC_BAN_V1 account=%u banned=%u reason=%s\n",
+        AccountId(), m_vacBanned ? 1u : 0u,
+        m_vacBanReason.c_str());
 }
 
 
