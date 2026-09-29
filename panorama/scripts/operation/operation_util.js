@@ -34,6 +34,12 @@ var OperationUtil = ( function () {
 		1162: 'Get 1 shotgun kill in Competitive',
 		1166: 'Get 1 heavy weapon kill in Competitive'
 	};
+	var _m_revCustomMissionGoal = {
+		1104: 10, 1110: 1, 1114: 1, 1118: 10,
+		1122: 1, 1126: 3, 1130: 10, 1134: 1,
+		1138: 1, 1142: 10, 1146: 1, 1150: 3,
+		1154: 10, 1158: 1, 1162: 1, 1166: 1
+	};
 	var _IsRevivalCustomMission = function( missionId )
 	{
 		return _m_revCustomMissionText[ Number( missionId ) ] !== undefined;
@@ -357,21 +363,32 @@ var OperationUtil = ( function () {
 			gameMode = 'competitive_teams';
 		}
 		var numQuestGraphType = MissionsAPI.GetQuestGraphType( missionId );
-		var missionGoal = MissionsAPI.GetQuestPoints( missionId, "goal" );
+		var bRevivalCustom = _IsRevivalCustomMission( missionId );
+		var missionGoal = bRevivalCustom
+			? _m_revCustomMissionGoal[ Number( missionId ) ]
+			: MissionsAPI.GetQuestPoints( missionId, "goal" );
+		var missionRemaining = MissionsAPI.GetQuestPoints( missionId, "remaining" );
+		if ( bRevivalCustom )
+		{
+			missionRemaining = Math.max( 0, Math.min(
+				missionGoal,
+				missionRemaining < 0 ? missionGoal : missionRemaining
+			) );
+		}
 		return {
 			missionId: missionId,
 			missionItemId: InventoryAPI.GetQuestItemIDFromQuestID( missionId ),
 			missionName: InventoryAPI.GetItemName( MissionItemID ),
 			missionDesc: MissionsAPI.GetQuestDefinitionField( missionId, "loc_description" ),
-			nMissionSegments: MissionsAPI.GetQuestPoints( missionId, 'count' ),
-			nMissionPointsRemaining: MissionsAPI.GetQuestPoints( missionId, "remaining" ),
+			nMissionSegments: bRevivalCustom ? 1 : MissionsAPI.GetQuestPoints( missionId, 'count' ),
+			nMissionPointsRemaining: missionRemaining,
 			nOpPointsPerSegment: MissionsAPI.GetQuestDefinitionField( missionId, 'operational_points' ),
 			isReplayable: ( gameMode !== 'cooperative' &&
 				gameMode !== 'coopmission' &&
 				gameMode !== 'guardian' &&
 				gameMode !== 'survival' ),
 			isSingleMatch: MissionsAPI.GetQuestDefinitionField( missionId, "singlematch" ) === '1' ? true : false,
-			missionGoal: MissionsAPI.GetQuestPoints( missionId, "goal" ),
+			missionGoal: missionGoal,
 			nUncommitted: MissionsAPI.GetQuestPoints( missionId, "uncommitted" ),
 			missionGameMode: gameMode,
 			missionMapGroup: mapGroup,
@@ -463,16 +480,23 @@ var OperationUtil = ( function () {
 		}
 		return aSubQuests;
 	};
-	var _GetMissionCardEarnedPoints = function( oCardDetails )
+ 	var _GetMissionCardEarnedPoints = function( oCardDetails )
 	{
 		var totalCardPoints = 0;
 		var totalPossilbePoints = 0;
 		for ( var iMission = 0; iMission< oCardDetails.quests.length; iMission++ )
 		{
 			var missionID = oCardDetails.quests[ iMission];
-			var numThresholds = MissionsAPI.GetQuestPoints( missionID, "count" );
-			var goal = MissionsAPI.GetQuestPoints( missionID, "goal" );
+ 			var bRevivalCustom = _IsRevivalCustomMission( missionID );
+			var numThresholds = bRevivalCustom ? 1 : MissionsAPI.GetQuestPoints( missionID, "count" );
+			var goal = bRevivalCustom
+				? _m_revCustomMissionGoal[ Number( missionID ) ]
+				: MissionsAPI.GetQuestPoints( missionID, "goal" );
 			var remaining = MissionsAPI.GetQuestPoints( missionID, "remaining" );
+			if ( bRevivalCustom )
+			{
+				remaining = Math.max( 0, Math.min( goal, remaining < 0 ? goal : remaining ) );
+			}
 			if ( remaining > 0 )
 			{
 				var numLoops = numThresholds;
@@ -794,5 +818,9 @@ var OperationUtil = ( function () {
 		SetLocalizationStringAndVarsForMission: _SetLocalizationStringAndVarsForMission,
 		GetMissionDetails: _GetMissionDetails,
 		GetMissionCardEarnedPoints: _GetMissionCardEarnedPoints,
+		GetRevivalCustomMissionGoal: function( missionId )
+		{
+			return _m_revCustomMissionGoal[ Number( missionId ) ] || 0;
+		},
 	};
 })();
