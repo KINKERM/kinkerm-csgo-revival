@@ -236,6 +236,25 @@ def main() -> None:
         print(json.dumps(result, indent=2))
         return
 
+    if args.cmd == "ban":
+        result = request(args.server, "POST", "/admin/ban", token, {
+            "steamid": args.steamid,
+            "reason": args.reason,
+            "source": "admin-cli",
+        })
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.cmd == "unban":
+        result = request(args.server, "POST", "/admin/unban", token, {"steamid": args.steamid})
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.cmd == "bans":
+        result = request(args.server, "GET", "/admin/bans", token)
+        print(json.dumps(result, indent=2))
+        return
+
 
 if __name__ == "__main__":
     main()
