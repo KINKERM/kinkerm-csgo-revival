@@ -494,6 +494,22 @@ class MatchmakingCoordinator:
             if not account_id:
                 return {"state": "error", "error": "invalid steamid"}
 
+            # Native CS:GO exposes this as the GC VAC-ban state. Revival keeps
+            # the same semantics globally across every match, keyed by the
+            # authenticated SteamID64, without pretending to modify Valve's
+            # actual Steam account VAC status.
+            blocked = self._blocked.get(steamid)
+            if blocked is not None:
+                reason = str(blocked.get("reason") or "VAC banned from secure server")
+                self._queue = [q for q in self._queue if q.steamid != steamid]
+                self._states[steamid] = {
+                    "state": "idle",
+                    "vac_banned": True,
+                    "error": "VAC banned from secure server",
+                    "ban_reason": reason,
+                }
+                return dict(self._states[steamid])
+
             preferred_map = str(preferred_map or "").strip()
             if preferred_map not in self._map_pool:
                 preferred_map = ""
