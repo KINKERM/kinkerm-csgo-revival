@@ -35,6 +35,7 @@ private:
     void MatchmakingPing(GCMessageRead &messageRead);
     void MatchmakingHello(GCMessageRead &messageRead);
     void PollMatchmakingBridge();
+    void PollModerationState();
     void ProcessCompletedMatchBridge(
         const std::unordered_map<std::string, std::string> &state);
     void PollRewardBridge();
@@ -81,6 +82,9 @@ private:
     std::vector<uint64_t> m_transactionItemIds;
 
     bool m_matchmakingActive{};
+    bool m_vacBanned{};
+    std::string m_vacBanReason;
+    uint32_t m_moderationPollTicks{};
     bool m_matchmakingIgnoreNextNonAbandonStop{};
     uint32_t m_matchmakingGameType{ 8 };
     uint32_t m_matchmakingClientVersion{};
