@@ -19,6 +19,45 @@ function Need-Path([string]$Path, [string]$Label) {
     }
 }
 
+function Find-CsgoLegacy([string]$ConfiguredPath) {
+    $candidates = @()
+
+    if ($ConfiguredPath) {
+        $normalized = $ConfiguredPath.Replace("\\", "\")
+        $candidates += $normalized
+    }
+
+    $steamRoots = @(
+        (Get-ItemProperty "HKCU:\Software\Valve\Steam" -ErrorAction SilentlyContinue).SteamPath,
+        (Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" -ErrorAction SilentlyContinue).InstallPath,
+        (Get-ItemProperty "HKLM:\SOFTWARE\Valve\Steam" -ErrorAction SilentlyContinue).InstallPath,
+        "$env:ProgramFiles(x86)\Steam",
+        "$env:ProgramFiles\Steam"
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+    foreach ($steamRoot in $steamRoots) {
+        $candidates += (Join-Path $steamRoot "steamapps\common\csgo legacy")
+
+        $libraryFile = Join-Path $steamRoot "steamapps\libraryfolders.vdf"
+        if (Test-Path $libraryFile) {
+            $vdf = Get-Content $libraryFile -Raw
+            foreach ($m in [regex]::Matches($vdf, '"path"\s+"([^"]+)"')) {
+                $library = $m.Groups[1].Value -replace '\\\\', '\'
+                $candidates += (Join-Path $library "steamapps\common\csgo legacy")
+            }
+        }
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if ((Test-Path (Join-Path $candidate "csgo")) -and
+            (Test-Path (Join-Path $candidate "csgo.exe"))) {
+            return [IO.Path]::GetFullPath($candidate)
+        }
+    }
+
+    return $null
+}
+
 $Pack = (Resolve-Path $Pack).Path
 
 # The laptop's server_agent.json is the authoritative CS:GO path. Do not make
@@ -30,18 +69,18 @@ if (-not (Test-Path $agentConfig)) {
 }
 
 $agentConfigJson = Get-Content $agentConfig -Raw | ConvertFrom-Json
+$configuredCsgoDir = if ($agentConfigJson.csgo_dir) { [string]$agentConfigJson.csgo_dir } else { "" }
 if ([string]::IsNullOrWhiteSpace($CsgoDir)) {
-    if ($agentConfigJson.csgo_dir) {
-        $CsgoDir = [string]$agentConfigJson.csgo_dir
-    } else {
-        $CsgoDir = "C:\Program Files (x86)\Steam\steamapps\common\csgo legacy"
-    }
+    $CsgoDir = $configuredCsgoDir
 }
 
-# Be tolerant of callers that pass JSON-style escaped Windows paths
-# (C:\Program Files\...) to PowerShell. Windows paths only need one slash.
+# Be tolerant of callers that pass JSON-style escaped Windows paths.
 $CsgoDir = $CsgoDir.Replace("\\", "\")
-$CsgoDir = [IO.Path]::GetFullPath($CsgoDir)
+$resolvedCsgoDir = Find-CsgoLegacy $CsgoDir
+if (-not $resolvedCsgoDir) {
+    throw "CS:GO Legacy was not found automatically. Checked the configured path and Steam library folders. Configured path: $CsgoDir"
+}
+$CsgoDir = $resolvedCsgoDir
 
 Need-Path $Pack "Revival pack"
 Need-Path $CsgoDir "CS:GO Legacy folder"
