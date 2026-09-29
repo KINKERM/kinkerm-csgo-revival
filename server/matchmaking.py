@@ -8,6 +8,8 @@ match (up to 10 humans) and replace bots as they connect.
 
 from __future__ import annotations
 
+import json
+import os
 import random
 import threading
 import time
@@ -70,6 +72,12 @@ class Match:
 class MatchmakingCoordinator:
     def __init__(self, map_pool: list[str] | tuple[str, ...] | None = None):
         self._lock = threading.RLock()
+        self._moderation_path = os.path.join(
+            os.path.dirname(__file__), "moderation.json"
+        )
+        self._admins: set[str] = set()
+        self._blocked: dict[str, dict[str, Any]] = {}
+        self._load_moderation_locked()
         self._queue: list[QueueEntry] = []
         self._states: dict[str, dict[str, Any]] = {}
         self._matches: dict[int, Match] = {}
@@ -99,6 +107,59 @@ class MatchmakingCoordinator:
         self._last_reward_payload: dict[str, tuple[str, float]] = {}
         self._item_ack_queues: dict[str, list[str]] = {}
         self._reset_generation = 0
+
+    def _load_moderation_locked(self) -> None:
+        try:
+            with open(self._moderation_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self._admins = {str(x).strip() for x in data.get("admins", []) if str(x).strip().isdigit()}
+            raw = data.get("blocked", {})
+            self._blocked = {str(k).strip(): dict(v) for k, v in raw.items()
+                             if str(k).strip().isdigit() and isinstance(v, dict)}
+        except (OSError, ValueError, TypeError):
+            self._admins, self._blocked = set(), {}
+
+    def _save_moderation_locked(self) -> None:
+        os.makedirs(os.path.dirname(self._moderation_path), exist_ok=True)
+        tmp = self._moderation_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({"admins": sorted(self._admins), "blocked": self._blocked},
+                      fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp, self._moderation_path)
+
+    def set_admin(self, steamid: str, enabled: bool = True) -> dict[str, Any]:
+        steamid = str(steamid).strip()
+        if not steamid.isdigit():
+            return {"ok": False, "error": "valid SteamID64 required"}
+        with self._lock:
+            (self._admins.add(steamid) if enabled else self._admins.discard(steamid))
+            self._save_moderation_locked()
+            return {"ok": True, "steamid": steamid, "enabled": enabled,
+                    "admins": sorted(self._admins)}
+
+    def block_account(self, steamid: str, reason: str = "", source: str = "admin") -> dict[str, Any]:
+        steamid = str(steamid).strip()
+        if not steamid.isdigit():
+            return {"ok": False, "error": "valid SteamID64 required"}
+        with self._lock:
+            self._blocked[steamid] = {
+                "reason": str(reason or "secure server moderation")[:240],
+                "source": str(source or "admin")[:80],
+                "time": int(time.time()),
+            }
+            self._save_moderation_locked()
+            return {"ok": True, "steamid": steamid, "entry": dict(self._blocked[steamid])}
+
+    def unblock_account(self, steamid: str) -> dict[str, Any]:
+        with self._lock:
+            removed = self._blocked.pop(str(steamid).strip(), None) is not None
+            self._save_moderation_locked()
+            return {"ok": True, "steamid": str(steamid).strip(), "removed": removed}
+
+    def moderation_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {"admins": sorted(self._admins), "blocked": {k: dict(v) for k, v in self._blocked.items()}}
 
     def _server_online_locked(self) -> bool:
         return (
