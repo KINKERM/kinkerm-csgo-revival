@@ -17,22 +17,22 @@ var OperationUtil = ( function () {
 	var m_passStoreId = 4758;
 	var m_nOperationSeason = 10; // Operation Riptide season_access (CommunitySeasonEleven2021 item defs)
 	var _m_revCustomMissionText = {
-		1108: 'Get 10 no-scope kills in Competitive',
-		1112: 'Get 1 headshot kill in Competitive',
-		1116: 'Get 1 rifle kill in Competitive',
-		1120: 'Get 10 grenade kills in Competitive',
-		1124: 'Get 1 knife kill in Competitive',
-		1128: 'Get 3 sniper rifle kills in Competitive',
-		1132: 'Get 10 headshot kills in Competitive',
-		1136: 'Get 1 pistol kill in Competitive',
-		1141: 'Get 1 SMG kill in Competitive',
-		1144: 'Get 10 sniper rifle kills in Competitive',
-		1148: 'Get 1 wallbang kill in Competitive',
-		1152: 'Get 3 kills while blinded in Competitive',
-		1156: 'Get 10 kills in Competitive',
-		1160: 'Get 1 kill through smoke in Competitive',
-		1164: 'Get 1 shotgun kill in Competitive',
-		1168: 'Get 1 heavy weapon kill in Competitive'
+		1104: 'Get 10 no-scope kills in Competitive',
+		1110: 'Get 1 headshot kill in Competitive',
+		1114: 'Get 1 rifle kill in Competitive',
+		1118: 'Get 10 grenade kills in Competitive',
+		1122: 'Get 1 knife kill in Competitive',
+		1126: 'Get 3 sniper rifle kills in Competitive',
+		1130: 'Get 10 headshot kills in Competitive',
+		1134: 'Get 1 pistol kill in Competitive',
+		1138: 'Get 1 SMG kill in Competitive',
+		1142: 'Get 10 sniper rifle kills in Competitive',
+		1146: 'Get 1 wallbang kill in Competitive',
+		1150: 'Get 3 kills while blinded in Competitive',
+		1154: 'Get 10 kills in Competitive',
+		1158: 'Get 1 kill through smoke in Competitive',
+		1162: 'Get 1 shotgun kill in Competitive',
+		1166: 'Get 1 heavy weapon kill in Competitive'
 	};
 	var _IsRevivalCustomMission = function( missionId )
 	{
