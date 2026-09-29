@@ -1549,6 +1549,60 @@ class ServerSlot:
             if first_fallback:
                 print("[agent] RCON status shows a human player; preserving active reservation")
 
+    def enforce_global_vac_bans(self, blocked: object) -> None:
+        if not isinstance(blocked, dict):
+            return
+        blocked_accounts = {
+            int(account_id)
+            for account_id in blocked.keys()
+            if str(account_id).isdigit() and int(account_id) > 0
+        }
+        if not blocked_accounts:
+            return
+
+        with self._lock:
+            if self._ended or not self.alive():
+                return
+            port = int(self.cfg["local_port"])
+            password = self.rcon_password
+
+        try:
+            status = send_local_rcon(port, password, "status")
+        except Exception:
+            return
+
+        kicked: set[int] = set()
+        for raw in status.splitlines():
+            account_id = account_id_from_text(raw)
+            if not account_id or account_id not in blocked_accounts:
+                continue
+
+            # Source's status output begins player rows with '#<userid>'.
+            match = re.search(r"^\s*#\s*(\d+)\s+", raw)
+            if not match:
+                continue
+            userid = int(match.group(1))
+            if userid <= 0 or userid in kicked:
+                continue
+
+            try:
+                send_local_rcon(
+                    port,
+                    password,
+                    f'kickid {userid} "VAC banned from secure server"',
+                )
+                kicked.add(userid)
+                print(
+                    f"[agent] REVIVAL_NATIVE_VAC_BAN_V1 kicked "
+                    f"account={account_id} userid={userid}"
+                )
+            except Exception as exc:
+                print(
+                    f"[agent] REVIVAL_NATIVE_VAC_BAN_V1 kick failed "
+                    f"account={account_id}: {exc}"
+                )
+
+
     def check_accept_timeout(self) -> None:
         # Do NOT independently kill a native reservation on a wall-clock timer.
         # The coordinator owns cancellation/withdrawal. Previous builds could
@@ -1903,6 +1957,11 @@ def main() -> None:
                     )
                     last_reset_generation = reset_generation
                     slot.stop()
+
+                moderation = reply.get("moderation")
+                if isinstance(moderation, dict):
+                    self_blocked = moderation.get("blocked")
+                    slot.enforce_global_vac_bans(self_blocked)
 
                 assignment = reply.get("assignment")
                 if isinstance(assignment, dict):
