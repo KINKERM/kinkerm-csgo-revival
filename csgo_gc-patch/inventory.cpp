@@ -12,8 +12,6 @@ constexpr const char *InventoryFilePath = "csgo_gc/inventory.txt";
 
 // REVIVAL_CUSTOM_PVP_MISSIONS_V2: custom PvP mission mapping is versioned so
 // laptop validation cannot accept an older GC DLL after mission-table changes.
-constexpr const char *RevivalCustomMissionVersionMarker =
-    "REVIVAL_CUSTOM_PVP_MISSIONS_V2";
 
 enum class RevivalCustomMissionKind
 {
