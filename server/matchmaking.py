@@ -161,6 +161,11 @@ class MatchmakingCoordinator:
         with self._lock:
             return {"admins": sorted(self._admins), "blocked": {k: dict(v) for k, v in self._blocked.items()}}
 
+    def moderation_entry(self, steamid: str) -> dict[str, Any]:
+        with self._lock:
+            entry = self._blocked.get(str(steamid).strip())
+            return dict(entry) if isinstance(entry, dict) else {}
+
     def _server_online_locked(self) -> bool:
         return (
             bool(self._server.get("agent_id"))
@@ -922,6 +927,12 @@ class MatchmakingCoordinator:
                 "server_available": self._server_joinable_locked(),
                 "reset_generation": self._reset_generation,
                 "item_acks": self._drain_item_acks_locked(),
+                "moderation": {
+                    "blocked": {
+                        str(steamid): dict(entry)
+                        for steamid, entry in self._blocked.items()
+                    }
+                },
             }
 
     def server_match_started(self, match_id: int) -> None:
