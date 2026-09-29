@@ -379,8 +379,8 @@ foreach ($marker in @(
 Write-Host "    Verified current matchmaking DLL markers on laptop." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V52")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V52"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V53")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V53"
 }
 if (-not $agentText.Contains("REVIVAL_TEAMKILL_RULES_V1")) {
     throw "Downloaded laptop agent is missing Competitive teamkill punishment."
@@ -406,6 +406,9 @@ if (-not $agentText.Contains("REVIVAL_JOIN_IN_PROGRESS_G_V1 match")) {
 if (-not $agentText.Contains("REVIVAL_Q_SLOT_PAD_V1 tournament extra-slot mode active")) {
     throw "Downloaded laptop agent is missing ten-human-slot queued reservation support."
 }
+if (-not $agentText.Contains("REVIVAL_NATIVE_VAC_BAN_V1 persisted")) {
+    throw "Downloaded laptop agent is missing global VAC-ban enforcement."
+}
 if (-not $agentText.Contains("REVIVAL_GSLT_HOT_RELOAD_V1")) {
     throw "Downloaded laptop agent is missing per-match GSLT hot reload."
 }
@@ -421,8 +424,8 @@ if (-not $agentText.Contains('"-tournament_extra_casters_slots", "10"')) {
 Write-Host "    Verified current V52 public-release laptop agent (MR8 + teamkill + admin-reset + map-download + native-ack live late-join handling)." -ForegroundColor Green
 
 $agentText = Get-Content (Join-Path $AgentDir "agent.py") -Raw
-if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V52")) {
-    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V52"
+if (-not $agentText.Contains("REVIVAL_AGENT_PUBLIC_RELEASE_V53")) {
+    throw "Downloaded laptop agent is stale; missing REVIVAL_AGENT_PUBLIC_RELEASE_V53"
 }
 Write-Host "    Verified V52 laptop agent + admin moderation runtime." -ForegroundColor Green
 
