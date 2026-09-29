@@ -44,11 +44,11 @@ static RevivalCustomMissionKind RevivalCustomMissionFor(uint32_t questId)
     case 1141: return RevivalCustomMissionKind::Smg;          // week 9, goal 1
     case 1144: return RevivalCustomMissionKind::Sniper;       // week 10, goal 10
     case 1148: return RevivalCustomMissionKind::Wallbang;     // week 11, goal 1
-    case 1152: return RevivalCustomMissionKind::Knife;        // week 12, goal 3
+    case 1152: return RevivalCustomMissionKind::Blind;        // week 12, goal 3
     case 1156: return RevivalCustomMissionKind::Rifle;        // week 13, goal 10
     case 1160: return RevivalCustomMissionKind::ThroughSmoke; // week 14, goal 1
     case 1164: return RevivalCustomMissionKind::Pistol;       // week 15, goal 1
-    case 1168: return RevivalCustomMissionKind::Blind;        // week 16, goal 1
+    case 1168: return RevivalCustomMissionKind::Heavy;        // week 16, goal 1
     default: return RevivalCustomMissionKind::None;
     }
 }
